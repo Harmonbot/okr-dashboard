@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新品OKR项目管理系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .card-shadow { box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .loading-spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // API 配置 - 部署后修改为你的 Vercel 域名
+    const API_BASE = window.location.hostname === 'localhost' 
+      ? 'http://localhost:3000' 
+      : '';
+
+    // 飞书多维表格 app_token
+    const APP_TOKEN = 'N5OqbwkO1a2PbpsaM05ckGrMnxg';
+
+    // 数据转换函数 - 将飞书数据格式转换为前端需要的格式
+    const transformData = (rawData) => {
+      const data = {
+        objectives: [],
+        keyResults: [],
+        products: [],
+        tasks: [],
+        members: [],
+        processNodes: []
+      };
+
+      // 转换目标表
+      if (rawData['目标 Objectives']) {
+        data.objectives = rawData['目标 Objectives'].records.map(r => ({
+          id: r.record_id,
+          name: r.fields['目标名称'] || '',
+          cycle: r.fields['目标周期'] || '',
+          level: r.fields['目标层级'] || '',
+          progress: r.fields['进度'] || 0,
+          status: r.fields['状态'] || '未开始'
+        }));
+      }
+
+      // 转换关键结果表
+      if (rawData['关键结果 Key Results']) {
+        data.keyResults = rawData['关键结果 Key Results'].records.map(r => ({
+          id: r.record_id,
+          name: r.fields['KR描述'] || '',
+          target: r.fields['目标值'] || 0,
+          current: r.fields['当前值'] || 0,
+          weight: r.fields['权重'] || 0,
+          status: r.fields['状态'] || '未开始',
+          objectiveId: r.fields['所属目标']?.[0] || null
+        }));
+      }
+
+      // 转换项目表为产品
+      if (rawData['项目 Projects']) {
+        const projectEmojis = ['📦', '🎯', '🚀', '💡', '🔧', '📱', '🎨', '🛒'];
+        data.products = rawData['项目 Projects'].records.map((r, idx) => ({
+          id: r.record_id,
+          name: r.fields['项目名称'] || '',
+          category: r.fields['项目类型'] || '',
+          image: projectEmojis[idx % projectEmojis.length],
+          currentStage: r.fields['当前阶段'] || '产品调研',
+          progress: r.fields['整体进度'] || 0,
+          status: r.fields['项目状态'] || '进行中',
+          startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
+          targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
+          krId: r.fields['关联KR']?.[0] || null
+        }));
+      }
+
+      // 转换任务表
+      if (rawData['任务 Tasks']) {
+        data.tasks = rawData['任务 Tasks'].records.map(r => ({
+          id: r.record_id,
+          name: r.fields['任务名称'] || '',
+          stage: r.fields['所属阶段'] || '',
+          priority: r.fields['优先级']?.replace('-高优', '').replace('-中等', '').replace('-低优', '').replace('-紧急', '') || 'P2',
+          status: r.fields['状态'] === '待开始' ? '待开始' : r.fields['状态'] || '待开始',
+          productId: r.fields['所属项目']?.[0] || null,
+          assignee: r.fields['负责人']?.[0]?.id || null,
+          dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
+        }));
+      }
+
+      // 转换团队成员表
+      if (rawData['团队成员 Team Members']) {
+        const memberColors = ['bg-blue-500', 'bg-pink-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'];
+        const memberAvatars = ['👨‍💼', '👩‍🎨', '👨‍💻', '👩‍📊', '👨‍🔧'];
+        data.members = rawData['团队成员 Team Members'].records.map((r, idx) => ({
+          id: r.fields['飞书用户']?.[0]?.id || r.record_id,
+          name: r.fields['姓名'] || '',
+          department: r.fields['部门'] || '',
+          position: r.fields['职位'] || '',
+          avatar: memberAvatars[idx % memberAvatars.length],
+          color: memberColors[idx % memberColors.length]
+        }));
+      }
+
+      // 转换流程节点表
+      if (rawData['流程节点 Process Nodes']) {
+        data.processNodes = rawData['流程节点 Process Nodes'].records
+          .map(r => ({
+            id: r.record_id,
+            name: r.fields['节点名称'] || '',
+            order: r.fields['节点顺序'] || 0,
+            type: r.fields['节点类型'] || '',
+            days: r.fields['预计工时(天)'] || 0,
+            role: r.fields['默认负责角色'] || ''
+          }))
+          .sort((a, b) => a.order - b.order);
+      }
+
+      // 如果没有流程节点数据，使用默认值
+      if (data.processNodes.length === 0) {
+        data.processNodes = [
+          { id: 'node1', name: '产品调研', order: 1, days: 14, role: '产品经理' },
+          { id: 'node2', name: '产品设计', order: 2, days: 10, role: '产品经理' },
+          { id: 'node3', name: 'UI设计', order: 3, days: 10, role: '设计师' },
+          { id: 'node4', name: '产品宣讲', order: 4, days: 3, role: '产品经理' },
+          { id: 'node5', name: '开发', order: 5, days: 30, role: '开发' },
+          { id: 'node6', name: '测试', order: 6, days: 14, role: '测试' },
+          { id: 'node7', name: '上线', order: 7, days: 3, role: '运营' }
+        ];
+      }
+
+      return data;
+    };
+
+    // 获取节点状态
+    const getNodeStatus = (nodeName, currentStage, nodes) => {
+      const currentIndex = nodes.findIndex(n => n.name === currentStage);
+      const nodeIndex = nodes.findIndex(n => n.name === nodeName);
+      if (nodeIndex < currentIndex) return 'completed';
+      if (nodeIndex === currentIndex) return 'current';
+      return 'pending';
+    };
+
+    // 加载中组件
+    const LoadingScreen = () => (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full loading-spinner mx-auto mb-4"></div>
+          <div className="text-gray-600">正在从飞书加载数据...</div>
+        </div>
+      </div>
+    );
+
+    // 错误组件
+    const ErrorScreen = ({ error, onRetry }) => (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="text-6xl mb-4">😕</div>
+          <div className="text-xl font-semibold text-gray-800 mb-2">加载失败</div>
+          <div className="text-gray-500 mb-4">{error}</div>
+          <button 
+            onClick={onRetry}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+
+    // 迷你阶段指示器
+    const MiniStageIndicator = ({ currentStage, nodes }) => (
+      <div className="flex items-center gap-1">
+        {nodes.map((node, index) => {
+          const status = getNodeStatus(node.name, currentStage, nodes);
+          return (
+            <div key={node.id} className="flex items-center">
+              <div 
+                className={`w-2.5 h-2.5 rounded-full ${
+                  status === 'completed' ? 'bg-green-500' :
+                  status === 'current' ? 'bg-blue-500 ring-2 ring-blue-200' :
+                  'bg-gray-200'
+                }`}
+                title={node.name}
+              />
+              {index < nodes.length - 1 && (
+                <div className={`w-3 h-0.5 ${status === 'completed' ? 'bg-green-500' : 'bg-gray-200'}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+
+    // 产品卡片
+    const ProductCard = ({ product, nodes, members, tasks, onClick }) => {
+      const productTasks = tasks.filter(t => t.productId === product.id);
+      const completedTasks = productTasks.filter(t => t.status === '已完成').length;
+      const daysRemaining = product.targetDate 
+        ? Math.ceil((new Date(product.targetDate) - new Date()) / (1000 * 60 * 60 * 24))
+        : null;
+      const isOverdue = daysRemaining !== null && daysRemaining < 0 && product.status !== '已完成';
+
+      return (
+        <div 
+          className={`bg-white rounded-xl card-shadow overflow-hidden cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 ${
+            product.status === '已完成' ? 'border-2 border-green-200' : ''
+          }`}
+          onClick={() => onClick(product)}
+        >
+          <div className={`h-1.5 ${
+            product.status === '已完成' ? 'bg-green-500' :
+            isOverdue ? 'bg-red-500' : 'bg-blue-500'
+          }`} />
+          
+          <div className="p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center text-2xl">
+                {product.image}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-800 truncate">{product.name}</div>
+                <div className="text-xs text-gray-400">{product.category}</div>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded-full ${
+                product.status === '已完成' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+              }`}>
+                {product.status}
+              </span>
+            </div>
+
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-gray-500">当前阶段</span>
+                <span className="text-sm font-medium text-blue-600">{product.currentStage}</span>
+              </div>
+              <MiniStageIndicator currentStage={product.currentStage} nodes={nodes} />
+            </div>
+
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">整体进度</span>
+                <span className="text-sm font-medium text-gray-800">{product.progress}%</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all ${
+                    product.progress === 100 ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${product.progress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+              <div className="text-xs text-gray-500">
+                任务 {completedTasks}/{productTasks.length}
+              </div>
+              <div className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                {product.status === '已完成' ? (
+                  <span className="text-green-600">✓ 已上线</span>
+                ) : daysRemaining !== null ? (
+                  isOverdue ? `⚠️ 逾期 ${Math.abs(daysRemaining)} 天` : `📅 剩余 ${daysRemaining} 天`
+                ) : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // 产品详情弹窗
+    const ProductDetailModal = ({ product, nodes, members, tasks, onClose }) => {
+      if (!product) return null;
+      const productTasks = tasks.filter(t => t.productId === product.id);
+
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center text-4xl">
+                    {product.image}
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">{product.name}</h2>
+                    <div className="text-white/80 text-sm">{product.category}</div>
+                  </div>
+                </div>
+                <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">×</button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold text-blue-600">{product.progress}%</div>
+                  <div className="text-sm text-gray-500">整体进度</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold text-green-600">
+                    {productTasks.filter(t => t.status === '已完成').length}
+                  </div>
+                  <div className="text-sm text-gray-500">已完成</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold text-orange-600">
+                    {productTasks.filter(t => t.status === '进行中').length}
+                  </div>
+                  <div className="text-sm text-gray-500">进行中</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold text-gray-600">
+                    {productTasks.filter(t => t.status === '待开始').length}
+                  </div>
+                  <div className="text-sm text-gray-500">待开始</div>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="flex items-center justify-between">
+                    {nodes.map((node, index) => {
+                      const status = getNodeStatus(node.name, product.currentStage, nodes);
+                      return (
+                        <div key={node.id} className="flex items-center flex-1">
+                          <div className="flex flex-col items-center flex-1">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${
+                              status === 'completed' ? 'bg-green-500 text-white' :
+                              status === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
+                              'bg-gray-200 text-gray-400'
+                            }`}>
+                              {status === 'completed' ? '✓' : node.order}
+                            </div>
+                            <div className={`text-xs mt-2 text-center ${
+                              status === 'current' ? 'text-blue-600 font-medium' :
+                              status === 'completed' ? 'text-green-600' : 'text-gray-400'
+                            }`}>
+                              {node.name}
+                            </div>
+                          </div>
+                          {index < nodes.length - 1 && (
+                            <div className={`h-1 flex-1 mx-1 ${
+                              status === 'completed' ? 'bg-green-500' : 'bg-gray-200'
+                            }`} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">✅ 任务列表</h3>
+                <div className="space-y-2">
+                  {productTasks.map(task => {
+                    const assignee = members.find(m => m.id === task.assignee);
+                    return (
+                      <div key={task.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                          task.status === '已完成' ? 'bg-green-500 text-white' :
+                          task.status === '进行中' ? 'bg-blue-500 text-white' :
+                          'bg-gray-300 text-gray-600'
+                        }`}>
+                          {task.status === '已完成' ? '✓' : task.status === '进行中' ? '●' : '○'}
+                        </div>
+                        <div className="flex-1">
+                          <div className={`font-medium ${task.status === '已完成' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                            {task.name}
+                          </div>
+                          <div className="text-xs text-gray-400">{task.stage} · {task.dueDate}</div>
+                        </div>
+                        {assignee && (
+                          <span className={`w-6 h-6 ${assignee.color} rounded-full flex items-center justify-center text-xs text-white`}>
+                            {assignee.avatar}
+                          </span>
+                        )}
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          task.priority === 'P1' ? 'bg-red-100 text-red-600' :
+                          task.priority === 'P2' ? 'bg-yellow-100 text-yellow-600' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {task.priority}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {productTasks.length === 0 && (
+                    <div className="text-center text-gray-400 py-4">暂无任务</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // 产品总览
+    const ProductOverview = ({ products, nodes, members, tasks }) => {
+      const [selectedProduct, setSelectedProduct] = useState(null);
+      const [filterStatus, setFilterStatus] = useState('all');
+      const [viewMode, setViewMode] = useState('grid');
+
+      const filteredProducts = filterStatus === 'all'
+        ? products
+        : products.filter(p => p.status === filterStatus);
+
+      const productsByStage = nodes.reduce((acc, node) => {
+        acc[node.name] = products.filter(p => p.currentStage === node.name);
+        return acc;
+      }, {});
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex gap-2">
+              {['all', '进行中', '已完成'].map(status => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    filterStatus === status ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {status === 'all' ? '全部产品' : status}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                  viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
+                }`}
+              >
+                卡片
+              </button>
+              <button
+                onClick={() => setViewMode('pipeline')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                  viewMode === 'pipeline' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
+                }`}
+              >
+                管道
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredProducts.map(product => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  nodes={nodes}
+                  members={members}
+                  tasks={tasks}
+                  onClick={setSelectedProduct}
+                />
+              ))}
+              {filteredProducts.length === 0 && (
+                <div className="col-span-full text-center text-gray-400 py-12">暂无产品数据</div>
+              )}
+            </div>
+          )}
+
+          {viewMode === 'pipeline' && (
+            <div className="overflow-x-auto pb-4">
+              <div className="flex gap-4 min-w-max">
+                {nodes.map(node => (
+                  <div key={node.id} className="w-64 flex-shrink-0">
+                    <div className="bg-gray-100 rounded-t-xl px-4 py-3 flex items-center justify-between">
+                      <span className="font-medium text-gray-700">{node.name}</span>
+                      <span className="bg-white text-gray-500 text-sm px-2 py-0.5 rounded-full">
+                        {productsByStage[node.name]?.length || 0}
+                      </span>
+                    </div>
+                    <div className="bg-gray-50 rounded-b-xl p-3 min-h-[300px] space-y-3">
+                      {productsByStage[node.name]?.map(product => (
+                        <div
+                          key={product.id}
+                          className="bg-white rounded-lg p-3 card-shadow cursor-pointer hover:shadow-md"
+                          onClick={() => setSelectedProduct(product)}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xl">{product.image}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-800 text-sm truncate">{product.name}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="h-1.5 flex-1 bg-gray-100 rounded-full overflow-hidden mr-2">
+                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${product.progress}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500">{product.progress}%</span>
+                          </div>
+                        </div>
+                      ))}
+                      {(!productsByStage[node.name] || productsByStage[node.name].length === 0) && (
+                        <div className="text-center text-gray-400 text-sm py-8">暂无产品</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedProduct && (
+            <ProductDetailModal
+              product={selectedProduct}
+              nodes={nodes}
+              members={members}
+              tasks={tasks}
+              onClose={() => setSelectedProduct(null)}
+            />
+          )}
+        </div>
+      );
+    };
+
+    // 人员任务卡片
+    const MemberTaskCard = ({ member, tasks, products }) => {
+      const memberTasks = tasks.filter(t => t.assignee === member.id);
+      const completedCount = memberTasks.filter(t => t.status === '已完成').length;
+      const completionRate = memberTasks.length > 0 ? Math.round((completedCount / memberTasks.length) * 100) : 0;
+
+      return (
+        <div className="bg-white rounded-xl card-shadow overflow-hidden">
+          <div className={`${member.color} p-4 text-white`}>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">
+                {member.avatar}
+              </div>
+              <div>
+                <div className="font-bold text-lg">{member.name}</div>
+                <div className="text-white/80 text-sm">{member.position}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 divide-x border-b">
+            <div className="p-3 text-center">
+              <div className="text-xl font-bold text-gray-800">{memberTasks.length}</div>
+              <div className="text-xs text-gray-500">总任务</div>
+            </div>
+            <div className="p-3 text-center">
+              <div className="text-xl font-bold text-blue-600">
+                {memberTasks.filter(t => t.status === '进行中').length}
+              </div>
+              <div className="text-xs text-gray-500">进行中</div>
+            </div>
+            <div className="p-3 text-center">
+              <div className="text-xl font-bold text-green-600">{completedCount}</div>
+              <div className="text-xs text-gray-500">已完成</div>
+            </div>
+          </div>
+
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between text-sm mb-1">
+              <span className="text-gray-500">完成率</span>
+              <span className="font-medium">{completionRate}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full ${member.color} rounded-full`} style={{ width: `${completionRate}%` }} />
+            </div>
+          </div>
+
+          <div className="p-4 max-h-48 overflow-y-auto border-t">
+            {memberTasks.slice(0, 5).map(task => {
+              const product = products.find(p => p.id === task.productId);
+              return (
+                <div key={task.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-800 truncate">{task.name}</div>
+                    <div className="text-xs text-gray-400">{product?.name}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded ml-2 ${
+                    task.status === '已完成' ? 'bg-green-100 text-green-600' :
+                    task.status === '进行中' ? 'bg-blue-100 text-blue-600' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>
+                    {task.status}
+                  </span>
+                </div>
+              );
+            })}
+            {memberTasks.length === 0 && (
+              <div className="text-center text-gray-400 py-4">暂无任务</div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // 统计卡片
+    const StatCard = ({ title, value, subtitle, color, icon }) => (
+      <div className="bg-white rounded-xl p-5 card-shadow">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-gray-500">{title}</div>
+            <div className={`text-3xl font-bold ${color} mt-1`}>{value}</div>
+            {subtitle && <div className="text-xs text-gray-400 mt-1">{subtitle}</div>}
+          </div>
+          <div className="text-3xl">{icon}</div>
+        </div>
+      </div>
+    );
+
+    // 主应用
+    const App = () => {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [activeTab, setActiveTab] = useState('products');
+      const [lastUpdate, setLastUpdate] = useState(null);
+
+      const fetchData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await fetch(`${API_BASE}/api/lark?app_token=${APP_TOKEN}`);
+          const json = await res.json();
+          
+          if (json.success) {
+            const transformed = transformData(json.data);
+            setData(transformed);
+            setLastUpdate(new Date().toLocaleTimeString());
+          } else {
+            throw new Error(json.error || '数据加载失败');
+          }
+        } catch (err) {
+          setError(err.message);
+          // 如果 API 失败，使用示例数据
+          setData({
+            objectives: [{ id: 'obj1', name: 'Q2完成新品5款上线', progress: 35, status: '进行中' }],
+            keyResults: [],
+            products: [
+              { id: 'prod1', name: '户外折叠椅', category: '户外家具', image: '🪑', currentStage: '开发', progress: 60, status: '进行中', targetDate: '2025-03-31' }
+            ],
+            tasks: [],
+            members: [
+              { id: 'm1', name: '张明', department: '产品部', position: '产品经理', avatar: '👨‍💼', color: 'bg-blue-500' }
+            ],
+            processNodes: [
+              { id: 'n1', name: '产品调研', order: 1, days: 14 },
+              { id: 'n2', name: '产品设计', order: 2, days: 10 },
+              { id: 'n3', name: 'UI设计', order: 3, days: 10 },
+              { id: 'n4', name: '产品宣讲', order: 4, days: 3 },
+              { id: 'n5', name: '开发', order: 5, days: 30 },
+              { id: 'n6', name: '测试', order: 6, days: 14 },
+              { id: 'n7', name: '上线', order: 7, days: 3 }
+            ]
+          });
+        }
+        setLoading(false);
+      };
+
+      useEffect(() => {
+        fetchData();
+        // 每5分钟自动刷新
+        const interval = setInterval(fetchData, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+      }, []);
+
+      if (loading && !data) return <LoadingScreen />;
+
+      const stats = data ? {
+        totalProducts: data.products.length,
+        completedProducts: data.products.filter(p => p.status === '已完成').length,
+        completedTasks: data.tasks.filter(t => t.status === '已完成').length,
+        totalTasks: data.tasks.length,
+        avgProgress: data.products.length > 0 
+          ? Math.round(data.products.reduce((sum, p) => sum + p.progress, 0) / data.products.length) 
+          : 0,
+        teamMembers: data.members.length
+      } : {};
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="gradient-bg text-white py-6 px-8">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">新品OKR项目管理系统</h1>
+                <p className="text-white/80 mt-1">实时数据 · 飞书同步</p>
+              </div>
+              <div className="flex items-center gap-4">
+                {lastUpdate && (
+                  <span className="text-white/60 text-sm">更新于 {lastUpdate}</span>
+                )}
+                <button 
+                  onClick={fetchData}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm"
+                >
+                  🔄 刷新
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="max-w-7xl mx-auto px-8 py-2">
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+                ⚠️ {error} - 显示示例数据
+              </div>
+            </div>
+          )}
+
+          <div className="max-w-7xl mx-auto px-8 py-6">
+            <div className="grid grid-cols-5 gap-4 mb-6">
+              <StatCard title="产品总数" value={stats.totalProducts} subtitle={`已上线 ${stats.completedProducts}`} color="text-purple-600" icon="📦" />
+              <StatCard title="平均进度" value={`${stats.avgProgress}%`} subtitle="所有产品" color="text-blue-600" icon="📊" />
+              <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} color="text-green-600" icon="✅" />
+              <StatCard title="进行中" value={stats.totalProducts - stats.completedProducts} subtitle="开发中产品" color="text-orange-600" icon="🚀" />
+              <StatCard title="团队成员" value={stats.teamMembers} color="text-pink-600" icon="👥" />
+            </div>
+
+            <div className="flex gap-2 mb-6">
+              {[
+                { key: 'products', label: '📦 产品进度' },
+                { key: 'team', label: '👥 人员任务' }
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activeTab === tab.key ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'products' && data && (
+              <ProductOverview
+                products={data.products}
+                nodes={data.processNodes}
+                members={data.members}
+                tasks={data.tasks}
+              />
+            )}
+
+            {activeTab === 'team' && data && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {data.members.map(member => (
+                  <MemberTaskCard
+                    key={member.id}
+                    member={member}
+                    tasks={data.tasks}
+                    products={data.products}
+                  />
+                ))}
+                {data.members.length === 0 && (
+                  <div className="col-span-full text-center text-gray-400 py-12">暂无团队成员数据</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="text-center py-6 text-gray-400 text-sm">
+            数据来源：飞书多维表格 · 每5分钟自动同步
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

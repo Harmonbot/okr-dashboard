@@ -1,0 +1,13 @@
+{
+  "name": "okr-dashboard",
+  "version": "1.0.0",
+  "description": "新品OKR项目管理系统 - 飞书可视化面板",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["okr", "feishu", "lark", "dashboard"],
+  "author": "",
+  "license": "MIT"
+}
