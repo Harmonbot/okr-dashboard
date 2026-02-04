@@ -77,7 +77,7 @@
           category: r.fields['项目类型'] || '',
           image: projectEmojis[idx % projectEmojis.length],
           currentStage: r.fields['当前阶段'] || '产品调研',
-          progress: r.fields['整体进度'] || 0,
+          progress: Math.min(100, Math.round((r.fields['整体进度'] || 0) * (r.fields['整体进度'] > 1 ? 1 : 100))),
           status: r.fields['项目状态'] || '进行中',
           startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
           targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
