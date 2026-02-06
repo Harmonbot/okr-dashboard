@@ -676,7 +676,7 @@
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
       const [showCompleteForm, setShowCompleteForm] = useState(null); // 显示完成表单的任务ID
-      const [outputFile, setOutputFile] = useState('');
+      const [outputFile, setOutputFile] = useState(null); // 输出文件对象
       const [formData, setFormData] = useState({
         name: '',
         priority: 'P2-中等',
@@ -785,15 +785,45 @@
         setActionTaskId(null);
       };
 
-      // 完成任务：需要填写输出文件
+      // 完成任务：需要上传输出文件
       const handleCompleteTask = async (task) => {
-        if (!outputFile.trim()) {
-          alert('请填写输出文件链接或描述');
+        if (!outputFile) {
+          alert('请上传输出文件');
           return;
         }
         
         setActionTaskId(task.id);
         try {
+          // 将文件转换为 Base64
+          const toBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]); // 去掉 data:xxx;base64, 前缀
+            reader.onerror = error => reject(error);
+          });
+          
+          const fileBase64 = await toBase64(outputFile);
+          
+          // 1. 上传文件到飞书
+          const uploadRes = await fetch(API_BASE + '/api/upload-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblFwmxmjRJPzVmV',
+              record_id: task.id,
+              file_name: outputFile.name,
+              file_data: fileBase64,
+              file_size: outputFile.size
+            })
+          });
+          
+          const uploadResult = await uploadRes.json();
+          if (!uploadResult.success) {
+            throw new Error(uploadResult.error || '文件上传失败');
+          }
+          
+          // 2. 更新任务状态为已完成
           const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -803,7 +833,6 @@
               record_id: task.id,
               fields: {
                 status: '已完成',
-                outputFile: outputFile,
                 completeDate: new Date().toISOString().split('T')[0]
               }
             })
@@ -811,9 +840,9 @@
           
           const result = await res.json();
           if (result.success) {
-            alert('✅ 任务已完成！');
+            alert('✅ 任务已完成！文件已上传。');
             setShowCompleteForm(null);
-            setOutputFile('');
+            setOutputFile(null);
             if (onTaskCreated) onTaskCreated();
           } else {
             throw new Error(result.error || '操作失败');
@@ -1083,27 +1112,38 @@
                               {task.status === '进行中' && (
                                 <>
                                   {showCompleteForm === task.id ? (
-                                    <div className="flex-1 flex gap-2">
-                                      <input
-                                        type="text"
-                                        value={outputFile}
-                                        onChange={e => setOutputFile(e.target.value)}
-                                        placeholder="输入输出文件链接..."
-                                        className="flex-1 px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-green-300 outline-none"
-                                      />
-                                      <button
-                                        onClick={() => handleCompleteTask(task)}
-                                        disabled={isActioning}
-                                        className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded transition-colors disabled:opacity-50"
-                                      >
-                                        {isActioning ? '...' : '✓'}
-                                      </button>
-                                      <button
-                                        onClick={() => { setShowCompleteForm(null); setOutputFile(''); }}
-                                        className="px-2 py-1 bg-gray-300 hover:bg-gray-400 text-gray-700 text-xs rounded transition-colors"
-                                      >
-                                        ✕
-                                      </button>
+                                    <div className="flex-1 flex flex-col gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <label className="flex-1 flex items-center gap-2 px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors">
+                                          <span className="text-gray-400">📎</span>
+                                          <span className="text-xs text-gray-500 truncate">
+                                            {outputFile ? outputFile.name : '点击选择文件...'}
+                                          </span>
+                                          <input
+                                            type="file"
+                                            onChange={e => setOutputFile(e.target.files[0] || null)}
+                                            className="hidden"
+                                          />
+                                        </label>
+                                        <button
+                                          onClick={() => handleCompleteTask(task)}
+                                          disabled={isActioning || !outputFile}
+                                          className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isActioning ? '上传中...' : '✓ 提交'}
+                                        </button>
+                                        <button
+                                          onClick={() => { setShowCompleteForm(null); setOutputFile(null); }}
+                                          className="px-2 py-2 bg-gray-200 hover:bg-gray-300 text-gray-600 text-xs rounded-lg transition-colors"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                      {outputFile && (
+                                        <div className="text-xs text-green-600">
+                                          ✓ 已选择: {outputFile.name} ({(outputFile.size / 1024).toFixed(1)} KB)
+                                        </div>
+                                      )}
                                     </div>
                                   ) : (
                                     <button
