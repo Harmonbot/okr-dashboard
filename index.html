@@ -171,6 +171,7 @@
             productId: productId,
             assignee: r.fields['负责人']?.[0]?.id || null,
             assigneeName: r.fields['负责人']?.[0]?.name || '',
+            startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
           };
         });
@@ -404,6 +405,259 @@
                   isOverdue ? `⚠️ 逾期 ${Math.abs(daysRemaining)} 天` : `📅 剩余 ${daysRemaining} 天`
                 ) : ''}
               </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // 甘特图组件
+    const GanttChart = ({ tasks, members, product }) => {
+      // 计算时间范围
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // 获取所有有效日期
+      const allDates = [];
+      tasks.forEach(t => {
+        if (t.startDate) allDates.push(new Date(t.startDate));
+        if (t.dueDate) allDates.push(new Date(t.dueDate));
+      });
+      
+      // 如果没有日期数据，使用项目日期或默认范围
+      if (allDates.length === 0) {
+        if (product.startDate) allDates.push(new Date(product.startDate));
+        if (product.targetDate) allDates.push(new Date(product.targetDate));
+      }
+      
+      // 默认显示前后各2周
+      if (allDates.length === 0) {
+        allDates.push(new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000));
+        allDates.push(new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000));
+      }
+      
+      const minDate = new Date(Math.min(...allDates.map(d => d.getTime())) - 7 * 24 * 60 * 60 * 1000);
+      const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())) + 7 * 24 * 60 * 60 * 1000);
+      
+      // 确保包含今天
+      if (today < minDate) minDate.setTime(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (today > maxDate) maxDate.setTime(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      
+      const totalDays = Math.ceil((maxDate - minDate) / (24 * 60 * 60 * 1000));
+      const dayWidth = Math.max(30, 800 / totalDays); // 每天至少30px
+      
+      // 生成日期刻度
+      const dateMarkers = [];
+      const currentDate = new Date(minDate);
+      while (currentDate <= maxDate) {
+        dateMarkers.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      // 计算今天的位置
+      const todayOffset = Math.max(0, (today - minDate) / (24 * 60 * 60 * 1000)) * dayWidth;
+      
+      // 格式化日期
+      const formatDate = (date) => {
+        const d = new Date(date);
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      };
+      
+      // 获取星期几
+      const getWeekday = (date) => {
+        const days = ['日', '一', '二', '三', '四', '五', '六'];
+        return days[new Date(date).getDay()];
+      };
+      
+      // 判断是否是周末
+      const isWeekend = (date) => {
+        const day = new Date(date).getDay();
+        return day === 0 || day === 6;
+      };
+
+      return (
+        <div className="bg-gray-50 rounded-xl overflow-hidden">
+          {/* 图例 */}
+          <div className="flex gap-4 px-4 py-2 bg-white border-b text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded bg-green-500"></span> 已完成
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded bg-blue-500"></span> 进行中
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded bg-gray-300"></span> 待开始
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-0.5 h-3 bg-red-500"></span> 今天
+            </span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: `${totalDays * dayWidth + 200}px` }}>
+              {/* 时间轴头部 */}
+              <div className="flex border-b bg-white sticky top-0">
+                <div className="w-48 flex-shrink-0 px-3 py-2 font-medium text-gray-600 border-r bg-gray-50">
+                  任务名称
+                </div>
+                <div className="flex-1 relative">
+                  <div className="flex">
+                    {dateMarkers.map((date, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`text-center border-r ${isWeekend(date) ? 'bg-gray-100' : 'bg-white'}`}
+                        style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                      >
+                        <div className="text-xs text-gray-400 py-1">
+                          {formatDate(date)}
+                        </div>
+                        <div className={`text-xs pb-1 ${isWeekend(date) ? 'text-red-400' : 'text-gray-300'}`}>
+                          {getWeekday(date)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* 今天的标记线 */}
+                  <div 
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                    style={{ left: `${todayOffset}px` }}
+                  />
+                </div>
+              </div>
+              
+              {/* 任务行 */}
+              {tasks.map((task, taskIdx) => {
+                const assignee = members.find(m => m.id === task.assignee || m.name === task.assigneeName);
+                
+                // 计算任务条的位置和宽度
+                let taskStart = task.startDate ? new Date(task.startDate) : null;
+                let taskEnd = task.dueDate ? new Date(task.dueDate) : null;
+                
+                // 如果没有开始日期，使用截止日期前7天
+                if (!taskStart && taskEnd) {
+                  taskStart = new Date(taskEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+                }
+                // 如果没有截止日期，使用开始日期后7天
+                if (taskStart && !taskEnd) {
+                  taskEnd = new Date(taskStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+                }
+                // 如果都没有，显示一个默认条
+                if (!taskStart && !taskEnd) {
+                  taskStart = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+                  taskEnd = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000);
+                }
+                
+                const startOffset = Math.max(0, (taskStart - minDate) / (24 * 60 * 60 * 1000)) * dayWidth;
+                const duration = Math.max(1, (taskEnd - taskStart) / (24 * 60 * 60 * 1000) + 1);
+                const barWidth = duration * dayWidth;
+                
+                // 任务条颜色
+                const barColor = task.status === '已完成' ? 'bg-green-500' :
+                                 task.status === '进行中' ? 'bg-blue-500' :
+                                 'bg-gray-300';
+                
+                // 判断是否逾期
+                const isOverdue = task.status !== '已完成' && taskEnd && taskEnd < today;
+
+                return (
+                  <div key={task.id} className={`flex border-b hover:bg-blue-50/50 ${taskIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                    {/* 任务名称 */}
+                    <div className="w-48 flex-shrink-0 px-3 py-2 border-r flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
+                        task.status === '已完成' ? 'bg-green-500 text-white' :
+                        task.status === '进行中' ? 'bg-blue-500 text-white' :
+                        'bg-gray-200 text-gray-500'
+                      }`}>
+                        {task.status === '已完成' ? '✓' : task.status === '进行中' ? '●' : '○'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm truncate ${task.status === '已完成' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                          {task.name}
+                        </div>
+                        <div className="text-xs text-gray-400 truncate">{task.stage}</div>
+                      </div>
+                    </div>
+                    
+                    {/* 甘特条 */}
+                    <div className="flex-1 relative py-2">
+                      {/* 背景网格 */}
+                      <div className="absolute inset-0 flex">
+                        {dateMarkers.map((date, idx) => (
+                          <div 
+                            key={idx}
+                            className={`border-r ${isWeekend(date) ? 'bg-gray-100/50' : ''}`}
+                            style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                          />
+                        ))}
+                      </div>
+                      
+                      {/* 今天的标记线 */}
+                      <div 
+                        className="absolute top-0 bottom-0 w-0.5 bg-red-500/30 z-10"
+                        style={{ left: `${todayOffset}px` }}
+                      />
+                      
+                      {/* 任务条 */}
+                      <div 
+                        className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-full ${barColor} ${isOverdue ? 'ring-2 ring-red-400' : ''} shadow-sm flex items-center px-2 text-xs text-white font-medium overflow-hidden z-20 cursor-pointer hover:brightness-110 transition-all`}
+                        style={{ 
+                          left: `${startOffset}px`, 
+                          width: `${Math.max(barWidth, 60)}px`
+                        }}
+                        title={`${task.name}\n${task.startDate || '未设置'} ~ ${task.dueDate || '未设置'}\n状态: ${task.status}`}
+                      >
+                        {assignee && (
+                          <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-xs mr-1 flex-shrink-0">
+                            {assignee.avatar}
+                          </span>
+                        )}
+                        <span className="truncate">{barWidth > 80 ? task.name : ''}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {/* 项目里程碑 */}
+              {product.targetDate && (
+                <div className="flex border-b bg-purple-50/50">
+                  <div className="w-48 flex-shrink-0 px-3 py-2 border-r flex items-center gap-2">
+                    <div className="w-5 h-5 rounded flex items-center justify-center text-xs bg-purple-500 text-white">
+                      🎯
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-purple-700">计划上线</div>
+                      <div className="text-xs text-purple-500">{product.targetDate}</div>
+                    </div>
+                  </div>
+                  <div className="flex-1 relative py-2">
+                    {/* 背景网格 */}
+                    <div className="absolute inset-0 flex">
+                      {dateMarkers.map((date, idx) => (
+                        <div 
+                          key={idx}
+                          className={`border-r ${isWeekend(date) ? 'bg-gray-100/50' : ''}`}
+                          style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                        />
+                      ))}
+                    </div>
+                    {/* 里程碑标记 */}
+                    {(() => {
+                      const targetDate = new Date(product.targetDate);
+                      const offset = Math.max(0, (targetDate - minDate) / (24 * 60 * 60 * 1000)) * dayWidth;
+                      return (
+                        <div 
+                          className="absolute top-1/2 -translate-y-1/2 z-20"
+                          style={{ left: `${offset}px` }}
+                        >
+                          <div className="w-6 h-6 bg-purple-500 rotate-45 transform -translate-x-1/2"></div>
+                          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-0.5 h-10 bg-purple-500"></div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -839,44 +1093,14 @@
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">✅ 任务列表</h3>
-                <div className="space-y-2">
-                  {productTasks.map(task => {
-                    const assignee = members.find(m => m.id === task.assignee);
-                    return (
-                      <div key={task.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                          task.status === '已完成' ? 'bg-green-500 text-white' :
-                          task.status === '进行中' ? 'bg-blue-500 text-white' :
-                          'bg-gray-300 text-gray-600'
-                        }`}>
-                          {task.status === '已完成' ? '✓' : task.status === '进行中' ? '●' : '○'}
-                        </div>
-                        <div className="flex-1">
-                          <div className={`font-medium ${task.status === '已完成' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                            {task.name}
-                          </div>
-                          <div className="text-xs text-gray-400">{task.stage} · {task.dueDate}</div>
-                        </div>
-                        {assignee && (
-                          <span className={`w-6 h-6 ${assignee.color} rounded-full flex items-center justify-center text-xs text-white`}>
-                            {assignee.avatar}
-                          </span>
-                        )}
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          task.priority === 'P1' ? 'bg-red-100 text-red-600' :
-                          task.priority === 'P2' ? 'bg-yellow-100 text-yellow-600' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {task.priority}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {productTasks.length === 0 && (
-                    <div className="text-center text-gray-400 py-4">暂无任务</div>
-                  )}
-                </div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">📅 项目甘特图</h3>
+                {productTasks.length > 0 ? (
+                  <GanttChart tasks={productTasks} members={members} product={product} />
+                ) : (
+                  <div className="text-center text-gray-400 py-8 bg-gray-50 rounded-xl">
+                    暂无任务数据
+                  </div>
+                )}
               </div>
             </div>
           </div>
