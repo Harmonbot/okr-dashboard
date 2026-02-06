@@ -113,16 +113,44 @@
         }
         console.log('节点映射表:', nodeRecordMap);
         
+        // 打印第一条任务的完整原始数据
+        if (rawData['任务 Tasks'].records.length > 0) {
+          console.log('=== 第一条任务的原始数据 ===');
+          console.log(JSON.stringify(rawData['任务 Tasks'].records[0], null, 2));
+        }
+        
         data.tasks = rawData['任务 Tasks'].records.map(r => {
           // 优先使用「所属节点」关联字段
           let stage = '';
           const linkedNode = r.fields['所属节点'];
-          console.log('任务:', r.fields['任务名称'], '所属节点字段:', linkedNode);
+          console.log('任务:', r.fields['任务名称'], '所属节点字段:', linkedNode, '类型:', typeof linkedNode);
           
-          if (linkedNode && linkedNode.link_record_ids && linkedNode.link_record_ids.length > 0) {
-            const nodeRecordId = linkedNode.link_record_ids[0];
-            stage = nodeRecordMap[nodeRecordId] || '';
-            console.log('  -> 节点ID:', nodeRecordId, '-> 节点名称:', stage);
+          // 尝试多种格式解析
+          if (linkedNode) {
+            if (linkedNode.link_record_ids && linkedNode.link_record_ids.length > 0) {
+              // 格式1: {link_record_ids: [...]}
+              const nodeRecordId = linkedNode.link_record_ids[0];
+              stage = nodeRecordMap[nodeRecordId] || '';
+              console.log('  -> 格式1 解析成功, 节点ID:', nodeRecordId, '-> 节点名称:', stage);
+            } else if (Array.isArray(linkedNode) && linkedNode.length > 0) {
+              // 格式2: 直接是数组 [record_id] 或 [{link_record_ids: [...]}]
+              const firstItem = linkedNode[0];
+              if (typeof firstItem === 'string') {
+                stage = nodeRecordMap[firstItem] || '';
+                console.log('  -> 格式2a 解析成功, 节点ID:', firstItem, '-> 节点名称:', stage);
+              } else if (firstItem && firstItem.link_record_ids) {
+                const nodeRecordId = firstItem.link_record_ids[0];
+                stage = nodeRecordMap[nodeRecordId] || '';
+                console.log('  -> 格式2b 解析成功, 节点ID:', nodeRecordId, '-> 节点名称:', stage);
+              } else if (firstItem && firstItem.record_id) {
+                stage = nodeRecordMap[firstItem.record_id] || '';
+                console.log('  -> 格式2c 解析成功, 节点ID:', firstItem.record_id, '-> 节点名称:', stage);
+              }
+            } else if (typeof linkedNode === 'string') {
+              // 格式3: 直接是 record_id 字符串
+              stage = nodeRecordMap[linkedNode] || '';
+              console.log('  -> 格式3 解析成功, 节点ID:', linkedNode, '-> 节点名称:', stage);
+            }
           }
           
           // 如果没有设置所属节点，回退到旧的「所属阶段」单选字段
@@ -137,13 +165,33 @@
             taskName = taskName.map(n => n.text || n).join('');
           }
           
+          // 解析所属项目 - 尝试多种格式
+          let productId = null;
+          const projectField = r.fields['所属项目'];
+          if (projectField) {
+            if (projectField.link_record_ids && projectField.link_record_ids.length > 0) {
+              productId = projectField.link_record_ids[0];
+            } else if (Array.isArray(projectField) && projectField.length > 0) {
+              const firstItem = projectField[0];
+              if (typeof firstItem === 'string') {
+                productId = firstItem;
+              } else if (firstItem && firstItem.link_record_ids) {
+                productId = firstItem.link_record_ids[0];
+              } else if (firstItem && firstItem.record_id) {
+                productId = firstItem.record_id;
+              }
+            } else if (typeof projectField === 'string') {
+              productId = projectField;
+            }
+          }
+          
           const task = {
             id: r.record_id,
             name: taskName,
             stage: stage,
             priority: (r.fields['优先级'] || 'P2').replace(/-.*$/, ''),
             status: r.fields['状态'] || '待开始',
-            productId: r.fields['所属项目']?.link_record_ids?.[0] || null,
+            productId: productId,
             assignee: r.fields['负责人']?.[0]?.id || null,
             assigneeName: r.fields['负责人']?.[0]?.name || '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
