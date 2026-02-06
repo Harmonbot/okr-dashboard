@@ -347,7 +347,7 @@
       );
     };
 
-    // 产品详情弹窗 - 支持DAG流程图
+    // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）
     const ProductDetailModal = ({ product, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onClose }) => {
       if (!product) return null;
       const productTasks = tasks.filter(t => t.productId === product.id);
@@ -360,16 +360,12 @@
         const targetNode = nodeMap[nodeName];
         
         if (!currentNode || !targetNode) return 'pending';
-        
         if (nodeName === product.currentStage) return 'current';
         
-        // 检查是否已完成（通过层级和依赖关系判断）
         const currentLayer = nodeToLayer[product.currentStage] || 0;
         const targetLayer = nodeToLayer[nodeName] || 0;
         
         if (targetLayer < currentLayer) return 'completed';
-        
-        // 检查是否在当前阶段的依赖链上
         if (targetLayer === currentLayer && targetNode.order < currentNode.order) {
           return 'completed';
         }
@@ -377,18 +373,138 @@
         return 'pending';
       };
 
-      // 检查节点是否有分支
-      const hasBranch = (node) => node.children && node.children.length > 1;
-      const hasChild = (node) => node.children && node.children.length > 0;
+      // 构建流程链（每条链是一个独立的行）
+      const buildFlowChains = () => {
+        if (!nodes || nodes.length === 0) return [];
+        
+        // 找到所有起始节点
+        const startNodes = nodes.filter(n => !n.prevNode);
+        if (startNodes.length === 0) return [];
+        
+        const chains = [];
+        const visited = new Set();
+        
+        // 递归构建链
+        const buildChain = (node, chain = []) => {
+          if (!node || visited.has(node.name)) return;
+          
+          chain.push(node);
+          visited.add(node.name);
+          
+          // 获取后继节点
+          const children = nodes.filter(n => n.prevNode === node.name);
+          
+          if (children.length === 0) {
+            // 链结束
+            chains.push([...chain]);
+          } else if (children.length === 1) {
+            // 单一后继，继续当前链
+            buildChain(children[0], chain);
+          } else {
+            // 多个后继（分支点），为每个后继创建新链
+            // 先保存当前链到分支点
+            const branchPoint = [...chain];
+            
+            children.forEach((child, idx) => {
+              if (idx === 0) {
+                // 第一个子节点继续当前链
+                buildChain(child, chain);
+              } else {
+                // 其他子节点开始新链（包含父节点路径）
+                visited.delete(child.name); // 允许重新访问
+                const newChain = [...branchPoint];
+                buildChain(child, newChain);
+              }
+            });
+          }
+        };
+        
+        // 从每个起始节点开始构建
+        startNodes.forEach(startNode => {
+          buildChain(startNode, []);
+        });
+        
+        return chains;
+      };
 
-      // 使用分层数据或回退
-      const layers = nodeLayers && nodeLayers.length > 0 
-        ? nodeLayers 
-        : [[{ name: '暂无流程', id: 'empty', type: '中间节点' }]];
+      // 使用简化的网格布局
+      const buildGridLayout = () => {
+        if (!nodes || nodes.length === 0) return { grid: [], maxCol: 0 };
+        
+        // 计算每个节点的列位置（基于层级）
+        const nodePositions = {};
+        nodes.forEach(n => {
+          nodePositions[n.name] = {
+            node: n,
+            col: nodeToLayer[n.name] || 0,
+            row: -1
+          };
+        });
+        
+        // 分配行位置
+        // 策略：同一前置节点的子节点占用不同行，但分支延续在同一行
+        let currentRow = 0;
+        const assignRows = (nodeName, row) => {
+          if (nodePositions[nodeName].row !== -1) return;
+          nodePositions[nodeName].row = row;
+          
+          const children = nodes.filter(n => n.prevNode === nodeName);
+          if (children.length === 1) {
+            // 单一后继，同行延续
+            assignRows(children[0].name, row);
+          } else if (children.length > 1) {
+            // 多个后继，分配不同行
+            children.forEach((child, idx) => {
+              if (idx === 0) {
+                assignRows(child.name, row);
+              } else {
+                currentRow++;
+                assignRows(child.name, currentRow);
+              }
+            });
+          }
+        };
+        
+        // 从起始节点开始分配
+        const startNodes = nodes.filter(n => !n.prevNode);
+        startNodes.forEach((startNode, idx) => {
+          if (idx > 0) currentRow++;
+          assignRows(startNode.name, currentRow);
+        });
+        
+        // 找出最大列数和行数
+        const maxCol = Math.max(...Object.values(nodePositions).map(p => p.col)) + 1;
+        const maxRow = Math.max(...Object.values(nodePositions).map(p => p.row)) + 1;
+        
+        // 构建网格
+        const grid = Array(maxRow).fill(null).map(() => Array(maxCol).fill(null));
+        Object.values(nodePositions).forEach(pos => {
+          if (pos.row >= 0 && pos.col >= 0) {
+            grid[pos.row][pos.col] = pos.node;
+          }
+        });
+        
+        return { grid, maxCol, maxRow, nodePositions };
+      };
+
+      const { grid, maxCol, maxRow, nodePositions } = buildGridLayout();
+
+      // 检查是否需要画连接线
+      const shouldDrawLine = (row, col) => {
+        if (col >= maxCol - 1) return false;
+        const currentNode = grid[row][col];
+        const nextNode = grid[row][col + 1];
+        if (!currentNode) return false;
+        // 检查下一列是否有节点是当前节点的后继
+        if (nextNode && nextNode.prevNode === currentNode.name) return true;
+        // 或者当前节点有后继在下一列
+        const hasChildInNextCol = nodes.some(n => n.prevNode === currentNode.name && nodePositions[n.name]?.col === col + 1);
+        return hasChildInNextCol;
+      };
 
       return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -431,61 +547,50 @@
               </div>
 
               <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度 (DAG)</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
                 <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
-                  <div className="flex items-start gap-3 min-w-max">
-                    {layers.map((layer, layerIndex) => (
-                      <div key={layerIndex} className="flex items-center">
-                        {/* 一层中的节点竖向排列 */}
-                        <div className="flex flex-col gap-2">
-                          {layer.map((node, nodeIndex) => {
-                            const status = getNodeStatus(node.name);
-                            const nodeData = nodeMap ? nodeMap[node.name] : node;
-                            const isParallel = layer.length > 1;
-                            const isBranch = nodeData && nodeData.prevNode && 
-                              layers[layerIndex - 1]?.some(n => n.children && n.children.includes(node.name) && n.children.length > 1);
-                            
-                            return (
-                              <div key={node.id} className="flex items-center gap-2">
-                                {/* 节点本身 */}
-                                <div className="flex flex-col items-center">
-                                  <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                                    status === 'completed' ? 'bg-green-500 text-white' :
-                                    status === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200 scale-110' :
+                  <div className="min-w-max">
+                    {/* 网格布局 */}
+                    {grid.map((row, rowIndex) => (
+                      <div key={rowIndex} className="flex items-center mb-3 last:mb-0">
+                        {row.map((node, colIndex) => (
+                          <div key={colIndex} className="flex items-center">
+                            {/* 节点单元格 */}
+                            <div className="w-24 flex flex-col items-center">
+                              {node ? (
+                                <>
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                                    getNodeStatus(node.name) === 'completed' ? 'bg-green-500 text-white' :
+                                    getNodeStatus(node.name) === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
                                     'bg-gray-200 text-gray-400'
                                   }`}>
-                                    {status === 'completed' ? '✓' : node.order || layerIndex + 1}
+                                    {getNodeStatus(node.name) === 'completed' ? '✓' : node.order}
                                   </div>
-                                  <div className={`text-xs mt-1.5 text-center max-w-20 leading-tight ${
-                                    status === 'current' ? 'text-blue-600 font-semibold' :
-                                    status === 'completed' ? 'text-green-600' : 'text-gray-400'
+                                  <div className={`text-xs mt-1 text-center leading-tight ${
+                                    getNodeStatus(node.name) === 'current' ? 'text-blue-600 font-semibold' :
+                                    getNodeStatus(node.name) === 'completed' ? 'text-green-600' : 'text-gray-500'
                                   }`}>
                                     {node.name}
                                   </div>
-                                  {/* 节点类型标签 */}
-                                  {isParallel && (
-                                    <div className="text-xs text-purple-500 mt-0.5">并行</div>
-                                  )}
-                                  {isBranch && !isParallel && (
-                                    <div className="text-xs text-orange-500 mt-0.5">分支</div>
-                                  )}
-                                  {/* 显示前置节点 */}
-                                  {nodeData && nodeData.prevNode && (
-                                    <div className="text-xs text-gray-400 mt-0.5">← {nodeData.prevNode}</div>
-                                  )}
-                                </div>
+                                </>
+                              ) : (
+                                <div className="w-10 h-10"></div>
+                              )}
+                            </div>
+                            {/* 连接线 */}
+                            {colIndex < maxCol - 1 && (
+                              <div className="w-8 flex items-center justify-center">
+                                {node && shouldDrawLine(rowIndex, colIndex) ? (
+                                  <div className={`w-full h-0.5 ${
+                                    getNodeStatus(node.name) === 'completed' ? 'bg-green-400' : 'bg-gray-300'
+                                  }`}></div>
+                                ) : (
+                                  <div className="w-full h-0.5 bg-transparent"></div>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-                        {/* 层与层之间的连接线 */}
-                        {layerIndex < layers.length - 1 && (
-                          <div className="flex flex-col justify-center mx-2">
-                            <div className={`w-8 h-0.5 ${
-                              layer.every(n => getNodeStatus(n.name) === 'completed') ? 'bg-green-400' : 'bg-gray-300'
-                            }`} />
+                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -502,8 +607,6 @@
                   <span className="flex items-center gap-1">
                     <span className="w-3 h-3 rounded-full bg-gray-200"></span> 待开始
                   </span>
-                  <span className="flex items-center gap-1 text-purple-500">并行</span>
-                  <span className="flex items-center gap-1 text-orange-500">分支</span>
                 </div>
               </div>
 
