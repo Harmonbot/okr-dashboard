@@ -24,15 +24,13 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // API 配置 - 部署后修改为你的 Vercel 域名
     const API_BASE = window.location.hostname === 'localhost' 
       ? 'http://localhost:3000' 
       : '';
 
-    // 飞书多维表格 app_token
     const APP_TOKEN = 'N5OqbwkO1a2PbpsaM05ckGrMnxg';
 
-    // 数据转换函数 - 将飞书数据格式转换为前端需要的格式
+    // 数据转换函数
     const transformData = (rawData) => {
       const data = {
         objectives: [],
@@ -40,7 +38,8 @@
         products: [],
         tasks: [],
         members: [],
-        processNodes: []
+        processNodes: [],
+        groups: [] // 新增：组别列表
       };
 
       // 转换目标表
@@ -71,18 +70,29 @@
       // 转换项目表为产品
       if (rawData['项目 Projects']) {
         const projectEmojis = ['📦', '🎯', '🚀', '💡', '🔧', '📱', '🎨', '🛒'];
-        data.products = rawData['项目 Projects'].records.map((r, idx) => ({
-          id: r.record_id,
-          name: r.fields['项目名称'] || '',
-          category: r.fields['项目类型'] || '',
-          image: projectEmojis[idx % projectEmojis.length],
-          currentStage: r.fields['当前阶段'] || '产品调研',
-          progress: Math.min(100, Math.round((r.fields['整体进度'] || 0) * (r.fields['整体进度'] > 1 ? 1 : 100))),
-          status: r.fields['项目状态'] || '进行中',
-          startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
-          targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
-          krId: r.fields['关联KR']?.[0] || null
-        }));
+        data.products = rawData['项目 Projects'].records.map((r, idx) => {
+          // 修复进度计算
+          let progress = r.fields['整体进度'] || 0;
+          if (progress > 0 && progress <= 1) {
+            progress = Math.round(progress * 100);
+          } else if (progress > 100) {
+            progress = 100;
+          }
+          progress = Math.round(progress);
+          
+          return {
+            id: r.record_id,
+            name: r.fields['项目名称'] || '',
+            category: r.fields['项目类型'] || '',
+            image: projectEmojis[idx % projectEmojis.length],
+            currentStage: r.fields['当前阶段'] || '产品调研',
+            progress: progress,
+            status: r.fields['项目状态'] || '进行中',
+            startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
+            targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
+            krId: r.fields['关联KR']?.[0] || null
+          };
+        });
       }
 
       // 转换任务表
@@ -91,26 +101,33 @@
           id: r.record_id,
           name: r.fields['任务名称'] || '',
           stage: r.fields['所属阶段'] || '',
-          priority: r.fields['优先级']?.replace('-高优', '').replace('-中等', '').replace('-低优', '').replace('-紧急', '') || 'P2',
-          status: r.fields['状态'] === '待开始' ? '待开始' : r.fields['状态'] || '待开始',
+          priority: (r.fields['优先级'] || 'P2').replace(/-.*$/, ''),
+          status: r.fields['状态'] || '待开始',
           productId: r.fields['所属项目']?.[0] || null,
           assignee: r.fields['负责人']?.[0]?.id || null,
+          assigneeName: r.fields['负责人']?.[0]?.name || '',
           dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
         }));
       }
 
-      // 转换团队成员表
+      // 转换团队成员表 - 新增组别字段
       if (rawData['团队成员 Team Members']) {
-        const memberColors = ['bg-blue-500', 'bg-pink-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'];
-        const memberAvatars = ['👨‍💼', '👩‍🎨', '👨‍💻', '👩‍📊', '👨‍🔧'];
+        const memberColors = ['bg-blue-500', 'bg-pink-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-red-500', 'bg-indigo-500'];
+        const memberAvatars = ['👨‍💼', '👩‍🎨', '👨‍💻', '👩‍📊', '👨‍🔧', '👩‍💻', '👨‍🎓', '👩‍🔬'];
+        
         data.members = rawData['团队成员 Team Members'].records.map((r, idx) => ({
           id: r.fields['飞书用户']?.[0]?.id || r.record_id,
           name: r.fields['姓名'] || '',
           department: r.fields['部门'] || '',
+          group: r.fields['组别'] || '未分组', // 新增组别
           position: r.fields['职位'] || '',
           avatar: memberAvatars[idx % memberAvatars.length],
           color: memberColors[idx % memberColors.length]
         }));
+
+        // 提取所有组别
+        const groupSet = new Set(data.members.map(m => m.group));
+        data.groups = Array.from(groupSet).filter(g => g);
       }
 
       // 转换流程节点表
@@ -127,16 +144,15 @@
           .sort((a, b) => a.order - b.order);
       }
 
-      // 如果没有流程节点数据，使用默认值
       if (data.processNodes.length === 0) {
         data.processNodes = [
-          { id: 'node1', name: '产品调研', order: 1, days: 14, role: '产品经理' },
-          { id: 'node2', name: '产品设计', order: 2, days: 10, role: '产品经理' },
-          { id: 'node3', name: 'UI设计', order: 3, days: 10, role: '设计师' },
-          { id: 'node4', name: '产品宣讲', order: 4, days: 3, role: '产品经理' },
-          { id: 'node5', name: '开发', order: 5, days: 30, role: '开发' },
-          { id: 'node6', name: '测试', order: 6, days: 14, role: '测试' },
-          { id: 'node7', name: '上线', order: 7, days: 3, role: '运营' }
+          { id: 'n1', name: '产品调研', order: 1, days: 14 },
+          { id: 'n2', name: '产品设计', order: 2, days: 10 },
+          { id: 'n3', name: 'UI设计', order: 3, days: 10 },
+          { id: 'n4', name: '产品宣讲', order: 4, days: 3 },
+          { id: 'n5', name: '开发', order: 5, days: 30 },
+          { id: 'n6', name: '测试', order: 6, days: 14 },
+          { id: 'n7', name: '上线', order: 7, days: 3 }
         ];
       }
 
@@ -158,23 +174,6 @@
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full loading-spinner mx-auto mb-4"></div>
           <div className="text-gray-600">正在从飞书加载数据...</div>
-        </div>
-      </div>
-    );
-
-    // 错误组件
-    const ErrorScreen = ({ error, onRetry }) => (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="text-6xl mb-4">😕</div>
-          <div className="text-xl font-semibold text-gray-800 mb-2">加载失败</div>
-          <div className="text-gray-500 mb-4">{error}</div>
-          <button 
-            onClick={onRetry}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-          >
-            重试
-          </button>
         </div>
       </div>
     );
@@ -234,7 +233,9 @@
                 <div className="text-xs text-gray-400">{product.category}</div>
               </div>
               <span className={`text-xs px-2 py-1 rounded-full ${
-                product.status === '已完成' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+                product.status === '已完成' ? 'bg-green-100 text-green-600' : 
+                product.status === '未开始' ? 'bg-gray-100 text-gray-500' :
+                'bg-blue-100 text-blue-600'
               }`}>
                 {product.status}
               </span>
@@ -323,7 +324,7 @@
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-bold text-gray-600">
-                    {productTasks.filter(t => t.status === '待开始').length}
+                    {productTasks.filter(t => t.status === '待开始' || t.status === '未开始').length}
                   </div>
                   <div className="text-sm text-gray-500">待开始</div>
                 </div>
@@ -536,8 +537,9 @@
 
     // 人员任务卡片
     const MemberTaskCard = ({ member, tasks, products }) => {
-      const memberTasks = tasks.filter(t => t.assignee === member.id);
+      const memberTasks = tasks.filter(t => t.assignee === member.id || t.assigneeName === member.name);
       const completedCount = memberTasks.filter(t => t.status === '已完成').length;
+      const inProgressCount = memberTasks.filter(t => t.status === '进行中').length;
       const completionRate = memberTasks.length > 0 ? Math.round((completedCount / memberTasks.length) * 100) : 0;
 
       return (
@@ -550,6 +552,7 @@
               <div>
                 <div className="font-bold text-lg">{member.name}</div>
                 <div className="text-white/80 text-sm">{member.position}</div>
+                <div className="text-white/60 text-xs">{member.group}</div>
               </div>
             </div>
           </div>
@@ -560,9 +563,7 @@
               <div className="text-xs text-gray-500">总任务</div>
             </div>
             <div className="p-3 text-center">
-              <div className="text-xl font-bold text-blue-600">
-                {memberTasks.filter(t => t.status === '进行中').length}
-              </div>
+              <div className="text-xl font-bold text-blue-600">{inProgressCount}</div>
               <div className="text-xs text-gray-500">进行中</div>
             </div>
             <div className="p-3 text-center">
@@ -608,6 +609,140 @@
       );
     };
 
+    // 人员任务总览 - 新增组别筛选
+    const TeamTaskOverview = ({ members, tasks, products, groups }) => {
+      const [filterGroup, setFilterGroup] = useState('all');
+      const [viewMode, setViewMode] = useState('grid'); // grid | list
+
+      const filteredMembers = filterGroup === 'all'
+        ? members
+        : members.filter(m => m.group === filterGroup);
+
+      return (
+        <div>
+          {/* 筛选器 */}
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setFilterGroup('all')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  filterGroup === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                全部组别
+              </button>
+              {groups.map(group => (
+                <button
+                  key={group}
+                  onClick={() => setFilterGroup(group)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    filterGroup === group ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {group}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                  viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
+                }`}
+              >
+                卡片
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                  viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
+                }`}
+              >
+                列表
+              </button>
+            </div>
+          </div>
+
+          {/* 卡片视图 */}
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredMembers.map(member => (
+                <MemberTaskCard
+                  key={member.id}
+                  member={member}
+                  tasks={tasks}
+                  products={products}
+                />
+              ))}
+              {filteredMembers.length === 0 && (
+                <div className="col-span-full text-center text-gray-400 py-12">暂无成员数据</div>
+              )}
+            </div>
+          )}
+
+          {/* 列表视图 */}
+          {viewMode === 'list' && (
+            <div className="bg-white rounded-xl card-shadow overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">成员</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">组别</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">职位</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">总任务</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">进行中</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">已完成</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">完成率</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredMembers.map(member => {
+                    const memberTasks = tasks.filter(t => t.assignee === member.id || t.assigneeName === member.name);
+                    const completedCount = memberTasks.filter(t => t.status === '已完成').length;
+                    const inProgressCount = memberTasks.filter(t => t.status === '进行中').length;
+                    const completionRate = memberTasks.length > 0 ? Math.round((completedCount / memberTasks.length) * 100) : 0;
+                    
+                    return (
+                      <tr key={member.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-8 h-8 ${member.color} rounded-full flex items-center justify-center text-white text-sm`}>
+                              {member.avatar}
+                            </span>
+                            <span className="font-medium text-gray-800">{member.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                            {member.group}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 text-sm">{member.position}</td>
+                        <td className="px-4 py-3 text-center font-medium text-gray-800">{memberTasks.length}</td>
+                        <td className="px-4 py-3 text-center font-medium text-blue-600">{inProgressCount}</td>
+                        <td className="px-4 py-3 text-center font-medium text-green-600">{completedCount}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full ${member.color} rounded-full`} style={{ width: `${completionRate}%` }} />
+                            </div>
+                            <span className="text-sm font-medium text-gray-600 w-10">{completionRate}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {filteredMembers.length === 0 && (
+                <div className="text-center text-gray-400 py-12">暂无成员数据</div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // 统计卡片
     const StatCard = ({ title, value, subtitle, color, icon }) => (
       <div className="bg-white rounded-xl p-5 card-shadow">
@@ -634,7 +769,7 @@
         setLoading(true);
         setError(null);
         try {
-          const res = await fetch(`${API_BASE}/api/lark?app_token=${APP_TOKEN}`);
+          const res = await fetch(API_BASE + '/api/lark?app_token=' + APP_TOKEN);
           const json = await res.json();
           
           if (json.success) {
@@ -646,34 +781,12 @@
           }
         } catch (err) {
           setError(err.message);
-          // 如果 API 失败，使用示例数据
-          setData({
-            objectives: [{ id: 'obj1', name: 'Q2完成新品5款上线', progress: 35, status: '进行中' }],
-            keyResults: [],
-            products: [
-              { id: 'prod1', name: '户外折叠椅', category: '户外家具', image: '🪑', currentStage: '开发', progress: 60, status: '进行中', targetDate: '2025-03-31' }
-            ],
-            tasks: [],
-            members: [
-              { id: 'm1', name: '张明', department: '产品部', position: '产品经理', avatar: '👨‍💼', color: 'bg-blue-500' }
-            ],
-            processNodes: [
-              { id: 'n1', name: '产品调研', order: 1, days: 14 },
-              { id: 'n2', name: '产品设计', order: 2, days: 10 },
-              { id: 'n3', name: 'UI设计', order: 3, days: 10 },
-              { id: 'n4', name: '产品宣讲', order: 4, days: 3 },
-              { id: 'n5', name: '开发', order: 5, days: 30 },
-              { id: 'n6', name: '测试', order: 6, days: 14 },
-              { id: 'n7', name: '上线', order: 7, days: 3 }
-            ]
-          });
         }
         setLoading(false);
       };
 
       useEffect(() => {
         fetchData();
-        // 每5分钟自动刷新
         const interval = setInterval(fetchData, 5 * 60 * 1000);
         return () => clearInterval(interval);
       }, []);
@@ -705,7 +818,7 @@
                 )}
                 <button 
                   onClick={fetchData}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm"
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center gap-1"
                 >
                   🔄 刷新
                 </button>
@@ -716,62 +829,57 @@
           {error && (
             <div className="max-w-7xl mx-auto px-8 py-2">
               <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
-                ⚠️ {error} - 显示示例数据
+                ⚠️ {error}
               </div>
             </div>
           )}
 
-          <div className="max-w-7xl mx-auto px-8 py-6">
-            <div className="grid grid-cols-5 gap-4 mb-6">
-              <StatCard title="产品总数" value={stats.totalProducts} subtitle={`已上线 ${stats.completedProducts}`} color="text-purple-600" icon="📦" />
-              <StatCard title="平均进度" value={`${stats.avgProgress}%`} subtitle="所有产品" color="text-blue-600" icon="📊" />
-              <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} color="text-green-600" icon="✅" />
-              <StatCard title="进行中" value={stats.totalProducts - stats.completedProducts} subtitle="开发中产品" color="text-orange-600" icon="🚀" />
-              <StatCard title="团队成员" value={stats.teamMembers} color="text-pink-600" icon="👥" />
-            </div>
-
-            <div className="flex gap-2 mb-6">
-              {[
-                { key: 'products', label: '📦 产品进度' },
-                { key: 'team', label: '👥 人员任务' }
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeTab === tab.key ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {activeTab === 'products' && data && (
-              <ProductOverview
-                products={data.products}
-                nodes={data.processNodes}
-                members={data.members}
-                tasks={data.tasks}
-              />
-            )}
-
-            {activeTab === 'team' && data && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {data.members.map(member => (
-                  <MemberTaskCard
-                    key={member.id}
-                    member={member}
-                    tasks={data.tasks}
-                    products={data.products}
-                  />
-                ))}
-                {data.members.length === 0 && (
-                  <div className="col-span-full text-center text-gray-400 py-12">暂无团队成员数据</div>
-                )}
+          {data && (
+            <div className="max-w-7xl mx-auto px-8 py-6">
+              <div className="grid grid-cols-5 gap-4 mb-6">
+                <StatCard title="产品总数" value={stats.totalProducts} subtitle={`已上线 ${stats.completedProducts}`} color="text-purple-600" icon="📦" />
+                <StatCard title="平均进度" value={`${stats.avgProgress}%`} subtitle="所有产品" color="text-blue-600" icon="📊" />
+                <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} color="text-green-600" icon="✅" />
+                <StatCard title="进行中" value={stats.totalProducts - stats.completedProducts} subtitle="开发中产品" color="text-orange-600" icon="🚀" />
+                <StatCard title="团队成员" value={stats.teamMembers} color="text-pink-600" icon="👥" />
               </div>
-            )}
-          </div>
+
+              <div className="flex gap-2 mb-6">
+                {[
+                  { key: 'products', label: '📦 产品进度' },
+                  { key: 'team', label: '👥 人员任务' }
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      activeTab === tab.key ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'products' && (
+                <ProductOverview
+                  products={data.products}
+                  nodes={data.processNodes}
+                  members={data.members}
+                  tasks={data.tasks}
+                />
+              )}
+
+              {activeTab === 'team' && (
+                <TeamTaskOverview
+                  members={data.members}
+                  tasks={data.tasks}
+                  products={data.products}
+                  groups={data.groups}
+                />
+              )}
+            </div>
+          )}
 
           <div className="text-center py-6 text-gray-400 text-sm">
             数据来源：飞书多维表格 · 每5分钟自动同步
