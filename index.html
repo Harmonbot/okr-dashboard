@@ -39,6 +39,7 @@
         tasks: [],
         members: [],
         processNodes: [],
+        processNodeGroups: [], // 新增：按顺序分组的节点
         groups: [] // 新增：组别列表
       };
 
@@ -132,27 +133,61 @@
 
       // 转换流程节点表
       if (rawData['流程节点 Process Nodes']) {
-        data.processNodes = rawData['流程节点 Process Nodes'].records
-          .map(r => ({
-            id: r.record_id,
-            name: r.fields['节点名称'] || '',
-            order: r.fields['节点顺序'] || 0,
-            type: r.fields['节点类型'] || '',
-            days: r.fields['预计工时(天)'] || 0,
-            role: r.fields['默认负责角色'] || ''
-          }))
+        const rawNodes = rawData['流程节点 Process Nodes'].records
+          .filter(r => r.fields['节点名称']) // 过滤空记录
+          .map(r => {
+            let nodeName = r.fields['节点名称'];
+            if (Array.isArray(nodeName)) {
+              nodeName = nodeName.map(n => n.text || n).join('');
+            }
+            return {
+              id: r.record_id,
+              name: nodeName || '',
+              order: r.fields['节点顺序'] || 0,
+              type: r.fields['节点类型'] || '中间节点',
+              days: r.fields['预计工时(天)'] || 0,
+              role: r.fields['默认负责角色'] || ''
+            };
+          })
           .sort((a, b) => a.order - b.order);
+        
+        // 按顺序分组，支持并行节点
+        const groupedByOrder = {};
+        rawNodes.forEach(node => {
+          if (!groupedByOrder[node.order]) {
+            groupedByOrder[node.order] = [];
+          }
+          groupedByOrder[node.order].push(node);
+        });
+        
+        // 转换为有序数组，每个元素可能包含多个并行节点
+        data.processNodes = rawNodes;
+        data.processNodeGroups = Object.keys(groupedByOrder)
+          .sort((a, b) => Number(a) - Number(b))
+          .map(order => ({
+            order: Number(order),
+            nodes: groupedByOrder[order],
+            isParallel: groupedByOrder[order].length > 1
+          }));
       }
 
       if (data.processNodes.length === 0) {
         data.processNodes = [
-          { id: 'n1', name: '产品调研', order: 1, days: 14 },
-          { id: 'n2', name: '产品设计', order: 2, days: 10 },
-          { id: 'n3', name: 'UI设计', order: 3, days: 10 },
-          { id: 'n4', name: '产品宣讲', order: 4, days: 3 },
-          { id: 'n5', name: '开发', order: 5, days: 30 },
-          { id: 'n6', name: '测试', order: 6, days: 14 },
-          { id: 'n7', name: '上线', order: 7, days: 3 }
+          { id: 'n1', name: '产品调研', order: 1, days: 14, type: '开始' },
+          { id: 'n2', name: '产品设计', order: 2, days: 10, type: '中间节点' },
+          { id: 'n3', name: 'UI设计', order: 3, days: 10, type: '中间节点' },
+          { id: 'n4', name: '产品宣讲', order: 4, days: 3, type: '并行节点' },
+          { id: 'n5', name: '开发', order: 4, days: 30, type: '并行节点' },
+          { id: 'n6', name: '测试', order: 6, days: 14, type: '中间节点' },
+          { id: 'n7', name: '上线', order: 7, days: 3, type: '结束' }
+        ];
+        data.processNodeGroups = [
+          { order: 1, nodes: [data.processNodes[0]], isParallel: false },
+          { order: 2, nodes: [data.processNodes[1]], isParallel: false },
+          { order: 3, nodes: [data.processNodes[2]], isParallel: false },
+          { order: 4, nodes: [data.processNodes[3], data.processNodes[4]], isParallel: true },
+          { order: 6, nodes: [data.processNodes[5]], isParallel: false },
+          { order: 7, nodes: [data.processNodes[6]], isParallel: false }
         ];
       }
 
@@ -281,14 +316,36 @@
       );
     };
 
-    // 产品详情弹窗
-    const ProductDetailModal = ({ product, nodes, members, tasks, onClose }) => {
+    // 产品详情弹窗 - 支持并行节点
+    const ProductDetailModal = ({ product, nodes, nodeGroups, members, tasks, onClose }) => {
       if (!product) return null;
       const productTasks = tasks.filter(t => t.productId === product.id);
 
+      // 获取节点状态（支持并行节点）
+      const getGroupStatus = (group) => {
+        const currentNodeIndex = nodes.findIndex(n => n.name === product.currentStage);
+        const currentNode = nodes[currentNodeIndex];
+        const currentOrder = currentNode ? currentNode.order : 0;
+        
+        // 如果组内任何节点是当前阶段
+        if (group.nodes.some(n => n.name === product.currentStage)) {
+          return 'current';
+        }
+        // 如果组的顺序小于当前阶段
+        if (group.order < currentOrder) {
+          return 'completed';
+        }
+        return 'pending';
+      };
+
+      // 使用分组或回退到线性显示
+      const displayGroups = nodeGroups && nodeGroups.length > 0 
+        ? nodeGroups 
+        : nodes.map(n => ({ order: n.order, nodes: [n], isParallel: false }));
+
       return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -332,31 +389,40 @@
 
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    {nodes.map((node, index) => {
-                      const status = getNodeStatus(node.name, product.currentStage, nodes);
+                <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
+                  <div className="flex items-start gap-2 min-w-max">
+                    {displayGroups.map((group, groupIndex) => {
+                      const status = getGroupStatus(group);
                       return (
-                        <div key={node.id} className="flex items-center flex-1">
-                          <div className="flex flex-col items-center flex-1">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${
-                              status === 'completed' ? 'bg-green-500 text-white' :
-                              status === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
-                              'bg-gray-200 text-gray-400'
-                            }`}>
-                              {status === 'completed' ? '✓' : node.order}
-                            </div>
-                            <div className={`text-xs mt-2 text-center ${
-                              status === 'current' ? 'text-blue-600 font-medium' :
-                              status === 'completed' ? 'text-green-600' : 'text-gray-400'
-                            }`}>
-                              {node.name}
-                            </div>
+                        <div key={group.order} className="flex items-center">
+                          {/* 节点组 */}
+                          <div className={`flex ${group.isParallel ? 'flex-col gap-2' : ''}`}>
+                            {group.nodes.map((node, nodeIndex) => (
+                              <div key={node.id} className="flex flex-col items-center">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${
+                                  status === 'completed' ? 'bg-green-500 text-white' :
+                                  status === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
+                                  'bg-gray-200 text-gray-400'
+                                }`}>
+                                  {status === 'completed' ? '✓' : group.order}
+                                </div>
+                                <div className={`text-xs mt-2 text-center max-w-16 ${
+                                  status === 'current' ? 'text-blue-600 font-medium' :
+                                  status === 'completed' ? 'text-green-600' : 'text-gray-400'
+                                }`}>
+                                  {node.name}
+                                </div>
+                                {group.isParallel && (
+                                  <div className="text-xs text-purple-500 mt-0.5">并行</div>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                          {index < nodes.length - 1 && (
-                            <div className={`h-1 flex-1 mx-1 ${
+                          {/* 连接线 */}
+                          {groupIndex < displayGroups.length - 1 && (
+                            <div className={`h-1 w-8 mx-2 ${
                               status === 'completed' ? 'bg-green-500' : 'bg-gray-200'
-                            }`} />
+                            } ${group.isParallel ? 'self-center' : ''}`} />
                           )}
                         </div>
                       );
@@ -412,7 +478,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ products, nodes, members, tasks }) => {
+    const ProductOverview = ({ products, nodes, nodeGroups, members, tasks }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [viewMode, setViewMode] = useState('grid');
@@ -526,6 +592,7 @@
             <ProductDetailModal
               product={selectedProduct}
               nodes={nodes}
+              nodeGroups={nodeGroups}
               members={members}
               tasks={tasks}
               onClose={() => setSelectedProduct(null)}
@@ -929,6 +996,7 @@
                 <ProductOverview
                   products={data.products}
                   nodes={data.processNodes}
+                  nodeGroups={data.processNodeGroups}
                   members={data.members}
                   tasks={data.tasks}
                 />
