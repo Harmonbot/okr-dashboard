@@ -1159,7 +1159,7 @@
                               {/* 已完成状态：显示输出文件 */}
                               {task.status === '已完成' && task.outputFile && (
                                 <a 
-                                  href={task.outputFile.url || task.outputFile.tmp_url || '#'} 
+                                  href={`${API_BASE}/api/download-file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                   className="text-xs text-green-600 hover:text-green-700 hover:underline inline-flex items-center gap-1"
