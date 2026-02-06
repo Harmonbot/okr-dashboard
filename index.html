@@ -111,19 +111,24 @@
             nodeRecordMap[r.record_id] = nodeName;
           });
         }
+        console.log('节点映射表:', nodeRecordMap);
         
         data.tasks = rawData['任务 Tasks'].records.map(r => {
           // 优先使用「所属节点」关联字段
           let stage = '';
           const linkedNode = r.fields['所属节点'];
+          console.log('任务:', r.fields['任务名称'], '所属节点字段:', linkedNode);
+          
           if (linkedNode && linkedNode.link_record_ids && linkedNode.link_record_ids.length > 0) {
             const nodeRecordId = linkedNode.link_record_ids[0];
             stage = nodeRecordMap[nodeRecordId] || '';
+            console.log('  -> 节点ID:', nodeRecordId, '-> 节点名称:', stage);
           }
           
           // 如果没有设置所属节点，回退到旧的「所属阶段」单选字段
           if (!stage) {
             stage = r.fields['所属阶段'] || '';
+            console.log('  -> 回退到所属阶段:', stage);
           }
           
           // 处理任务名称（可能是数组格式）
@@ -132,7 +137,7 @@
             taskName = taskName.map(n => n.text || n).join('');
           }
           
-          return {
+          const task = {
             id: r.record_id,
             name: taskName,
             stage: stage,
@@ -143,7 +148,10 @@
             assigneeName: r.fields['负责人']?.[0]?.name || '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
           };
+          console.log('  -> 最终任务:', task.name, 'stage:', task.stage, 'productId:', task.productId);
+          return task;
         });
+        console.log('所有任务:', data.tasks);
       }
 
       // 转换团队成员表 - 新增组别字段
@@ -384,8 +392,16 @@
     const NodeTaskModal = ({ node, tasks, members, onClose }) => {
       if (!node) return null;
       
+      // 调试日志
+      console.log('=== NodeTaskModal 调试 ===');
+      console.log('当前节点:', node.name);
+      console.log('传入的任务数量:', tasks.length);
+      console.log('所有任务的 stage:', tasks.map(t => ({ name: t.name, stage: t.stage })));
+      
       // 筛选该节点的任务
       const nodeTasks = tasks.filter(t => t.stage === node.name);
+      console.log('匹配到的任务:', nodeTasks.length, nodeTasks.map(t => t.name));
+      
       const completedCount = nodeTasks.filter(t => t.status === '已完成').length;
       const inProgressCount = nodeTasks.filter(t => t.status === '进行中').length;
       const pendingCount = nodeTasks.filter(t => t.status === '待开始' || t.status === '未开始').length;
@@ -530,7 +546,15 @@
       const [selectedNode, setSelectedNode] = useState(null);
       
       if (!product) return null;
+      
+      // 调试日志
+      console.log('=== ProductDetailModal 调试 ===');
+      console.log('当前产品:', product.name, 'ID:', product.id);
+      console.log('所有任务数量:', tasks.length);
+      console.log('任务的 productId:', tasks.map(t => ({ name: t.name, productId: t.productId, stage: t.stage })));
+      
       const productTasks = tasks.filter(t => t.productId === product.id);
+      console.log('该产品的任务:', productTasks.length, productTasks.map(t => ({ name: t.name, stage: t.stage })));
 
       // 获取节点状态
       const getNodeStatus = (nodeName) => {
