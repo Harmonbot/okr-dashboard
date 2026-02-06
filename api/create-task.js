@@ -75,6 +75,11 @@ export default async function handler(req, res) {
       fields['负责人'] = [{ id: task.assignee }];
     }
     
+    // 协作人（人员字段，多选）
+    if (task.collaborators && task.collaborators.length > 0) {
+      fields['协作人'] = task.collaborators.map(id => ({ id }));
+    }
+    
     // 开始日期（时间戳，毫秒）
     if (task.startDate) {
       fields['开始日期'] = new Date(task.startDate).getTime();
