@@ -211,12 +211,17 @@
             if (Array.isArray(prevNode)) {
               prevNode = prevNode.map(n => n.text || n).join('');
             }
+            // 确保 days 是数字
+            let days = r.fields['预计工时(天)'] || 0;
+            if (typeof days === 'string') {
+              days = parseInt(days, 10) || 0;
+            }
             return {
               id: r.record_id,
               name: nodeName || '',
               order: r.fields['节点顺序'] || 0,
               type: r.fields['节点类型'] || '中间节点',
-              days: r.fields['预计工时(天)'] || 0,
+              days: days,
               role: r.fields['默认负责角色'] || '',
               prevNode: prevNode || null // 前置节点名称
             };
@@ -741,7 +746,8 @@
 
       // 接受任务：设置开始日期为今天，截止日期根据节点预计工时计算，状态改为进行中
       const handleAcceptTask = async (task) => {
-        if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期将设为今天，截止日期根据节点预计工时（${node.days || 7}天）自动计算。`)) {
+        const nodeDays = parseInt(node.days, 10) || 7; // 确保是数字，默认7天
+        if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期将设为今天，截止日期根据节点预计工时（${nodeDays}天）自动计算。`)) {
           return;
         }
         
@@ -749,7 +755,7 @@
         try {
           const today = new Date();
           const dueDate = new Date(today);
-          dueDate.setDate(dueDate.getDate() + (node.days || 7)); // 使用节点预计工时
+          dueDate.setDate(dueDate.getDate() + nodeDays); // 使用已转换的数字
           
           const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
