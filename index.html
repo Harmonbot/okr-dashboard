@@ -173,7 +173,7 @@
             assigneeName: r.fields['负责人']?.[0]?.name || '',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
-            outputFile: r.fields['输出文件'] || ''
+            outputFile: r.fields['输出文件']?.[0] || null // 附件字段是数组，取第一个
           };
         });
       }
@@ -1158,9 +1158,14 @@
                               
                               {/* 已完成状态：显示输出文件 */}
                               {task.status === '已完成' && task.outputFile && (
-                                <span className="text-xs text-green-600">
-                                  📎 {task.outputFile}
-                                </span>
+                                <a 
+                                  href={task.outputFile.url || task.outputFile.tmp_url || '#'} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-green-600 hover:text-green-700 hover:underline inline-flex items-center gap-1"
+                                >
+                                  📎 {task.outputFile.name || '查看附件'}
+                                </a>
                               )}
                             </div>
                           </div>
