@@ -98,19 +98,52 @@
         });
       }
 
-      // 转换任务表
+      // 转换任务表 - 优先使用「所属节点」关联字段
       if (rawData['任务 Tasks']) {
-        data.tasks = rawData['任务 Tasks'].records.map(r => ({
-          id: r.record_id,
-          name: r.fields['任务名称'] || '',
-          stage: r.fields['所属阶段'] || '',
-          priority: (r.fields['优先级'] || 'P2').replace(/-.*$/, ''),
-          status: r.fields['状态'] || '待开始',
-          productId: r.fields['所属项目']?.[0] || null,
-          assignee: r.fields['负责人']?.[0]?.id || null,
-          assigneeName: r.fields['负责人']?.[0]?.name || '',
-          dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
-        }));
+        // 先建立节点 record_id 到节点名称的映射
+        const nodeRecordMap = {};
+        if (rawData['流程节点 Process Nodes']) {
+          rawData['流程节点 Process Nodes'].records.forEach(r => {
+            let nodeName = r.fields['节点名称'];
+            if (Array.isArray(nodeName)) {
+              nodeName = nodeName.map(n => n.text || n).join('');
+            }
+            nodeRecordMap[r.record_id] = nodeName;
+          });
+        }
+        
+        data.tasks = rawData['任务 Tasks'].records.map(r => {
+          // 优先使用「所属节点」关联字段
+          let stage = '';
+          const linkedNode = r.fields['所属节点'];
+          if (linkedNode && linkedNode.link_record_ids && linkedNode.link_record_ids.length > 0) {
+            const nodeRecordId = linkedNode.link_record_ids[0];
+            stage = nodeRecordMap[nodeRecordId] || '';
+          }
+          
+          // 如果没有设置所属节点，回退到旧的「所属阶段」单选字段
+          if (!stage) {
+            stage = r.fields['所属阶段'] || '';
+          }
+          
+          // 处理任务名称（可能是数组格式）
+          let taskName = r.fields['任务名称'] || '';
+          if (Array.isArray(taskName)) {
+            taskName = taskName.map(n => n.text || n).join('');
+          }
+          
+          return {
+            id: r.record_id,
+            name: taskName,
+            stage: stage,
+            priority: (r.fields['优先级'] || 'P2').replace(/-.*$/, ''),
+            status: r.fields['状态'] || '待开始',
+            productId: r.fields['所属项目']?.link_record_ids?.[0] || null,
+            assignee: r.fields['负责人']?.[0]?.id || null,
+            assigneeName: r.fields['负责人']?.[0]?.name || '',
+            dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : ''
+          };
+        });
       }
 
       // 转换团队成员表 - 新增组别字段
