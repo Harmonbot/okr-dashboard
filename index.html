@@ -3425,195 +3425,197 @@
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
     const TeamTaskOverview = ({ members, tasks, products, groups }) => {
-      const [filterDept, setFilterDept] = useState('all'); // 一级：部门
-      const [filterGroup, setFilterGroup] = useState('all'); // 二级：组别
-      const [viewMode, setViewMode] = useState('grid'); // grid | list
+      const [filterDept, setFilterDept] = useState('all');
+      const [filterGroup, setFilterGroup] = useState('all');
+      const [showAll, setShowAll] = useState(false);
+      const [expandedMember, setExpandedMember] = useState(null);
 
-      // 提取所有部门
       const departments = [...new Set(members.map(m => m.department).filter(d => d))];
-      
-      // 根据选中的部门，获取该部门下的组别
       const availableGroups = filterDept === 'all' 
         ? groups 
         : [...new Set(members.filter(m => m.department === filterDept).map(m => m.group).filter(g => g))];
 
-      // 当部门改变时，重置组别筛选
       const handleDeptChange = (dept) => {
         setFilterDept(dept);
         setFilterGroup('all');
       };
 
-      // 筛选成员：先按部门，再按组别
-      const filteredMembers = members.filter(m => {
+      // 为每个成员计算任务统计
+      const membersWithStats = members.map(member => {
+        const memberTasks = tasks.filter(t => t.assignee === member.id || t.assigneeName === member.name);
+        const completed = memberTasks.filter(t => t.status === '已完成').length;
+        const inProgress = memberTasks.filter(t => t.status === '进行中').length;
+        const rate = memberTasks.length > 0 ? Math.round((completed / memberTasks.length) * 100) : 0;
+        return { ...member, memberTasks, total: memberTasks.length, completed, inProgress, rate };
+      });
+
+      // 筛选
+      let filtered = membersWithStats.filter(m => {
         const deptMatch = filterDept === 'all' || m.department === filterDept;
         const groupMatch = filterGroup === 'all' || m.group === filterGroup;
         return deptMatch && groupMatch;
       });
 
+      // 只显示有任务的（除非showAll）
+      const activeMembers = filtered.filter(m => m.total > 0);
+      const inactiveMembers = filtered.filter(m => m.total === 0);
+      const displayMembers = showAll ? [...activeMembers, ...inactiveMembers] : activeMembers;
+
+      // 排序：按进行中任务数降序，再按总任务数降序
+      displayMembers.sort((a, b) => b.inProgress - a.inProgress || b.total - a.total);
+
+      // 汇总统计
+      const totalActive = activeMembers.length;
+      const totalTasks = filtered.reduce((s, m) => s + m.total, 0);
+      const totalInProgress = filtered.reduce((s, m) => s + m.inProgress, 0);
+      const totalCompleted = filtered.reduce((s, m) => s + m.completed, 0);
+
       return (
         <div>
-          {/* 一级筛选：部门 */}
-          <div className="mb-4">
-            <div className="text-sm text-gray-500 mb-2">📂 部门</div>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => handleDeptChange('all')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  filterDept === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                }`}
+          {/* 筛选栏 */}
+          <div className="flex items-center gap-4 mb-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">部门</span>
+              <select 
+                value={filterDept} 
+                onChange={e => handleDeptChange(e.target.value)}
+                className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700"
               >
-                全部部门
-              </button>
-              {departments.map(dept => (
-                <button
-                  key={dept}
-                  onClick={() => handleDeptChange(dept)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    filterDept === dept ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {dept}
-                </button>
-              ))}
+                <option value="all">全部部门</option>
+                {departments.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">组别</span>
+              <select 
+                value={filterGroup}
+                onChange={e => setFilterGroup(e.target.value)}
+                className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700"
+              >
+                <option value="all">全部组别</option>
+                {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-1.5 text-sm text-gray-500 cursor-pointer ml-auto">
+              <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} className="rounded" />
+              显示无任务成员
+            </label>
+          </div>
+
+          {/* 汇总条 */}
+          <div className="grid grid-cols-4 gap-3 mb-5">
+            <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
+              <div className="text-2xl font-bold text-gray-800">{totalActive}</div>
+              <div className="text-xs text-gray-500">活跃成员</div>
+            </div>
+            <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
+              <div className="text-2xl font-bold text-gray-800">{totalTasks}</div>
+              <div className="text-xs text-gray-500">总任务</div>
+            </div>
+            <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
+              <div className="text-2xl font-bold text-blue-600">{totalInProgress}</div>
+              <div className="text-xs text-gray-500">进行中</div>
+            </div>
+            <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
+              <div className="text-2xl font-bold text-green-600">{totalCompleted}</div>
+              <div className="text-xs text-gray-500">已完成</div>
             </div>
           </div>
 
-          {/* 二级筛选：组别 */}
-          <div className="mb-4">
-            <div className="text-sm text-gray-500 mb-2">👥 组别</div>
-            <div className="flex gap-2 flex-wrap items-center">
-              <button
-                onClick={() => setFilterGroup('all')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  filterGroup === 'all' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                全部组别
-              </button>
-              {availableGroups.map(group => (
-                <button
-                  key={group}
-                  onClick={() => setFilterGroup(group)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    filterGroup === group ? 'bg-purple-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {group}
-                </button>
-              ))}
-              {availableGroups.length === 0 && filterDept !== 'all' && (
-                <span className="text-sm text-gray-400">该部门暂无组别</span>
-              )}
-            </div>
-          </div>
-
-          {/* 视图切换和统计 */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-sm text-gray-500">
-              共 <span className="font-medium text-gray-800">{filteredMembers.length}</span> 名成员
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
-                }`}
-              >
-                卡片
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
-                }`}
-              >
-                列表
-              </button>
-            </div>
-          </div>
-
-          {/* 卡片视图 */}
-          {viewMode === 'grid' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredMembers.map(member => (
-                <MemberTaskCard
-                  key={member.id}
-                  member={member}
-                  tasks={tasks}
-                  products={products}
-                />
-              ))}
-              {filteredMembers.length === 0 && (
-                <div className="col-span-full text-center text-gray-400 py-12">暂无成员数据</div>
-              )}
-            </div>
-          )}
-
-          {/* 列表视图 */}
-          {viewMode === 'list' && (
-            <div className="bg-white rounded-xl card-shadow overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">成员</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">部门</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">组别</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">职位</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">总任务</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">进行中</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">已完成</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">完成率</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredMembers.map(member => {
-                    const memberTasks = tasks.filter(t => t.assignee === member.id || t.assigneeName === member.name);
-                    const completedCount = memberTasks.filter(t => t.status === '已完成').length;
-                    const inProgressCount = memberTasks.filter(t => t.status === '进行中').length;
-                    const completionRate = memberTasks.length > 0 ? Math.round((completedCount / memberTasks.length) * 100) : 0;
-                    
-                    return (
-                      <tr key={member.id} className="hover:bg-gray-50">
+          {/* 成员列表 */}
+          <div className="bg-white rounded-xl card-shadow overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">成员</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">部门 / 组别</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 w-16">总任务</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 w-16">进行中</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 w-16">已完成</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 w-40">完成率</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {displayMembers.map(member => {
+                  const isExpanded = expandedMember === member.id;
+                  return (
+                    <React.Fragment key={member.id}>
+                      <tr 
+                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${member.total === 0 ? 'opacity-50' : ''}`}
+                        onClick={() => setExpandedMember(isExpanded ? null : member.id)}
+                      >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-8 h-8 ${member.color} rounded-full flex items-center justify-center text-white text-sm`}>
-                              {member.avatar}
-                            </span>
-                            <span className="font-medium text-gray-800">{member.name}</span>
+                          <div className="flex items-center gap-3">
+                            {member.avatarUrl ? (
+                              <img src={member.avatarUrl} className="w-8 h-8 rounded-full" alt="" />
+                            ) : (
+                              <span className={`w-8 h-8 ${member.color} rounded-full flex items-center justify-center text-white text-sm`}>
+                                {member.avatar}
+                              </span>
+                            )}
+                            <div>
+                              <div className="font-medium text-gray-800 text-sm">{member.name}</div>
+                              <div className="text-xs text-gray-400">{member.position}</div>
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">
-                            {member.department}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{member.department}</span>
+                            {member.group && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-xs">{member.group}</span>}
+                          </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs">
-                            {member.group}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-sm">{member.position}</td>
-                        <td className="px-4 py-3 text-center font-medium text-gray-800">{memberTasks.length}</td>
-                        <td className="px-4 py-3 text-center font-medium text-blue-600">{inProgressCount}</td>
-                        <td className="px-4 py-3 text-center font-medium text-green-600">{completedCount}</td>
+                        <td className="px-4 py-3 text-center font-medium text-sm text-gray-800">{member.total}</td>
+                        <td className="px-4 py-3 text-center font-medium text-sm text-blue-600">{member.inProgress}</td>
+                        <td className="px-4 py-3 text-center font-medium text-sm text-green-600">{member.completed}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                              <div className={`h-full ${member.color} rounded-full`} style={{ width: `${completionRate}%` }} />
+                              <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${member.rate}%` }} />
                             </div>
-                            <span className="text-sm font-medium text-gray-600 w-10">{completionRate}%</span>
+                            <span className="text-xs font-medium text-gray-500 w-8 text-right">{member.rate}%</span>
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {filteredMembers.length === 0 && (
-                <div className="text-center text-gray-400 py-12">暂无成员数据</div>
-              )}
-            </div>
-          )}
+                      {/* 展开行：显示任务详情 */}
+                      {isExpanded && member.total > 0 && (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-3 bg-gray-50">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {member.memberTasks.map(task => {
+                                const product = products.find(p => p.id === task.productId);
+                                return (
+                                  <div key={task.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 text-sm">
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                      task.status === '已完成' ? 'bg-green-500' :
+                                      task.status === '进行中' ? 'bg-blue-500' :
+                                      'bg-gray-300'
+                                    }`} />
+                                    <span className="truncate flex-1 text-gray-700">{task.name}</span>
+                                    {product && <span className="text-xs text-gray-400 flex-shrink-0">{product.name}</span>}
+                                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                      task.status === '已完成' ? 'bg-green-50 text-green-600' :
+                                      task.status === '进行中' ? 'bg-blue-50 text-blue-600' :
+                                      'bg-gray-100 text-gray-500'
+                                    }`}>{task.status}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            {displayMembers.length === 0 && (
+              <div className="text-center text-gray-400 py-12">
+                {showAll ? '暂无成员数据' : '暂无有任务的成员，勾选「显示无任务成员」查看全部'}
+              </div>
+            )}
+          </div>
         </div>
       );
     };
