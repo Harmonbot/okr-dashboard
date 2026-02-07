@@ -2946,7 +2946,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ products, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onRefresh }) => {
+    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onRefresh }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [viewMode, setViewMode] = useState('grid');
@@ -2957,7 +2957,6 @@
           const saved = localStorage.getItem('okr_skipped_nodes');
           if (saved) {
             const parsed = JSON.parse(saved);
-            // 转换为 Map<productId, Set<nodeName>>
             const map = {};
             Object.keys(parsed).forEach(k => { map[k] = new Set(parsed[k]); });
             return map;
@@ -2973,7 +2972,6 @@
           const current = prev[productId] || new Set();
           const next = typeof updater === 'function' ? updater(current) : updater;
           const newMap = { ...prev, [productId]: next };
-          // 持久化
           try {
             const serializable = {};
             Object.keys(newMap).forEach(k => { serializable[k] = [...newMap[k]]; });
@@ -2983,11 +2981,53 @@
         });
       };
 
+      // 自动计算项目进度
+      const getAutoProgress = (product) => {
+        const pTasks = tasks.filter(t => t.productId === product.id);
+        if (nodes.length === 0) return product.progress || 0;
+        let total = 0;
+        for (const nd of nodes) {
+          const nt = pTasks.filter(t => t.stage === nd.name);
+          if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
+        }
+        return Math.round(total / nodes.length);
+      };
+
+      // 自动计算项目状态
+      const getAutoStatus = (product) => {
+        const pTasks = tasks.filter(t => t.productId === product.id);
+        const completed = pTasks.filter(t => t.status === '已完成').length;
+        const inProgress = pTasks.filter(t => t.status === '进行中').length;
+        if (pTasks.length === 0) return '未开始';
+        if (completed === pTasks.length) return '已完成';
+        if (inProgress > 0 || completed > 0) return '进行中';
+        return '未开始';
+      };
+
+      // 筛选
       const filteredProducts = filterStatus === 'all'
         ? products
-        : products.filter(p => p.status === filterStatus);
+        : filterStatus === '逾期'
+          ? products.filter(p => {
+              if (getAutoStatus(p) === '已完成') return false;
+              if (!p.targetDate) return false;
+              return new Date(p.targetDate) < new Date();
+            })
+          : products.filter(p => getAutoStatus(p) === filterStatus);
 
-      // 自动计算每个产品的当前阶段
+      // 构建 OKR 分组结构
+      const getProjectsForKR = (krId) => {
+        return filteredProducts.filter(p => p.krId === krId);
+      };
+
+      // 找到已分组的项目ID
+      const groupedProductIds = new Set();
+      keyResults.forEach(kr => {
+        getProjectsForKR(kr.id).forEach(p => groupedProductIds.add(p.id));
+      });
+      const ungroupedProducts = filteredProducts.filter(p => !groupedProductIds.has(p.id));
+
+      // 自动计算当前阶段
       const getProductAutoStage = (product) => {
         const productTasks = tasks.filter(t => t.productId === product.id);
         let lastActiveNode = null;
@@ -3008,11 +3048,79 @@
         return acc;
       }, {});
 
+      // 紧凑项目卡片（用于分组视图）
+      const CompactProjectCard = ({ product }) => {
+        const progress = getAutoProgress(product);
+        const status = getAutoStatus(product);
+        const pTasks = tasks.filter(t => t.productId === product.id);
+        const completedCount = pTasks.filter(t => t.status === '已完成').length;
+        const daysRemaining = product.targetDate 
+          ? Math.ceil((new Date(product.targetDate) - new Date()) / (1000 * 60 * 60 * 24))
+          : null;
+        const isOverdue = daysRemaining !== null && daysRemaining < 0 && status !== '已完成';
+        const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
+
+        return (
+          <div
+            className={`bg-white rounded-xl p-4 card-shadow cursor-pointer hover:shadow-md transition-all border-l-4 ${
+              status === '已完成' ? 'border-l-green-500' :
+              isOverdue ? 'border-l-red-500' :
+              status === '进行中' ? 'border-l-blue-500' :
+              'border-l-gray-300'
+            }`}
+            onClick={() => setSelectedProduct(product)}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">{product.image}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-800 truncate">{product.name}</div>
+                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                  <span className="px-1.5 py-0.5 bg-gray-100 rounded">{product.category || '未分类'}</span>
+                  <span className={`px-1.5 py-0.5 rounded ${
+                    status === '已完成' ? 'bg-green-100 text-green-600' :
+                    status === '进行中' ? 'bg-blue-100 text-blue-600' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>{status}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`text-xl font-bold ${progress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{progress}%</div>
+              </div>
+            </div>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+              <div className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }} />
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center gap-2">
+                <span>📋 {completedCount}/{pTasks.length}</span>
+                {product.ownerName && (
+                  <span className="flex items-center gap-1">
+                    {ownerMember?.avatarUrl ? (
+                      <img src={ownerMember.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
+                    ) : (
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px]">{product.ownerName.charAt(0)}</span>
+                    )}
+                    {product.ownerName}
+                  </span>
+                )}
+              </div>
+              {status === '已完成' ? (
+                <span className="text-green-600 font-medium">✓ 已完成</span>
+              ) : isOverdue ? (
+                <span className="text-red-500 font-medium">⚠ 逾期 {Math.abs(daysRemaining)} 天</span>
+              ) : daysRemaining !== null ? (
+                <span>{daysRemaining <= 7 ? '⏰' : '📅'} 剩余 {daysRemaining} 天</span>
+              ) : null}
+            </div>
+          </div>
+        );
+      };
+
       return (
         <div>
           <div className="flex items-center justify-between mb-6">
             <div className="flex gap-2">
-              {['all', '进行中', '已完成'].map(status => (
+              {['all', '进行中', '已完成', '逾期'].map(status => (
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}
@@ -3020,7 +3128,7 @@
                     filterStatus === status ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
                   }`}
                 >
-                  {status === 'all' ? '全部产品' : status}
+                  {status === 'all' ? '全部项目' : status}
                 </button>
               ))}
             </div>
@@ -3031,7 +3139,7 @@
                   viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
                 }`}
               >
-                卡片
+                分组
               </button>
               <button
                 onClick={() => setViewMode('pipeline')}
@@ -3045,19 +3153,112 @@
           </div>
 
           {viewMode === 'grid' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredProducts.map(product => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  nodes={nodes}
-                  members={members}
-                  tasks={tasks}
-                  onClick={setSelectedProduct}
-                />
-              ))}
+            <div className="space-y-6">
+              {objectives.map(objective => {
+                const objKRs = keyResults.filter(kr => kr.objectiveId === objective.id);
+                // 检查该目标下是否有筛选后的项目
+                const objHasProjects = objKRs.some(kr => getProjectsForKR(kr.id).length > 0);
+                if (!objHasProjects && filterStatus !== 'all') return null;
+                
+                return (
+                  <div key={objective.id} className="bg-white rounded-xl card-shadow overflow-hidden">
+                    {/* 目标头 */}
+                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 px-6 py-4 border-b">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">🎯</span>
+                          <div>
+                            <h3 className="font-bold text-gray-800">{objective.name}</h3>
+                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded">{objective.cycle}</span>
+                              <span>{objective.level}</span>
+                              {objective.ownerName && (() => {
+                                const objOwner = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
+                                return (
+                                  <span className="flex items-center gap-1">
+                                    {objOwner?.avatarUrl ? (
+                                      <img src={objOwner.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
+                                    ) : (
+                                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px]">{objective.ownerName.charAt(0)}</span>
+                                    )}
+                                    {objective.ownerName}
+                                  </span>
+                                );
+                              })()}
+                              <span>🔑 {objKRs.length} KR</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* KR 及项目 */}
+                    <div className="divide-y divide-gray-100">
+                      {objKRs.map(kr => {
+                        const krProjects = getProjectsForKR(kr.id);
+                        if (krProjects.length === 0 && filterStatus !== 'all') return null;
+                        
+                        return (
+                          <div key={kr.id} className="px-6 py-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-sm">🔑</span>
+                              <span className="text-sm font-medium text-gray-700">{kr.name}</span>
+                              {kr.ownerName && (() => {
+                                const krOwner = members.find(m => m.id === kr.ownerId || m.name === kr.ownerName);
+                                return (
+                                  <span className="flex items-center gap-1 text-xs text-gray-400 ml-2">
+                                    {krOwner?.avatarUrl ? (
+                                      <img src={krOwner.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
+                                    ) : (
+                                      <span className="w-3.5 h-3.5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px]">{kr.ownerName.charAt(0)}</span>
+                                    )}
+                                    {kr.ownerName}
+                                  </span>
+                                );
+                              })()}
+                              <span className="text-xs text-gray-400 ml-auto">{krProjects.length} 个项目</span>
+                            </div>
+                            {krProjects.length > 0 ? (
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {krProjects.map(project => (
+                                  <CompactProjectCard key={project.id} product={project} />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 py-2">暂无关联项目</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* 未关联项目 */}
+              {ungroupedProducts.length > 0 && (
+                <div className="bg-white rounded-xl card-shadow overflow-hidden">
+                  <div className="bg-gray-50 px-6 py-4 border-b">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">📂</span>
+                      <div>
+                        <h3 className="font-bold text-gray-800">未关联项目</h3>
+                        <div className="text-xs text-gray-500 mt-1">这些项目尚未关联到任何 KR</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {ungroupedProducts.map(product => (
+                        <CompactProjectCard key={product.id} product={product} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {filteredProducts.length === 0 && (
-                <div className="col-span-full text-center text-gray-400 py-12">暂无产品数据</div>
+                <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
               )}
             </div>
           )}
@@ -3656,7 +3857,7 @@
               <div className="flex gap-2 mb-6">
                 {[
                   { key: 'okr', label: '🎯 OKR 视图' },
-                  { key: 'products', label: '📦 产品进度' },
+                  { key: 'products', label: '📋 项目管理' },
                   { key: 'team', label: '👥 人员任务' }
                 ].map(tab => (
                   <button
@@ -3685,6 +3886,8 @@
 
               {activeTab === 'products' && (
                 <ProductOverview
+                  objectives={data.objectives}
+                  keyResults={data.keyResults}
                   products={data.products}
                   nodes={data.processNodes}
                   nodeLayers={data.processNodeLayers}
