@@ -47,27 +47,56 @@
 
       // 转换目标表
       if (rawData['目标 Objectives']) {
-        data.objectives = rawData['目标 Objectives'].records.map(r => ({
-          id: r.record_id,
-          name: r.fields['目标名称'] || '',
-          cycle: r.fields['目标周期'] || '',
-          level: r.fields['目标层级'] || '',
-          progress: r.fields['进度'] || 0,
-          status: r.fields['状态'] || '未开始'
-        }));
+        data.objectives = rawData['目标 Objectives'].records.map(r => {
+          // 处理富文本字段格式: [{ text: '...', type: 'text' }]
+          let objName = '';
+          const nameField = r.fields['目标名称'];
+          if (Array.isArray(nameField)) {
+            objName = nameField.map(item => item.text || '').join('');
+          } else if (typeof nameField === 'string') {
+            objName = nameField;
+          }
+          
+          return {
+            id: r.record_id,
+            name: objName,
+            cycle: r.fields['目标周期'] || '',
+            level: r.fields['目标层级'] || '',
+            progress: r.fields['进度'] || 0,
+            status: r.fields['状态'] || '未开始'
+          };
+        }).filter(obj => obj.name); // 过滤掉空目标
       }
 
       // 转换关键结果表
       if (rawData['关键结果 Key Results']) {
-        data.keyResults = rawData['关键结果 Key Results'].records.map(r => ({
-          id: r.record_id,
-          name: r.fields['KR描述'] || '',
-          target: r.fields['目标值'] || 0,
-          current: r.fields['当前值'] || 0,
-          weight: r.fields['权重'] || 0,
-          status: r.fields['状态'] || '未开始',
-          objectiveId: r.fields['所属目标']?.[0] || null
-        }));
+        data.keyResults = rawData['关键结果 Key Results'].records.map(r => {
+          // 处理关联字段格式: { link_record_ids: ['recXXX'] }
+          let objectiveId = null;
+          const linkedObj = r.fields['所属目标'];
+          if (linkedObj?.link_record_ids?.[0]) {
+            objectiveId = linkedObj.link_record_ids[0];
+          }
+          
+          // 处理富文本字段格式: [{ text: '...', type: 'text' }]
+          let krName = '';
+          const krDesc = r.fields['KR描述'];
+          if (Array.isArray(krDesc)) {
+            krName = krDesc.map(item => item.text || '').join('');
+          } else if (typeof krDesc === 'string') {
+            krName = krDesc;
+          }
+          
+          return {
+            id: r.record_id,
+            name: krName,
+            target: r.fields['目标值'] || 0,
+            current: r.fields['当前值'] || 0,
+            weight: r.fields['权重'] || 0,
+            status: r.fields['状态'] || '未开始',
+            objectiveId: objectiveId
+          };
+        });
       }
 
       // 转换项目表为产品
