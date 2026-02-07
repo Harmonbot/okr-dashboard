@@ -22,13 +22,77 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, createContext, useContext } = React;
 
     const API_BASE = window.location.hostname === 'localhost' 
       ? 'http://localhost:3000' 
       : '';
 
     const APP_TOKEN = 'N5OqbwkO1a2PbpsaM05ckGrMnxg';
+    
+    // 飞书应用配置
+    const LARK_APP_ID = 'cli_a798726da6f8500e';
+    const LARK_REDIRECT_URI = window.location.origin + window.location.pathname;
+    
+    // 用户上下文
+    const UserContext = createContext(null);
+    
+    // 获取飞书登录 URL
+    const getLarkLoginUrl = () => {
+      const state = Math.random().toString(36).substring(7);
+      localStorage.setItem('lark_oauth_state', state);
+      return `https://open.feishu.cn/open-apis/authen/v1/authorize?app_id=${LARK_APP_ID}&redirect_uri=${encodeURIComponent(LARK_REDIRECT_URI)}&state=${state}`;
+    };
+    
+    // 处理 OAuth 回调
+    const handleOAuthCallback = async (code) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth-callback?code=${code}`);
+        const data = await res.json();
+        
+        if (data.success) {
+          // 保存用户信息到 localStorage
+          localStorage.setItem('lark_user', JSON.stringify(data.data.user));
+          localStorage.setItem('lark_access_token', data.data.access_token);
+          localStorage.setItem('lark_token_expires', Date.now() + data.data.expires_in * 1000);
+          
+          // 清除 URL 中的 code 参数
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+          return data.data.user;
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (error) {
+        console.error('OAuth callback error:', error);
+        alert('登录失败: ' + error.message);
+        return null;
+      }
+    };
+    
+    // 检查登录状态
+    const checkLoginStatus = () => {
+      const user = localStorage.getItem('lark_user');
+      const expires = localStorage.getItem('lark_token_expires');
+      
+      if (user && expires && Date.now() < parseInt(expires)) {
+        return JSON.parse(user);
+      }
+      
+      // 清除过期的登录信息
+      localStorage.removeItem('lark_user');
+      localStorage.removeItem('lark_access_token');
+      localStorage.removeItem('lark_token_expires');
+      return null;
+    };
+    
+    // 退出登录
+    const logout = () => {
+      localStorage.removeItem('lark_user');
+      localStorage.removeItem('lark_access_token');
+      localStorage.removeItem('lark_token_expires');
+      window.location.reload();
+    };
 
     // 数据转换函数
     const transformData = (rawData) => {
@@ -730,6 +794,7 @@
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
     const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, onClose, onTaskCreated }) => {
+      const currentUser = useContext(UserContext);
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
@@ -744,6 +809,14 @@
       });
       
       if (!node) return null;
+      
+      // 检查当前用户是否是任务负责人
+      const isTaskAssignee = (task) => {
+        if (!currentUser) return false;
+        // 比较名字（飞书用户名和成员表中的名字）
+        return task.assignee === currentUser.name || 
+               task.assignee === currentUser.en_name;
+      };
       
       // 筛选该节点的任务
       const nodeTasks = tasks.filter(t => t.stage === node.name);
@@ -1155,8 +1228,8 @@
                             
                             {/* 操作按钮区域 */}
                             <div className="mt-2 flex gap-2">
-                              {/* 待开始状态：显示接受任务按钮 */}
-                              {(task.status === '待开始' || task.status === '未开始') && (
+                              {/* 待开始状态：显示接受任务按钮（仅负责人可见） */}
+                              {(task.status === '待开始' || task.status === '未开始') && isTaskAssignee(task) && (
                                 <button
                                   onClick={() => handleAcceptTask(task)}
                                   disabled={isActioning}
@@ -1166,8 +1239,15 @@
                                 </button>
                               )}
                               
-                              {/* 进行中状态：显示完成任务按钮 */}
-                              {task.status === '进行中' && (
+                              {/* 非负责人看到的提示 */}
+                              {(task.status === '待开始' || task.status === '未开始') && !isTaskAssignee(task) && (
+                                <span className="text-xs text-gray-400 italic">
+                                  仅 {task.assignee || '负责人'} 可接受
+                                </span>
+                              )}
+                              
+                              {/* 进行中状态：显示完成任务按钮（仅负责人可见） */}
+                              {task.status === '进行中' && isTaskAssignee(task) && (
                                 <>
                                   {showCompleteForm === task.id ? (
                                     <div className="flex-1 flex flex-col gap-2">
@@ -1212,6 +1292,13 @@
                                     </button>
                                   )}
                                 </>
+                              )}
+                              
+                              {/* 进行中状态：非负责人看到的提示 */}
+                              {task.status === '进行中' && !isTaskAssignee(task) && (
+                                <span className="text-xs text-gray-400 italic">
+                                  仅 {task.assignee || '负责人'} 可完成
+                                </span>
                               )}
                               
                               {/* 已完成状态：显示输出文件 */}
@@ -2676,12 +2763,84 @@
     );
 
     // 主应用
+    // 登录页面组件
+    const LoginPage = () => {
+      const [loading, setLoading] = useState(false);
+      
+      const handleLogin = () => {
+        setLoading(true);
+        window.location.href = getLarkLoginUrl();
+      };
+      
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="text-6xl mb-4">🎯</div>
+              <h1 className="text-2xl font-bold text-gray-800 mb-2">新品OKR项目管理系统</h1>
+              <p className="text-gray-500 mb-8">请使用飞书账号登录</p>
+              
+              <button
+                onClick={handleLogin}
+                disabled={loading}
+                className="w-full py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <span className="loading-spinner inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
+                    正在跳转...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                    飞书扫码登录
+                  </>
+                )}
+              </button>
+              
+              <p className="mt-6 text-xs text-gray-400">
+                登录即表示您同意使用飞书账号进行身份验证
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const App = () => {
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [activeTab, setActiveTab] = useState('okr');
       const [lastUpdate, setLastUpdate] = useState(null);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+
+      // 处理登录状态
+      useEffect(() => {
+        const initAuth = async () => {
+          // 检查 URL 中是否有 OAuth 回调的 code
+          const urlParams = new URLSearchParams(window.location.search);
+          const code = urlParams.get('code');
+          
+          if (code) {
+            // 处理 OAuth 回调
+            const user = await handleOAuthCallback(code);
+            if (user) {
+              setCurrentUser(user);
+            }
+          } else {
+            // 检查本地存储的登录状态
+            const user = checkLoginStatus();
+            setCurrentUser(user);
+          }
+          setAuthLoading(false);
+        };
+        
+        initAuth();
+      }, []);
 
       const fetchData = async () => {
         setLoading(true);
@@ -2704,11 +2863,20 @@
       };
 
       useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 5 * 60 * 1000);
-        return () => clearInterval(interval);
-      }, []);
+        if (currentUser) {
+          fetchData();
+          const interval = setInterval(fetchData, 5 * 60 * 1000);
+          return () => clearInterval(interval);
+        }
+      }, [currentUser]);
 
+      // 认证加载中
+      if (authLoading) return <LoadingScreen />;
+      
+      // 未登录，显示登录页面
+      if (!currentUser) return <LoginPage />;
+      
+      // 数据加载中
       if (loading && !data) return <LoadingScreen />;
 
       const stats = data ? {
@@ -2723,6 +2891,7 @@
       } : {};
 
       return (
+        <UserContext.Provider value={currentUser}>
         <div className="min-h-screen bg-gray-50">
           <div className="gradient-bg text-white py-6 px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -2740,6 +2909,24 @@
                 >
                   🔄 刷新
                 </button>
+                {/* 用户信息 */}
+                <div className="flex items-center gap-3 bg-white/10 rounded-lg px-3 py-1.5">
+                  {currentUser.avatar_url ? (
+                    <img src={currentUser.avatar_url} className="w-7 h-7 rounded-full" alt="" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-white/30 flex items-center justify-center text-sm">
+                      {currentUser.name?.charAt(0) || '👤'}
+                    </div>
+                  )}
+                  <span className="text-sm font-medium">{currentUser.name}</span>
+                  <button 
+                    onClick={logout}
+                    className="text-white/60 hover:text-white text-xs ml-1"
+                    title="退出登录"
+                  >
+                    退出
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2817,6 +3004,7 @@
             数据来源：飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
+        </UserContext.Provider>
       );
     };
 
