@@ -71,6 +71,11 @@
       // 转换关键结果表
       if (rawData['关键结果 Key Results']) {
         data.keyResults = rawData['关键结果 Key Results'].records.map((r, idx) => {
+          // 调试：打印所有字段名
+          console.log(`KR ${idx} 所有字段名:`, Object.keys(r.fields));
+          console.log(`KR ${idx} 原始 所属目标 字段:`, r.fields['所属目标']);
+          console.log(`KR ${idx} 原始 所属目标 JSON:`, JSON.stringify(r.fields['所属目标']));
+          
           // 处理关联字段 - 支持多种格式
           let objectiveId = null;
           const linkedObj = r.fields['所属目标'];
@@ -1603,11 +1608,9 @@
       // 获取某目标下的关键结果
       const getKRsForObjective = (objectiveId) => {
         console.log(`查找目标ID: "${objectiveId}"`);
-        console.log('所有KR:', keyResults.map(kr => ({ 
-          name: kr.name, 
-          objectiveId: kr.objectiveId, 
-          objectiveIdType: typeof kr.objectiveId 
-        })));
+        keyResults.forEach((kr, i) => {
+          console.log(`KR ${i}: name="${kr.name}", objectiveId="${kr.objectiveId}" (type: ${typeof kr.objectiveId})`);
+        });
         const result = keyResults.filter(kr => kr.objectiveId === objectiveId);
         console.log(`匹配结果: ${result.length} 条`);
         return result;
