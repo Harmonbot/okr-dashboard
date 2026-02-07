@@ -71,33 +71,24 @@
       // 转换关键结果表
       if (rawData['关键结果 Key Results']) {
         data.keyResults = rawData['关键结果 Key Results'].records.map((r, idx) => {
-          // 调试：打印所有字段名
-          console.log(`KR ${idx} 所有字段名:`, Object.keys(r.fields));
-          console.log(`KR ${idx} 原始 所属目标 字段:`, r.fields['所属目标']);
-          console.log(`KR ${idx} 原始 所属目标 JSON:`, JSON.stringify(r.fields['所属目标']));
-          
           // 处理关联字段 - 支持多种格式
           let objectiveId = null;
           const linkedObj = r.fields['所属目标'];
           
           if (linkedObj) {
-            // 格式1: { link_record_ids: ['recXXX'] }
+            // 格式1: { link_record_ids: ['recXXX'] } (MCP 格式)
             if (linkedObj.link_record_ids?.[0]) {
               objectiveId = linkedObj.link_record_ids[0];
             }
-            // 格式2: ['recXXX'] 数组
-            else if (Array.isArray(linkedObj) && linkedObj.length > 0) {
-              if (typeof linkedObj[0] === 'string') {
-                objectiveId = linkedObj[0];
-              } else if (linkedObj[0]?.record_id) {
-                objectiveId = linkedObj[0].record_id;
-              } else if (linkedObj[0]?.id) {
-                objectiveId = linkedObj[0].id;
-              } else if (linkedObj[0]?.link_record_ids?.[0]) {
-                objectiveId = linkedObj[0].link_record_ids[0];
-              }
+            // 格式2: [{ record_ids: ['recXXX'], ... }] (Vercel API 格式)
+            else if (Array.isArray(linkedObj) && linkedObj[0]?.record_ids?.[0]) {
+              objectiveId = linkedObj[0].record_ids[0];
             }
-            // 格式3: 直接字符串
+            // 格式3: ['recXXX'] 数组
+            else if (Array.isArray(linkedObj) && typeof linkedObj[0] === 'string') {
+              objectiveId = linkedObj[0];
+            }
+            // 格式4: 直接字符串
             else if (typeof linkedObj === 'string') {
               objectiveId = linkedObj;
             }
@@ -137,6 +128,19 @@
           }
           progress = Math.round(progress);
           
+          // 处理关联KR字段 - 支持多种格式
+          let krId = null;
+          const linkedKR = r.fields['关联KR'];
+          if (linkedKR) {
+            if (linkedKR.link_record_ids?.[0]) {
+              krId = linkedKR.link_record_ids[0];
+            } else if (Array.isArray(linkedKR) && linkedKR[0]?.record_ids?.[0]) {
+              krId = linkedKR[0].record_ids[0];
+            } else if (Array.isArray(linkedKR) && typeof linkedKR[0] === 'string') {
+              krId = linkedKR[0];
+            }
+          }
+          
           return {
             id: r.record_id,
             name: r.fields['项目名称'] || '',
@@ -147,7 +151,7 @@
             status: r.fields['项目状态'] || '进行中',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
-            krId: r.fields['关联KR']?.[0] || null
+            krId: krId
           };
         });
       }
@@ -1607,13 +1611,7 @@
 
       // 获取某目标下的关键结果
       const getKRsForObjective = (objectiveId) => {
-        console.log(`查找目标ID: "${objectiveId}"`);
-        keyResults.forEach((kr, i) => {
-          console.log(`KR ${i}: name="${kr.name}", objectiveId="${kr.objectiveId}" (type: ${typeof kr.objectiveId})`);
-        });
-        const result = keyResults.filter(kr => kr.objectiveId === objectiveId);
-        console.log(`匹配结果: ${result.length} 条`);
-        return result;
+        return keyResults.filter(kr => kr.objectiveId === objectiveId);
       };
 
       // 获取某 KR 下的项目
