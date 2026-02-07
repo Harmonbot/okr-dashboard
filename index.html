@@ -32,6 +32,9 @@
 
     // 数据转换函数
     const transformData = (rawData) => {
+      console.log('=== transformData 开始 ===');
+      console.log('rawData:', rawData);
+      
       const data = {
         objectives: [],
         keyResults: [],
@@ -47,6 +50,7 @@
 
       // 转换目标表
       if (rawData['目标 Objectives']) {
+        console.log('目标原始数据:', rawData['目标 Objectives'].records);
         data.objectives = rawData['目标 Objectives'].records.map(r => {
           // 处理富文本字段格式: [{ text: '...', type: 'text' }]
           let objName = '';
@@ -69,7 +73,10 @@
       }
 
       // 转换关键结果表
+      console.log('Raw data tables:', Object.keys(rawData));
+      console.log('关键结果表存在:', !!rawData['关键结果 Key Results']);
       if (rawData['关键结果 Key Results']) {
+        console.log('关键结果原始数据:', rawData['关键结果 Key Results'].records);
         data.keyResults = rawData['关键结果 Key Results'].records.map(r => {
           // 处理关联字段格式: { link_record_ids: ['recXXX'] }
           let objectiveId = null;
@@ -1544,6 +1551,12 @@
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
     const OKROverview = ({ objectives, keyResults, products, onRefresh }) => {
+      // 调试：输出数据
+      console.log('=== OKR Debug ===');
+      console.log('Objectives:', objectives);
+      console.log('KeyResults:', keyResults);
+      console.log('Products:', products);
+      
       const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -1582,7 +1595,9 @@
 
       // 获取某目标下的关键结果
       const getKRsForObjective = (objectiveId) => {
-        return keyResults.filter(kr => kr.objectiveId === objectiveId);
+        const result = keyResults.filter(kr => kr.objectiveId === objectiveId);
+        console.log(`getKRsForObjective(${objectiveId}):`, result, '全部KR:', keyResults.map(kr => ({ id: kr.id, objId: kr.objectiveId })));
+        return result;
       };
 
       // 获取某 KR 下的项目
