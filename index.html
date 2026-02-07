@@ -1513,6 +1513,646 @@
       );
     };
 
+    // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
+    const OKROverview = ({ objectives, keyResults, products, onRefresh }) => {
+      const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
+      const [expandedKRs, setExpandedKRs] = useState(new Set());
+      const [showAddObjective, setShowAddObjective] = useState(false);
+      const [showAddKR, setShowAddKR] = useState(null); // objectiveId
+      const [editingObjective, setEditingObjective] = useState(null);
+      const [editingKR, setEditingKR] = useState(null);
+      const [isSubmitting, setIsSubmitting] = useState(false);
+      
+      // 表单数据
+      const [objectiveForm, setObjectiveForm] = useState({
+        name: '', cycle: 'Q1 2026', level: '公司级', status: '进行中'
+      });
+      const [krForm, setKRForm] = useState({
+        name: '', target: 100, current: 0, weight: 1, status: '未开始', objectiveId: ''
+      });
+
+      // 切换目标展开状态
+      const toggleObjective = (id) => {
+        setExpandedObjectives(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      };
+
+      // 切换 KR 展开状态
+      const toggleKR = (id) => {
+        setExpandedKRs(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      };
+
+      // 获取某目标下的关键结果
+      const getKRsForObjective = (objectiveId) => {
+        return keyResults.filter(kr => kr.objectiveId === objectiveId);
+      };
+
+      // 获取某 KR 下的项目
+      const getProjectsForKR = (krId) => {
+        return products.filter(p => p.krId === krId);
+      };
+
+      // 计算目标进度（基于 KR 进度加权平均）
+      const calculateObjectiveProgress = (objectiveId) => {
+        const krs = getKRsForObjective(objectiveId);
+        if (krs.length === 0) return 0;
+        const totalWeight = krs.reduce((sum, kr) => sum + (kr.weight || 1), 0);
+        const weightedProgress = krs.reduce((sum, kr) => {
+          const progress = kr.target > 0 ? Math.min(100, (kr.current / kr.target) * 100) : 0;
+          return sum + progress * (kr.weight || 1);
+        }, 0);
+        return Math.round(weightedProgress / totalWeight);
+      };
+
+      // 创建目标
+      const handleCreateObjective = async (e) => {
+        e.preventDefault();
+        if (!objectiveForm.name.trim()) return alert('请输入目标名称');
+        
+        setIsSubmitting(true);
+        try {
+          const res = await fetch(API_BASE + '/api/create-objective', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tbl9TX3RZdLRlEy0',
+              objective: objectiveForm
+            })
+          });
+          const result = await res.json();
+          if (result.success) {
+            alert('✅ 目标创建成功！');
+            setShowAddObjective(false);
+            setObjectiveForm({ name: '', cycle: 'Q1 2026', level: '公司级', status: '进行中' });
+            onRefresh();
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (err) {
+          alert('❌ 创建失败: ' + err.message);
+        }
+        setIsSubmitting(false);
+      };
+
+      // 更新目标
+      const handleUpdateObjective = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+          const res = await fetch(API_BASE + '/api/update-objective', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tbl9TX3RZdLRlEy0',
+              record_id: editingObjective.id,
+              objective: objectiveForm
+            })
+          });
+          const result = await res.json();
+          if (result.success) {
+            alert('✅ 目标更新成功！');
+            setEditingObjective(null);
+            onRefresh();
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (err) {
+          alert('❌ 更新失败: ' + err.message);
+        }
+        setIsSubmitting(false);
+      };
+
+      // 创建关键结果
+      const handleCreateKR = async (e) => {
+        e.preventDefault();
+        if (!krForm.name.trim()) return alert('请输入关键结果描述');
+        
+        setIsSubmitting(true);
+        try {
+          const res = await fetch(API_BASE + '/api/create-kr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblW7yKqbgxH0bZV',
+              kr: { ...krForm, objectiveId: showAddKR }
+            })
+          });
+          const result = await res.json();
+          if (result.success) {
+            alert('✅ 关键结果创建成功！');
+            setShowAddKR(null);
+            setKRForm({ name: '', target: 100, current: 0, weight: 1, status: '未开始', objectiveId: '' });
+            onRefresh();
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (err) {
+          alert('❌ 创建失败: ' + err.message);
+        }
+        setIsSubmitting(false);
+      };
+
+      // 更新关键结果
+      const handleUpdateKR = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+          const res = await fetch(API_BASE + '/api/update-kr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblW7yKqbgxH0bZV',
+              record_id: editingKR.id,
+              kr: krForm
+            })
+          });
+          const result = await res.json();
+          if (result.success) {
+            alert('✅ 关键结果更新成功！');
+            setEditingKR(null);
+            onRefresh();
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (err) {
+          alert('❌ 更新失败: ' + err.message);
+        }
+        setIsSubmitting(false);
+      };
+
+      // 开始编辑目标
+      const startEditObjective = (obj) => {
+        setEditingObjective(obj);
+        setObjectiveForm({
+          name: obj.name,
+          cycle: obj.cycle || 'Q1 2026',
+          level: obj.level || '公司级',
+          status: obj.status || '进行中'
+        });
+      };
+
+      // 开始编辑 KR
+      const startEditKR = (kr) => {
+        setEditingKR(kr);
+        setKRForm({
+          name: kr.name,
+          target: kr.target || 100,
+          current: kr.current || 0,
+          weight: kr.weight || 1,
+          status: kr.status || '未开始'
+        });
+      };
+
+      // 进度颜色
+      const getProgressColor = (progress) => {
+        if (progress >= 80) return 'bg-green-500';
+        if (progress >= 50) return 'bg-blue-500';
+        if (progress >= 20) return 'bg-yellow-500';
+        return 'bg-gray-300';
+      };
+
+      // 状态颜色
+      const getStatusColor = (status) => {
+        switch (status) {
+          case '已完成': return 'bg-green-100 text-green-700';
+          case '进行中': return 'bg-blue-100 text-blue-700';
+          case '有风险': return 'bg-red-100 text-red-700';
+          default: return 'bg-gray-100 text-gray-600';
+        }
+      };
+
+      return (
+        <div className="space-y-4">
+          {/* 顶部操作栏 */}
+          <div className="flex items-center justify-between bg-white rounded-xl p-4 shadow-sm">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">🎯 OKR 目标管理</h2>
+              <p className="text-sm text-gray-500 mt-1">目标 → 关键结果 → 项目 层级视图</p>
+            </div>
+            <button
+              onClick={() => setShowAddObjective(true)}
+              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2"
+            >
+              ➕ 新建目标
+            </button>
+          </div>
+
+          {/* 新建目标表单 */}
+          {showAddObjective && (
+            <div className="bg-purple-50 rounded-xl p-5 border border-purple-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-purple-700">🎯 新建目标</h3>
+                <button onClick={() => setShowAddObjective(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+              <form onSubmit={handleCreateObjective} className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">目标名称 *</label>
+                  <input
+                    type="text"
+                    value={objectiveForm.name}
+                    onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                    placeholder="例如：提升产品市场竞争力"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">目标周期</label>
+                    <select
+                      value={objectiveForm.cycle}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                    >
+                      <option>Q1 2026</option>
+                      <option>Q2 2026</option>
+                      <option>Q3 2026</option>
+                      <option>Q4 2026</option>
+                      <option>2026年度</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">目标层级</label>
+                    <select
+                      value={objectiveForm.level}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                    >
+                      <option>公司级</option>
+                      <option>部门级</option>
+                      <option>团队级</option>
+                      <option>个人级</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">状态</label>
+                    <select
+                      value={objectiveForm.status}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, status: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                    >
+                      <option>未开始</option>
+                      <option>进行中</option>
+                      <option>已完成</option>
+                      <option>有风险</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button type="button" onClick={() => setShowAddObjective(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                  <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50">
+                    {isSubmitting ? '创建中...' : '创建目标'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 目标列表 */}
+          {objectives.length === 0 ? (
+            <div className="bg-white rounded-xl p-12 text-center">
+              <div className="text-6xl mb-4">🎯</div>
+              <div className="text-gray-500 mb-4">暂无目标，点击上方按钮创建第一个目标</div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {objectives.map(objective => {
+                const krs = getKRsForObjective(objective.id);
+                const progress = calculateObjectiveProgress(objective.id);
+                const isExpanded = expandedObjectives.has(objective.id);
+                const isEditing = editingObjective?.id === objective.id;
+
+                return (
+                  <div key={objective.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                    {/* 目标头部 */}
+                    <div 
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => !isEditing && toggleObjective(objective.id)}
+                    >
+                      {isEditing ? (
+                        <form onSubmit={handleUpdateObjective} className="space-y-4" onClick={e => e.stopPropagation()}>
+                          <div>
+                            <input
+                              type="text"
+                              value={objectiveForm.name}
+                              onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none text-lg font-semibold"
+                            />
+                          </div>
+                          <div className="grid grid-cols-3 gap-4">
+                            <select
+                              value={objectiveForm.cycle}
+                              onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
+                              className="px-3 py-2 border rounded-lg text-sm"
+                            >
+                              <option>Q1 2026</option>
+                              <option>Q2 2026</option>
+                              <option>Q3 2026</option>
+                              <option>Q4 2026</option>
+                              <option>2026年度</option>
+                            </select>
+                            <select
+                              value={objectiveForm.level}
+                              onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value })}
+                              className="px-3 py-2 border rounded-lg text-sm"
+                            >
+                              <option>公司级</option>
+                              <option>部门级</option>
+                              <option>团队级</option>
+                              <option>个人级</option>
+                            </select>
+                            <select
+                              value={objectiveForm.status}
+                              onChange={e => setObjectiveForm({ ...objectiveForm, status: e.target.value })}
+                              className="px-3 py-2 border rounded-lg text-sm"
+                            >
+                              <option>未开始</option>
+                              <option>进行中</option>
+                              <option>已完成</option>
+                              <option>有风险</option>
+                            </select>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => setEditingObjective(null)} className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button type="submit" disabled={isSubmitting} className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 disabled:opacity-50">
+                              {isSubmitting ? '保存中...' : '保存'}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex items-center gap-4">
+                          <div className="text-xl">{isExpanded ? '▼' : '▶'}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">🎯</span>
+                              <h3 className="text-lg font-bold text-gray-800">{objective.name}</h3>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(objective.status)}`}>
+                                {objective.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                              <span>📅 {objective.cycle || '未设置周期'}</span>
+                              <span>📊 {objective.level || '未设置层级'}</span>
+                              <span>🔑 {krs.length} 个关键结果</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-purple-600">{progress}%</div>
+                            <div className="w-32 h-2 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                              <div className={`h-full ${getProgressColor(progress)} transition-all`} style={{ width: `${progress}%` }} />
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); startEditObjective(objective); }}
+                            className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 关键结果列表 */}
+                    {isExpanded && !isEditing && (
+                      <div className="border-t bg-gray-50 p-4">
+                        {/* 添加 KR 按钮 */}
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-600">🔑 关键结果 ({krs.length})</h4>
+                          <button
+                            onClick={() => setShowAddKR(objective.id)}
+                            className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                          >
+                            ➕ 添加 KR
+                          </button>
+                        </div>
+
+                        {/* 新建 KR 表单 */}
+                        {showAddKR === objective.id && (
+                          <div className="bg-blue-50 rounded-lg p-4 mb-4 border border-blue-200">
+                            <form onSubmit={handleCreateKR} className="space-y-3">
+                              <div>
+                                <label className="block text-xs text-gray-600 mb-1">关键结果描述 *</label>
+                                <input
+                                  type="text"
+                                  value={krForm.name}
+                                  onChange={e => setKRForm({ ...krForm, name: e.target.value })}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                                  placeholder="例如：新品上线数量达到 10 个"
+                                  required
+                                />
+                              </div>
+                              <div className="grid grid-cols-4 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">目标值</label>
+                                  <input
+                                    type="number"
+                                    value={krForm.target}
+                                    onChange={e => setKRForm({ ...krForm, target: Number(e.target.value) })}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">当前值</label>
+                                  <input
+                                    type="number"
+                                    value={krForm.current}
+                                    onChange={e => setKRForm({ ...krForm, current: Number(e.target.value) })}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">权重</label>
+                                  <input
+                                    type="number"
+                                    value={krForm.weight}
+                                    onChange={e => setKRForm({ ...krForm, weight: Number(e.target.value) })}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    min="1" max="10"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">状态</label>
+                                  <select
+                                    value={krForm.status}
+                                    onChange={e => setKRForm({ ...krForm, status: e.target.value })}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  >
+                                    <option>未开始</option>
+                                    <option>进行中</option>
+                                    <option>已完成</option>
+                                    <option>有风险</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => setShowAddKR(null)} className="flex-1 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                                <button type="submit" disabled={isSubmitting} className="flex-1 px-3 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 disabled:opacity-50">
+                                  {isSubmitting ? '创建中...' : '创建 KR'}
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+
+                        {/* KR 列表 */}
+                        {krs.length === 0 ? (
+                          <div className="text-center py-6 text-gray-400 text-sm">
+                            暂无关键结果，点击上方按钮添加
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {krs.map(kr => {
+                              const krProgress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
+                              const krProjects = getProjectsForKR(kr.id);
+                              const isKRExpanded = expandedKRs.has(kr.id);
+                              const isKREditing = editingKR?.id === kr.id;
+
+                              return (
+                                <div key={kr.id} className="bg-white rounded-lg border overflow-hidden">
+                                  {/* KR 头部 */}
+                                  <div 
+                                    className="p-3 cursor-pointer hover:bg-gray-50"
+                                    onClick={() => !isKREditing && toggleKR(kr.id)}
+                                  >
+                                    {isKREditing ? (
+                                      <form onSubmit={handleUpdateKR} className="space-y-3" onClick={e => e.stopPropagation()}>
+                                        <input
+                                          type="text"
+                                          value={krForm.name}
+                                          onChange={e => setKRForm({ ...krForm, name: e.target.value })}
+                                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                                        />
+                                        <div className="grid grid-cols-4 gap-3">
+                                          <input
+                                            type="number"
+                                            value={krForm.target}
+                                            onChange={e => setKRForm({ ...krForm, target: Number(e.target.value) })}
+                                            className="px-3 py-2 border rounded-lg text-sm"
+                                            placeholder="目标值"
+                                          />
+                                          <input
+                                            type="number"
+                                            value={krForm.current}
+                                            onChange={e => setKRForm({ ...krForm, current: Number(e.target.value) })}
+                                            className="px-3 py-2 border rounded-lg text-sm"
+                                            placeholder="当前值"
+                                          />
+                                          <input
+                                            type="number"
+                                            value={krForm.weight}
+                                            onChange={e => setKRForm({ ...krForm, weight: Number(e.target.value) })}
+                                            className="px-3 py-2 border rounded-lg text-sm"
+                                            placeholder="权重"
+                                          />
+                                          <select
+                                            value={krForm.status}
+                                            onChange={e => setKRForm({ ...krForm, status: e.target.value })}
+                                            className="px-3 py-2 border rounded-lg text-sm"
+                                          >
+                                            <option>未开始</option>
+                                            <option>进行中</option>
+                                            <option>已完成</option>
+                                            <option>有风险</option>
+                                          </select>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <button type="button" onClick={() => setEditingKR(null)} className="px-3 py-1.5 border rounded text-xs hover:bg-gray-50">取消</button>
+                                          <button type="submit" disabled={isSubmitting} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50">
+                                            {isSubmitting ? '保存中...' : '保存'}
+                                          </button>
+                                        </div>
+                                      </form>
+                                    ) : (
+                                      <div className="flex items-center gap-3">
+                                        <div className="text-sm text-gray-400">{isKRExpanded ? '▼' : '▶'}</div>
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-lg">🔑</span>
+                                            <span className="font-medium text-gray-800">{kr.name}</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(kr.status)}`}>
+                                              {kr.status}
+                                            </span>
+                                            {kr.weight > 1 && (
+                                              <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full">
+                                                权重 {kr.weight}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                                            <span>目标: {kr.target}</span>
+                                            <span>当前: {kr.current}</span>
+                                            <span>📦 {krProjects.length} 个项目</span>
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="text-xl font-bold text-blue-600">{krProgress}%</div>
+                                          <div className="w-24 h-1.5 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                                            <div className={`h-full ${getProgressColor(krProgress)} transition-all`} style={{ width: `${krProgress}%` }} />
+                                          </div>
+                                        </div>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); startEditKR(kr); }}
+                                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                        >
+                                          ✏️
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* 项目列表 */}
+                                  {isKRExpanded && !isKREditing && (
+                                    <div className="border-t bg-gray-50 p-3">
+                                      <div className="text-xs font-semibold text-gray-500 mb-2">📦 关联项目 ({krProjects.length})</div>
+                                      {krProjects.length === 0 ? (
+                                        <div className="text-xs text-gray-400 text-center py-3">暂无关联项目</div>
+                                      ) : (
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {krProjects.map(project => (
+                                            <div key={project.id} className="bg-white rounded-lg p-3 border flex items-center gap-3">
+                                              <span className="text-2xl">{project.image}</span>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
+                                                <div className="text-xs text-gray-500">{project.currentStage}</div>
+                                              </div>
+                                              <div className="text-right">
+                                                <div className="text-sm font-bold text-green-600">{project.progress}%</div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // 产品总览
     const ProductOverview = ({ products, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onRefresh }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
@@ -1932,7 +2572,7 @@
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
-      const [activeTab, setActiveTab] = useState('products');
+      const [activeTab, setActiveTab] = useState('okr');
       const [lastUpdate, setLastUpdate] = useState(null);
 
       const fetchData = async () => {
@@ -2016,6 +2656,7 @@
 
               <div className="flex gap-2 mb-6">
                 {[
+                  { key: 'okr', label: '🎯 OKR 视图' },
                   { key: 'products', label: '📦 产品进度' },
                   { key: 'team', label: '👥 人员任务' }
                 ].map(tab => (
@@ -2030,6 +2671,15 @@
                   </button>
                 ))}
               </div>
+
+              {activeTab === 'okr' && (
+                <OKROverview
+                  objectives={data.objectives}
+                  keyResults={data.keyResults}
+                  products={data.products}
+                  onRefresh={fetchData}
+                />
+              )}
 
               {activeTab === 'products' && (
                 <ProductOverview
