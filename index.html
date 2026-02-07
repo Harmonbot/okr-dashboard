@@ -1619,13 +1619,43 @@
         return products.filter(p => p.krId === krId);
       };
 
+      // 计算 KR 的自动进度（基于关联项目完成情况）
+      const getKRAutoProgress = (kr) => {
+        const relatedProjects = getProjectsForKR(kr.id);
+        
+        if (relatedProjects.length > 0) {
+          // 有关联项目：当前值 = 已完成项目数
+          const completedCount = relatedProjects.filter(p => 
+            p.progress >= 100 || p.status === '已完成'
+          ).length;
+          const progress = kr.target > 0 ? Math.min(100, Math.round((completedCount / kr.target) * 100)) : 0;
+          return {
+            current: completedCount,
+            progress: progress,
+            autoCalculated: true,
+            totalProjects: relatedProjects.length,
+            completedProjects: completedCount
+          };
+        } else {
+          // 无关联项目：使用手动填写的值
+          const progress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
+          return {
+            current: kr.current,
+            progress: progress,
+            autoCalculated: false,
+            totalProjects: 0,
+            completedProjects: 0
+          };
+        }
+      };
+
       // 计算目标进度（基于 KR 进度加权平均）
       const calculateObjectiveProgress = (objectiveId) => {
         const krs = getKRsForObjective(objectiveId);
         if (krs.length === 0) return 0;
         const totalWeight = krs.reduce((sum, kr) => sum + (kr.weight || 1), 0);
         const weightedProgress = krs.reduce((sum, kr) => {
-          const progress = kr.target > 0 ? Math.min(100, (kr.current / kr.target) * 100) : 0;
+          const { progress } = getKRAutoProgress(kr);
           return sum + progress * (kr.weight || 1);
         }, 0);
         return Math.round(weightedProgress / totalWeight);
@@ -2012,24 +2042,18 @@
                                   required
                                 />
                               </div>
-                              <div className="grid grid-cols-4 gap-3">
+                              <div className="grid grid-cols-3 gap-3">
                                 <div>
-                                  <label className="block text-xs text-gray-600 mb-1">目标值</label>
+                                  <label className="block text-xs text-gray-600 mb-1">目标值 *</label>
                                   <input
                                     type="number"
                                     value={krForm.target}
                                     onChange={e => setKRForm({ ...krForm, target: Number(e.target.value) })}
                                     className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    placeholder="如: 5"
+                                    required
                                   />
-                                </div>
-                                <div>
-                                  <label className="block text-xs text-gray-600 mb-1">当前值</label>
-                                  <input
-                                    type="number"
-                                    value={krForm.current}
-                                    onChange={e => setKRForm({ ...krForm, current: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                                  />
+                                  <div className="text-xs text-gray-400 mt-1">需完成的项目数量</div>
                                 </div>
                                 <div>
                                   <label className="block text-xs text-gray-600 mb-1">权重</label>
@@ -2038,7 +2062,7 @@
                                     value={krForm.weight}
                                     onChange={e => setKRForm({ ...krForm, weight: Number(e.target.value) })}
                                     className="w-full px-3 py-2 border rounded-lg text-sm"
-                                    min="1" max="10"
+                                    min="1" max="100"
                                   />
                                 </div>
                                 <div>
@@ -2054,6 +2078,9 @@
                                     <option>有风险</option>
                                   </select>
                                 </div>
+                              </div>
+                              <div className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                                💡 当前值会自动计算：当关联的项目完成100%时，计入当前值
                               </div>
                               <div className="flex gap-2">
                                 <button type="button" onClick={() => setShowAddKR(null)} className="flex-1 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -2073,7 +2100,9 @@
                         ) : (
                           <div className="space-y-3">
                             {krs.map(kr => {
-                              const krProgress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
+                              const krAuto = getKRAutoProgress(kr);
+                              const krProgress = krAuto.progress;
+                              const krCurrent = krAuto.current;
                               const krProjects = getProjectsForKR(kr.id);
                               const isKRExpanded = expandedKRs.has(kr.id);
                               const isKREditing = editingKR?.id === kr.id;
@@ -2093,20 +2122,13 @@
                                           onChange={e => setKRForm({ ...krForm, name: e.target.value })}
                                           className="w-full px-3 py-2 border rounded-lg text-sm"
                                         />
-                                        <div className="grid grid-cols-4 gap-3">
+                                        <div className="grid grid-cols-3 gap-3">
                                           <input
                                             type="number"
                                             value={krForm.target}
                                             onChange={e => setKRForm({ ...krForm, target: Number(e.target.value) })}
                                             className="px-3 py-2 border rounded-lg text-sm"
                                             placeholder="目标值"
-                                          />
-                                          <input
-                                            type="number"
-                                            value={krForm.current}
-                                            onChange={e => setKRForm({ ...krForm, current: Number(e.target.value) })}
-                                            className="px-3 py-2 border rounded-lg text-sm"
-                                            placeholder="当前值"
                                           />
                                           <input
                                             type="number"
@@ -2151,8 +2173,11 @@
                                           </div>
                                           <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
                                             <span>目标: {kr.target}</span>
-                                            <span>当前: {kr.current}</span>
-                                            <span>📦 {krProjects.length} 个项目</span>
+                                            <span className={krAuto.autoCalculated ? 'text-green-600 font-medium' : ''}>
+                                              当前: {krCurrent}
+                                              {krAuto.autoCalculated && <span className="ml-1" title="自动计算：已完成项目数">🔄</span>}
+                                            </span>
+                                            <span>📦 {krProjects.length} 个项目 {krAuto.autoCalculated && `(${krAuto.completedProjects}已完成)`}</span>
                                           </div>
                                         </div>
                                         <div className="text-right">
@@ -2174,23 +2199,39 @@
                                   {/* 项目列表 */}
                                   {isKRExpanded && !isKREditing && (
                                     <div className="border-t bg-gray-50 p-3">
-                                      <div className="text-xs font-semibold text-gray-500 mb-2">📦 关联项目 ({krProjects.length})</div>
+                                      <div className="text-xs font-semibold text-gray-500 mb-2">
+                                        📦 关联项目 ({krProjects.length}) 
+                                        {krAuto.autoCalculated && (
+                                          <span className="ml-2 text-green-600">
+                                            ✅ {krAuto.completedProjects}/{krProjects.length} 已完成
+                                          </span>
+                                        )}
+                                      </div>
                                       {krProjects.length === 0 ? (
-                                        <div className="text-xs text-gray-400 text-center py-3">暂无关联项目</div>
+                                        <div className="text-xs text-gray-400 text-center py-3">
+                                          暂无关联项目 - 在「产品进度」中关联项目到此KR
+                                        </div>
                                       ) : (
                                         <div className="grid grid-cols-2 gap-2">
-                                          {krProjects.map(project => (
-                                            <div key={project.id} className="bg-white rounded-lg p-3 border flex items-center gap-3">
-                                              <span className="text-2xl">{project.image}</span>
-                                              <div className="flex-1 min-w-0">
-                                                <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
-                                                <div className="text-xs text-gray-500">{project.currentStage}</div>
+                                          {krProjects.map(project => {
+                                            const isCompleted = project.progress >= 100 || project.status === '已完成';
+                                            return (
+                                              <div key={project.id} className={`bg-white rounded-lg p-3 border flex items-center gap-3 ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
+                                                <span className="text-2xl">{project.image}</span>
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
+                                                  <div className="text-xs text-gray-500">{project.currentStage}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                  {isCompleted ? (
+                                                    <div className="text-sm font-bold text-green-600">✅ 完成</div>
+                                                  ) : (
+                                                    <div className="text-sm font-bold text-blue-600">{project.progress}%</div>
+                                                  )}
+                                                </div>
                                               </div>
-                                              <div className="text-right">
-                                                <div className="text-sm font-bold text-green-600">{project.progress}%</div>
-                                              </div>
-                                            </div>
-                                          ))}
+                                            );
+                                          })}
                                         </div>
                                       )}
                                     </div>
