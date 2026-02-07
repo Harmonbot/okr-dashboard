@@ -1585,9 +1585,8 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onClose, onRefresh }) => {
+    const ProductDetailModal = ({ product, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh }) => {
       const [selectedNode, setSelectedNode] = useState(null);
-      const [skippedNodes, setSkippedNodes] = useState(new Set());
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       
@@ -1658,8 +1657,11 @@
           showToast?.('只有项目负责人才能跳过节点', 'error');
           return;
         }
-        if (!confirm(`确认跳过节点「${nodeName}」？\n\n跳过后，后续节点将不受此节点限制。`)) return;
-        setSkippedNodes(prev => {
+        const isCurrentlySkipped = skippedNodes.has(nodeName);
+        if (!isCurrentlySkipped) {
+          if (!confirm(`确认跳过节点「${nodeName}」？\n\n跳过后，后续节点将不受此节点限制。`)) return;
+        }
+        onSkippedNodesChange?.(prev => {
           const next = new Set(prev);
           if (next.has(nodeName)) {
             next.delete(nodeName);
@@ -1668,7 +1670,7 @@
           }
           return next;
         });
-        showToast?.(`节点「${nodeName}」已跳过`, 'success');
+        showToast?.(isCurrentlySkipped ? `已恢复节点「${nodeName}」` : `节点「${nodeName}」已跳过`, 'success');
       };
 
       // 构建流程链（每条链是一个独立的行）
@@ -2829,6 +2831,38 @@
       const [filterStatus, setFilterStatus] = useState('all');
       const [viewMode, setViewMode] = useState('grid');
 
+      // 跳过节点状态 - 按项目ID存储，持久化到 localStorage
+      const [skippedNodesMap, setSkippedNodesMap] = useState(() => {
+        try {
+          const saved = localStorage.getItem('okr_skipped_nodes');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            // 转换为 Map<productId, Set<nodeName>>
+            const map = {};
+            Object.keys(parsed).forEach(k => { map[k] = new Set(parsed[k]); });
+            return map;
+          }
+        } catch (e) {}
+        return {};
+      });
+
+      const getSkippedNodes = (productId) => skippedNodesMap[productId] || new Set();
+
+      const setSkippedNodes = (productId, updater) => {
+        setSkippedNodesMap(prev => {
+          const current = prev[productId] || new Set();
+          const next = typeof updater === 'function' ? updater(current) : updater;
+          const newMap = { ...prev, [productId]: next };
+          // 持久化
+          try {
+            const serializable = {};
+            Object.keys(newMap).forEach(k => { serializable[k] = [...newMap[k]]; });
+            localStorage.setItem('okr_skipped_nodes', JSON.stringify(serializable));
+          } catch (e) {}
+          return newMap;
+        });
+      };
+
       const filteredProducts = filterStatus === 'all'
         ? products
         : products.filter(p => p.status === filterStatus);
@@ -2972,6 +3006,8 @@
               nodeToLayer={nodeToLayer}
               members={members}
               tasks={tasks}
+              skippedNodes={getSkippedNodes(selectedProduct?.id)}
+              onSkippedNodesChange={(updater) => setSkippedNodes(selectedProduct?.id, updater)}
               onClose={() => setSelectedProduct(null)}
               onRefresh={onRefresh}
             />
