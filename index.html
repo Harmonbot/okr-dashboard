@@ -16,13 +16,18 @@
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
     .loading-spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    /* Toast 动画 */
+    .toast-enter { animation: toastIn 0.3s ease-out; }
+    .toast-exit { animation: toastOut 0.3s ease-in forwards; }
+    @keyframes toastIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes toastOut { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-20px); opacity: 0; } }
   </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useEffect, createContext, useContext } = React;
+    const { useState, useEffect, createContext, useContext, useCallback } = React;
 
     const API_BASE = window.location.hostname === 'localhost' 
       ? 'http://localhost:3000' 
@@ -36,6 +41,60 @@
     
     // 用户上下文
     const UserContext = createContext(null);
+    
+    // Toast 上下文
+    const ToastContext = createContext(null);
+    
+    // Toast 组件
+    const Toast = ({ message, type, onClose }) => {
+      const [isExiting, setIsExiting] = useState(false);
+      
+      useEffect(() => {
+        const timer = setTimeout(() => {
+          setIsExiting(true);
+          setTimeout(onClose, 300);
+        }, 2500);
+        return () => clearTimeout(timer);
+      }, [onClose]);
+      
+      const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+      const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+      
+      return (
+        <div className={`${bgColor} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 ${isExiting ? 'toast-exit' : 'toast-enter'}`}>
+          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-sm">{icon}</span>
+          <span>{message}</span>
+        </div>
+      );
+    };
+    
+    // Toast 容器
+    const ToastContainer = ({ children }) => {
+      const [toasts, setToasts] = useState([]);
+      
+      const showToast = useCallback((message, type = 'success') => {
+        const id = Date.now();
+        setToasts(prev => [...prev, { id, message, type }]);
+      }, []);
+      
+      const removeToast = useCallback((id) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, []);
+      
+      return (
+        <ToastContext.Provider value={showToast}>
+          {children}
+          <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+            {toasts.map(toast => (
+              <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
+            ))}
+          </div>
+        </ToastContext.Provider>
+      );
+    };
+    
+    // 使用 Toast 的 Hook
+    const useToast = () => useContext(ToastContext);
     
     // 获取飞书登录 URL
     const getLarkLoginUrl = () => {
@@ -818,6 +877,7 @@
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
     const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
+      const showToast = useToast();
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
@@ -880,7 +940,8 @@
           
           const result = await res.json();
           if (result.success) {
-            alert('✅ 任务创建成功！');
+            // 先刷新数据，再重置表单
+            if (onTaskCreated) onTaskCreated();
             setShowAddForm(false);
             setFormData({
               name: '',
@@ -889,12 +950,12 @@
               collaborators: [],
               description: ''
             });
-            if (onTaskCreated) onTaskCreated();
+            showToast?.('任务创建成功', 'success');
           } else {
             throw new Error(result.error || '创建失败');
           }
         } catch (err) {
-          alert('❌ 创建失败: ' + err.message);
+          showToast?.('创建失败: ' + err.message, 'error');
         }
         setIsSubmitting(false);
       };
@@ -929,13 +990,13 @@
           
           const result = await res.json();
           if (result.success) {
-            alert('✅ 已接受任务！');
-            if (onTaskCreated) onTaskCreated();
+            if (onTaskCreated) onTaskCreated(); // 立即刷新
+            showToast?.('已接受任务', 'success');
           } else {
             throw new Error(result.error || '操作失败');
           }
         } catch (err) {
-          alert('❌ 操作失败: ' + err.message);
+          showToast?.('操作失败: ' + err.message, 'error');
         }
         setActionTaskId(null);
       };
@@ -943,7 +1004,7 @@
       // 完成任务：需要上传输出文件
       const handleCompleteTask = async (task) => {
         if (!outputFile) {
-          alert('请上传输出文件');
+          showToast?.('请上传输出文件', 'error');
           return;
         }
         
@@ -995,15 +1056,15 @@
           
           const result = await res.json();
           if (result.success) {
-            alert('✅ 任务已完成！文件已上传。');
+            if (onTaskCreated) onTaskCreated(); // 立即刷新
             setShowCompleteForm(null);
             setOutputFile(null);
-            if (onTaskCreated) onTaskCreated();
+            showToast?.('任务已完成', 'success');
           } else {
             throw new Error(result.error || '操作失败');
           }
         } catch (err) {
-          alert('❌ 操作失败: ' + err.message);
+          showToast?.('操作失败: ' + err.message, 'error');
         }
         setActionTaskId(null);
       };
@@ -3055,7 +3116,11 @@
       );
     };
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <ToastContainer>
+        <App />
+      </ToastContainer>
+    );
   </script>
 </body>
 </html>
