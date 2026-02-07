@@ -576,6 +576,22 @@
         ? Math.ceil((new Date(product.targetDate) - new Date()) / (1000 * 60 * 60 * 24))
         : null;
       
+      // 自动计算项目进度：每个节点的任务完成度 / 节点总数
+      const getAutoProgress = () => {
+        if (nodes.length === 0) return product.progress;
+        let totalNodeProgress = 0;
+        for (const node of nodes) {
+          const nodeTasks = productTasks.filter(t => t.stage === node.name);
+          if (nodeTasks.length > 0) {
+            const completedCount = nodeTasks.filter(t => t.status === '已完成').length;
+            totalNodeProgress += (completedCount / nodeTasks.length) * 100;
+          }
+          // 无任务的节点按0%计算
+        }
+        return Math.round(totalNodeProgress / nodes.length);
+      };
+      const autoProgress = getAutoProgress();
+
       // 自动计算项目状态
       const getAutoStatus = () => {
         if (productTasks.length === 0) return '未开始';
@@ -648,14 +664,14 @@
             <div className="mb-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-500">整体进度</span>
-                <span className="text-sm font-medium text-gray-800">{product.progress}%</span>
+                <span className="text-sm font-medium text-gray-800">{autoProgress}%</span>
               </div>
               <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div 
                   className={`h-full rounded-full transition-all ${
-                    product.progress === 100 ? 'bg-green-500' : 'bg-blue-500'
+                    autoProgress === 100 ? 'bg-green-500' : 'bg-blue-500'
                   }`}
-                  style={{ width: `${product.progress}%` }}
+                  style={{ width: `${autoProgress}%` }}
                 />
               </div>
             </div>
@@ -1604,6 +1620,25 @@
       // 找到项目负责人的成员信息
       const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
 
+      // 自动计算项目进度
+      const getAutoProgress = () => {
+        if (nodes.length === 0) return product.progress;
+        let totalNodeProgress = 0;
+        for (const node of nodes) {
+          if (skippedNodes.has(node.name)) {
+            totalNodeProgress += 100; // 跳过的节点按100%
+            continue;
+          }
+          const nodeTasks = productTasks.filter(t => t.stage === node.name);
+          if (nodeTasks.length > 0) {
+            const completedCount = nodeTasks.filter(t => t.status === '已完成').length;
+            totalNodeProgress += (completedCount / nodeTasks.length) * 100;
+          }
+        }
+        return Math.round(totalNodeProgress / nodes.length);
+      };
+      const autoProgress = getAutoProgress();
+
       // 获取节点状态（基于任务状态）
       const getNodeStatus = (nodeName) => {
         if (skippedNodes.has(nodeName)) return 'skipped'; // 已跳过
@@ -1805,7 +1840,7 @@
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
               <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-blue-600">{product.progress}%</div>
+                  <div className="text-3xl font-bold text-blue-600">{autoProgress}%</div>
                   <div className="text-sm text-gray-500">整体进度</div>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
@@ -1969,7 +2004,7 @@
     };
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
-    const OKROverview = ({ objectives, keyResults, products, onRefresh }) => {
+    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], onRefresh }) => {
       const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -2068,22 +2103,36 @@
         const relatedProjects = getProjectsForKR(kr.id);
         
         if (relatedProjects.length > 0) {
-          // 有关联项目：当前值 = 已完成项目数
-          const completedCount = relatedProjects.filter(p => 
-            p.progress >= 100 || p.status === '已完成'
+          // 计算每个项目的自动进度
+          const projectProgresses = relatedProjects.map(p => {
+            const pTasks = tasks.filter(t => t.productId === p.id);
+            if (nodes.length === 0 || pTasks.length === 0) return { ...p, autoProgress: 0, hasProgress: false };
+            let totalNodeProgress = 0;
+            for (const node of nodes) {
+              const nodeTasks = pTasks.filter(t => t.stage === node.name);
+              if (nodeTasks.length > 0) {
+                const completed = nodeTasks.filter(t => t.status === '已完成').length;
+                totalNodeProgress += (completed / nodeTasks.length) * 100;
+              }
+            }
+            const autoProgress = Math.round(totalNodeProgress / nodes.length);
+            const hasProgress = pTasks.some(t => t.status === '进行中' || t.status === '已完成');
+            return { ...p, autoProgress, hasProgress };
+          });
+
+          const completedCount = projectProgresses.filter(p => 
+            p.autoProgress >= 100 || p.status === '已完成'
           ).length;
-          const inProgressCount = relatedProjects.filter(p => 
-            p.progress > 0 && p.progress < 100 && p.status !== '已完成'
-          ).length;
+          const hasAnyProgress = projectProgresses.some(p => p.hasProgress);
+          const inProgressCount = projectProgresses.filter(p => p.hasProgress && p.autoProgress < 100 && p.status !== '已完成').length;
+          
           const progress = kr.target > 0 ? Math.min(100, Math.round((completedCount / kr.target) * 100)) : 0;
           
-          // 自动计算状态
+          // 自动计算状态：任何项目有进度就是进行中
           let autoStatus = '未开始';
           if (completedCount >= kr.target || completedCount >= relatedProjects.length) {
-            // 所有关联项目都完成，或已完成数量达到目标值
             autoStatus = '已完成';
-          } else if (inProgressCount > 0 || completedCount > 0) {
-            // 有进行中的项目，或部分已完成
+          } else if (hasAnyProgress || completedCount > 0) {
             autoStatus = '进行中';
           }
           
@@ -2106,7 +2155,7 @@
             totalProjects: 0,
             completedProjects: 0,
             inProgressProjects: 0,
-            autoStatus: kr.status // 保持手动设置的状态
+            autoStatus: kr.status
           };
         }
       };
@@ -2725,7 +2774,18 @@
                                       ) : (
                                         <div className="grid grid-cols-2 gap-2">
                                           {krProjects.map(project => {
-                                            const isCompleted = project.progress >= 100 || project.status === '已完成';
+                                            // 自动计算项目进度
+                                            const pTasks = tasks.filter(t => t.productId === project.id);
+                                            let pAutoProgress = 0;
+                                            if (nodes.length > 0) {
+                                              let total = 0;
+                                              for (const nd of nodes) {
+                                                const nt = pTasks.filter(t => t.stage === nd.name);
+                                                if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
+                                              }
+                                              pAutoProgress = Math.round(total / nodes.length);
+                                            }
+                                            const isCompleted = pAutoProgress >= 100 || project.status === '已完成';
                                             return (
                                               <div key={project.id} className={`bg-white rounded-lg p-3 border flex items-center gap-3 ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
                                                 <span className="text-2xl">{project.image}</span>
@@ -2737,7 +2797,7 @@
                                                   {isCompleted ? (
                                                     <div className="text-sm font-bold text-green-600">✅ 完成</div>
                                                   ) : (
-                                                    <div className="text-sm font-bold text-blue-600">{project.progress}%</div>
+                                                    <div className="text-sm font-bold text-blue-600">{pAutoProgress}%</div>
                                                   )}
                                                 </div>
                                               </div>
@@ -2860,7 +2920,19 @@
                       </span>
                     </div>
                     <div className="bg-gray-50 rounded-b-xl p-3 min-h-[300px] space-y-3">
-                      {productsByStage[node.name]?.map(product => (
+                      {productsByStage[node.name]?.map(product => {
+                        // 自动计算项目进度
+                        const pTasks = tasks.filter(t => t.productId === product.id);
+                        let pProgress = 0;
+                        if (nodes.length > 0) {
+                          let total = 0;
+                          for (const nd of nodes) {
+                            const nt = pTasks.filter(t => t.stage === nd.name);
+                            if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
+                          }
+                          pProgress = Math.round(total / nodes.length);
+                        }
+                        return (
                         <div
                           key={product.id}
                           className="bg-white rounded-lg p-3 card-shadow cursor-pointer hover:shadow-md"
@@ -2874,12 +2946,13 @@
                           </div>
                           <div className="flex items-center justify-between">
                             <div className="h-1.5 flex-1 bg-gray-100 rounded-full overflow-hidden mr-2">
-                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${product.progress}%` }} />
+                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pProgress}%` }} />
                             </div>
-                            <span className="text-xs text-gray-500">{product.progress}%</span>
+                            <span className="text-xs text-gray-500">{pProgress}%</span>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       {(!productsByStage[node.name] || productsByStage[node.name].length === 0) && (
                         <div className="text-center text-gray-400 text-sm py-8">暂无产品</div>
                       )}
@@ -3325,7 +3398,17 @@
         completedTasks: data.tasks.filter(t => t.status === '已完成').length,
         totalTasks: data.tasks.length,
         avgProgress: data.products.length > 0 
-          ? Math.round(data.products.reduce((sum, p) => sum + p.progress, 0) / data.products.length) 
+          ? Math.round(data.products.reduce((sum, p) => {
+              // 自动计算每个项目进度
+              const pTasks = data.tasks.filter(t => t.productId === p.id);
+              if (data.processNodes.length === 0) return sum + p.progress;
+              let total = 0;
+              for (const nd of data.processNodes) {
+                const nt = pTasks.filter(t => t.stage === nd.name);
+                if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
+              }
+              return sum + Math.round(total / data.processNodes.length);
+            }, 0) / data.products.length) 
           : 0,
         teamMembers: data.members.length
       } : {};
@@ -3412,6 +3495,8 @@
                   objectives={data.objectives}
                   keyResults={data.keyResults}
                   products={data.products}
+                  tasks={data.tasks}
+                  nodes={data.processNodes}
                   onRefresh={fetchData}
                 />
               )}
