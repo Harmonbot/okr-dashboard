@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>新品OKR项目管理系统</title>
+  <title>微铸项目管理</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -180,13 +180,28 @@
             objName = nameField;
           }
           
+          // 提取负责人
+          const ownerField = r.fields['负责人'];
+          let ownerId = null, ownerName = '';
+          if (ownerField) {
+            if (Array.isArray(ownerField) && ownerField[0]) {
+              ownerId = ownerField[0].id;
+              ownerName = ownerField[0].name || '';
+            } else if (ownerField.id) {
+              ownerId = ownerField.id;
+              ownerName = ownerField.name || '';
+            }
+          }
+          
           return {
             id: r.record_id,
             name: objName,
             cycle: r.fields['目标周期'] || '',
             level: r.fields['目标层级'] || '',
             progress: r.fields['进度'] || 0,
-            status: r.fields['状态'] || '未开始'
+            status: r.fields['状态'] || '未开始',
+            ownerId,
+            ownerName
           };
         }).filter(obj => obj.name); // 过滤掉空目标
       }
@@ -226,6 +241,19 @@
             krName = krDesc;
           }
           
+          // 提取KR负责人
+          const krOwnerField = r.fields['负责人'];
+          let krOwnerId = null, krOwnerName = '';
+          if (krOwnerField) {
+            if (Array.isArray(krOwnerField) && krOwnerField[0]) {
+              krOwnerId = krOwnerField[0].id;
+              krOwnerName = krOwnerField[0].name || '';
+            } else if (krOwnerField.id) {
+              krOwnerId = krOwnerField.id;
+              krOwnerName = krOwnerField.name || '';
+            }
+          }
+
           return {
             id: r.record_id,
             name: krName,
@@ -233,7 +261,9 @@
             current: r.fields['当前值'] || 0,
             weight: r.fields['权重'] || 0,
             status: r.fields['状态'] || '未开始',
-            objectiveId: objectiveId
+            objectiveId: objectiveId,
+            ownerId: krOwnerId,
+            ownerName: krOwnerName
           };
         });
       }
@@ -2537,6 +2567,19 @@
                             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                               <span>📅 {objective.cycle || '未设置周期'}</span>
                               <span>📊 {objective.level || '未设置层级'}</span>
+                              {objective.ownerName && (() => {
+                                const objOwnerMember = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
+                                return (
+                                  <span className="flex items-center gap-1">
+                                    {objOwnerMember?.avatarUrl ? (
+                                      <img src={objOwnerMember.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
+                                    ) : (
+                                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px]">{objective.ownerName.charAt(0)}</span>
+                                    )}
+                                    {objective.ownerName}
+                                  </span>
+                                );
+                              })()}
                               <span>🔑 {krs.length} 个关键结果</span>
                             </div>
                           </div>
@@ -2717,6 +2760,19 @@
                                             <span className={krAuto.autoCalculated ? 'text-green-600 font-medium' : ''}>
                                               当前: {krCurrent}
                                             </span>
+                                            {kr.ownerName && (() => {
+                                              const krOwnerMember = members.find(m => m.id === kr.ownerId || m.name === kr.ownerName);
+                                              return (
+                                                <span className="flex items-center gap-1">
+                                                  {krOwnerMember?.avatarUrl ? (
+                                                    <img src={krOwnerMember.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
+                                                  ) : (
+                                                    <span className="w-3.5 h-3.5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px]">{kr.ownerName.charAt(0)}</span>
+                                                  )}
+                                                  {kr.ownerName}
+                                                </span>
+                                              );
+                                            })()}
                                             <span>📦 {krProjects.length} 个项目 {krAuto.autoCalculated && `(${krAuto.completedProjects}已完成)`}</span>
                                           </div>
                                         </div>
@@ -2842,7 +2898,22 @@
                                                 <span className="text-2xl">{project.image}</span>
                                                 <div className="flex-1 min-w-0">
                                                   <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
-                                                  <div className="text-xs text-gray-500">{project.currentStage}</div>
+                                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                                    <span>{project.currentStage}</span>
+                                                    {project.ownerName && (() => {
+                                                      const pOwner = members.find(m => m.id === project.ownerId || m.name === project.ownerName);
+                                                      return (
+                                                        <span className="flex items-center gap-0.5">
+                                                          {pOwner?.avatarUrl ? (
+                                                            <img src={pOwner.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
+                                                          ) : (
+                                                            <span className="w-3.5 h-3.5 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px]">{project.ownerName.charAt(0)}</span>
+                                                          )}
+                                                          {project.ownerName}
+                                                        </span>
+                                                      );
+                                                    })()}
+                                                  </div>
                                                 </div>
                                                 <div className="text-right">
                                                   {isCompleted ? (
@@ -3375,7 +3446,7 @@
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
             <div className="text-center">
               <div className="text-6xl mb-4">🎯</div>
-              <h1 className="text-2xl font-bold text-gray-800 mb-2">新品OKR项目管理系统</h1>
+              <h1 className="text-2xl font-bold text-gray-800 mb-2">微铸项目管理</h1>
               <p className="text-gray-500 mb-8">请使用飞书账号登录</p>
               
               <button
@@ -3477,14 +3548,18 @@
       // 数据加载中
       if (loading && !data) return <LoadingScreen />;
 
-      const stats = data ? {
-        totalProducts: data.products.length,
-        completedProducts: data.products.filter(p => p.status === '已完成').length,
-        completedTasks: data.tasks.filter(t => t.status === '已完成').length,
-        totalTasks: data.tasks.length,
-        avgProgress: data.products.length > 0 
+      const stats = data ? (() => {
+        // 目标达成
+        const totalObjectives = data.objectives.length;
+        const completedObjectives = data.objectives.filter(o => o.status === '已完成').length;
+        
+        // KR 完成
+        const totalKRs = data.keyResults.length;
+        const completedKRs = data.keyResults.filter(kr => kr.status === '已完成').length;
+        
+        // 项目平均进度
+        const avgProgress = data.products.length > 0 
           ? Math.round(data.products.reduce((sum, p) => {
-              // 自动计算每个项目进度
               const pTasks = data.tasks.filter(t => t.productId === p.id);
               if (data.processNodes.length === 0) return sum + p.progress;
               let total = 0;
@@ -3494,9 +3569,30 @@
               }
               return sum + Math.round(total / data.processNodes.length);
             }, 0) / data.products.length) 
-          : 0,
-        teamMembers: data.members.length
-      } : {};
+          : 0;
+        
+        // 任务完成
+        const completedTasks = data.tasks.filter(t => t.status === '已完成').length;
+        const totalTasks = data.tasks.length;
+        
+        // 逾期预警：已过期且未完成的项目数
+        const now = new Date();
+        const overdueProjects = data.products.filter(p => {
+          if (p.status === '已完成') return false;
+          if (!p.targetDate) return false;
+          return new Date(p.targetDate) < now;
+        }).length;
+        
+        return {
+          totalObjectives, completedObjectives,
+          totalKRs, completedKRs,
+          avgProgress,
+          completedTasks, totalTasks,
+          overdueProjects,
+          totalProducts: data.products.length,
+          completedProducts: data.products.filter(p => p.status === '已完成').length
+        };
+      })() : {};
 
       return (
         <UserContext.Provider value={currentUser}>
@@ -3504,7 +3600,7 @@
           <div className="gradient-bg text-white py-6 px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold">新品OKR项目管理系统</h1>
+                <h1 className="text-2xl font-bold">微铸项目管理</h1>
                 <p className="text-white/80 mt-1">实时数据 · 飞书同步</p>
               </div>
               <div className="flex items-center gap-4">
@@ -3550,11 +3646,11 @@
           {data && (
             <div className="max-w-7xl mx-auto px-8 py-6">
               <div className="grid grid-cols-5 gap-4 mb-6">
-                <StatCard title="产品总数" value={stats.totalProducts} subtitle={`已上线 ${stats.completedProducts}`} color="text-purple-600" icon="📦" />
-                <StatCard title="平均进度" value={`${stats.avgProgress}%`} subtitle="所有产品" color="text-blue-600" icon="📊" />
-                <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} color="text-green-600" icon="✅" />
-                <StatCard title="进行中" value={stats.totalProducts - stats.completedProducts} subtitle="开发中产品" color="text-orange-600" icon="🚀" />
-                <StatCard title="团队成员" value={stats.teamMembers} color="text-pink-600" icon="👥" />
+                <StatCard title="目标达成" value={`${stats.completedObjectives}/${stats.totalObjectives}`} subtitle={stats.completedObjectives > 0 ? `${Math.round(stats.completedObjectives/stats.totalObjectives*100)}% 达成率` : '推进中'} color="text-purple-600" icon="🎯" />
+                <StatCard title="KR 完成" value={`${stats.completedKRs}/${stats.totalKRs}`} subtitle={stats.totalKRs > 0 ? `${Math.round(stats.completedKRs/stats.totalKRs*100)}% 完成率` : '暂无'} color="text-blue-600" icon="🔑" />
+                <StatCard title="项目进度" value={`${stats.avgProgress}%`} subtitle={`${stats.totalProducts} 个项目`} color="text-indigo-600" icon="📊" />
+                <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} subtitle={stats.totalTasks > 0 ? `${Math.round(stats.completedTasks/stats.totalTasks*100)}% 完成率` : '暂无任务'} color="text-green-600" icon="✅" />
+                <StatCard title="逾期预警" value={stats.overdueProjects} subtitle={stats.overdueProjects > 0 ? '需要关注' : '一切正常'} color={stats.overdueProjects > 0 ? 'text-red-600' : 'text-green-600'} icon={stats.overdueProjects > 0 ? '⚠️' : '🛡️'} />
               </div>
 
               <div className="flex gap-2 mb-6">
