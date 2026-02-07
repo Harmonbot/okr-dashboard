@@ -305,15 +305,34 @@
         const memberColors = ['bg-blue-500', 'bg-pink-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-red-500', 'bg-indigo-500'];
         const memberAvatars = ['👨‍💼', '👩‍🎨', '👨‍💻', '👩‍📊', '👨‍🔧', '👩‍💻', '👨‍🎓', '👩‍🔬'];
         
-        data.members = rawData['团队成员 Team Members'].records.map((r, idx) => ({
-          id: r.fields['飞书用户']?.[0]?.id || r.record_id,
-          name: r.fields['姓名'] || '',
-          department: r.fields['部门'] || '',
-          group: r.fields['组别'] || '未分组', // 新增组别
-          position: r.fields['职位'] || '',
-          avatar: memberAvatars[idx % memberAvatars.length],
-          color: memberColors[idx % memberColors.length]
-        }));
+        data.members = rawData['团队成员 Team Members'].records.map((r, idx) => {
+          // 提取飞书用户信息
+          const larkUser = r.fields['飞书用户']?.[0] || {};
+          
+          // 处理姓名字段（可能是富文本数组）
+          let name = r.fields['姓名'] || '';
+          if (Array.isArray(name)) {
+            name = name.map(n => n.text || n).join('');
+          }
+          
+          // 处理职位字段（可能是富文本数组）
+          let position = r.fields['职位'] || '';
+          if (Array.isArray(position)) {
+            position = position.map(p => p.text || p).join('');
+          }
+          
+          return {
+            id: larkUser.id || r.record_id,
+            name: name,
+            larkName: larkUser.name || '', // 飞书真实姓名
+            department: r.fields['部门'] || '',
+            group: r.fields['组别'] || '未分组',
+            position: position,
+            avatarUrl: larkUser.avatar_url || '', // 飞书头像URL
+            avatar: memberAvatars[idx % memberAvatars.length],
+            color: memberColors[idx % memberColors.length]
+          };
+        });
 
         // 提取所有组别
         const groupSet = new Set(data.members.map(m => m.group));
@@ -735,9 +754,13 @@
                         title={`${task.name}\n${task.startDate || '未设置'} ~ ${task.dueDate || '未设置'}\n状态: ${task.status}`}
                       >
                         {assignee && (
-                          <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-xs mr-1 flex-shrink-0">
-                            {assignee.avatar}
-                          </span>
+                          assignee.avatarUrl ? (
+                            <img src={assignee.avatarUrl} alt="" className="w-4 h-4 rounded-full object-cover mr-1 flex-shrink-0" />
+                          ) : (
+                            <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-xs mr-1 flex-shrink-0">
+                              {assignee.avatar}
+                            </span>
+                          )
                         )}
                         <span className="truncate">{barWidth > 80 ? task.name : ''}</span>
                       </div>
@@ -1127,9 +1150,13 @@
                               onChange={() => handleCollaboratorChange(m.id)}
                               className="rounded text-purple-500 focus:ring-purple-300"
                             />
-                            <span className={`w-5 h-5 ${m.color} rounded-full flex items-center justify-center text-white text-xs`}>
-                              {m.avatar}
-                            </span>
+                            {m.avatarUrl ? (
+                              <img src={m.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
+                            ) : (
+                              <span className={`w-5 h-5 ${m.color} rounded-full flex items-center justify-center text-white text-xs`}>
+                                {m.avatar}
+                              </span>
+                            )}
                             <span className="text-sm">{m.name}</span>
                           </label>
                         ))}
@@ -1200,9 +1227,13 @@
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
                               {assignee ? (
                                 <span className="inline-flex items-center gap-1 text-xs bg-white px-2 py-0.5 rounded-full border">
-                                  <span className={`w-4 h-4 ${assignee.color} rounded-full flex items-center justify-center text-white text-xs`}>
-                                    {assignee.avatar}
-                                  </span>
+                                  {assignee.avatarUrl ? (
+                                    <img src={assignee.avatarUrl} alt="" className="w-4 h-4 rounded-full object-cover" />
+                                  ) : (
+                                    <span className={`w-4 h-4 ${assignee.color} rounded-full flex items-center justify-center text-white text-xs`}>
+                                      {assignee.avatar}
+                                    </span>
+                                  )}
                                   {assignee.name}
                                 </span>
                               ) : task.assigneeName ? (
@@ -2487,9 +2518,18 @@
         <div className="bg-white rounded-xl card-shadow overflow-hidden">
           <div className={`${member.color} p-4 text-white`}>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">
-                {member.avatar}
-              </div>
+              {/* 优先使用飞书头像，无则使用 emoji */}
+              {member.avatarUrl ? (
+                <img 
+                  src={member.avatarUrl} 
+                  alt={member.name}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-white/30"
+                />
+              ) : (
+                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">
+                  {member.avatar}
+                </div>
+              )}
               <div>
                 <div className="font-bold text-lg">{member.name}</div>
                 <div className="text-white/80 text-sm">{member.position}</div>
