@@ -2006,7 +2006,7 @@
     };
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
-    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], onRefresh }) => {
+    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], members = [], onRefresh }) => {
       const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -2016,16 +2016,17 @@
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [showAddProject, setShowAddProject] = useState(null); // krId
       const showToast = useToast();
+      const currentUser = useContext(UserContext);
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
-        name: '', cycle: 'Q1 2026', level: '公司级', status: '进行中'
+        name: '', cycle: '2026-Q1', level: '公司级', status: '进行中', owner: ''
       });
       const [krForm, setKRForm] = useState({
-        name: '', target: 100, current: 0, weight: 1, status: '未开始', objectiveId: ''
+        name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', category: '新品开发', targetDate: ''
+        name: '', category: '新品开发', targetDate: '', owner: ''
       });
 
       // 创建新项目并关联到 KR
@@ -2045,6 +2046,9 @@
           if (projectForm.targetDate) {
             fields['计划上线日期'] = new Date(projectForm.targetDate).getTime();
           }
+          if (projectForm.owner) {
+            fields['项目负责人'] = [{ id: projectForm.owner }];
+          }
           
           const res = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
@@ -2059,7 +2063,7 @@
           if (result.success) {
             showToast?.('项目创建成功', 'success');
             setShowAddProject(null);
-            setProjectForm({ name: '', category: '新品开发', targetDate: '' });
+            setProjectForm({ name: '', category: '新品开发', targetDate: '', owner: '' });
             if (onRefresh) onRefresh();
           } else {
             throw new Error(result.error || '创建失败');
@@ -2220,15 +2224,15 @@
           });
           const result = await res.json();
           if (result.success) {
-            alert('✅ 目标创建成功！');
+            showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: 'Q1 2026', level: '公司级', status: '进行中' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', status: '进行中', owner: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
           }
         } catch (err) {
-          alert('❌ 创建失败: ' + err.message);
+          showToast?.('创建失败: ' + err.message, 'error');
         }
         setIsSubmitting(false);
       };
@@ -2280,15 +2284,15 @@
           });
           const result = await res.json();
           if (result.success) {
-            alert('✅ 关键结果创建成功！');
+            showToast?.('关键结果创建成功', 'success');
             setShowAddKR(null);
-            setKRForm({ name: '', target: 100, current: 0, weight: 1, status: '未开始', objectiveId: '' });
+            setKRForm({ name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
           }
         } catch (err) {
-          alert('❌ 创建失败: ' + err.message);
+          showToast?.('创建失败: ' + err.message, 'error');
         }
         setIsSubmitting(false);
       };
@@ -2327,7 +2331,7 @@
         setEditingObjective(obj);
         setObjectiveForm({
           name: obj.name,
-          cycle: obj.cycle || 'Q1 2026',
+          cycle: obj.cycle || '2026-Q1',
           level: obj.level || '公司级',
           status: obj.status || '进行中'
         });
@@ -2406,11 +2410,12 @@
                       onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
-                      <option>Q1 2026</option>
-                      <option>Q2 2026</option>
-                      <option>Q3 2026</option>
-                      <option>Q4 2026</option>
-                      <option>2026年度</option>
+                      <option>2025-Q1</option>
+                      <option>2025-Q2</option>
+                      <option>2025-Q3</option>
+                      <option>2025-Q4</option>
+                      <option>2026-Q1</option>
+                      <option>2026-Q2</option>
                     </select>
                   </div>
                   <div>
@@ -2422,10 +2427,25 @@
                     >
                       <option>公司级</option>
                       <option>部门级</option>
-                      <option>团队级</option>
                       <option>个人级</option>
                     </select>
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">负责人</label>
+                  <select
+                    value={objectiveForm.owner}
+                    onChange={e => setObjectiveForm({ ...objectiveForm, owner: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                  >
+                    <option value="">请选择负责人</option>
+                    {currentUser && (
+                      <option value={currentUser.open_id}>👤 {currentUser.name}（我）</option>
+                    )}
+                    {members.filter(m => m.id !== currentUser?.open_id).map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="text-xs text-purple-600 bg-purple-100 px-3 py-2 rounded-lg">
                   💡 状态自动计算：有进行中的KR→进行中，所有KR完成→已完成
@@ -2477,11 +2497,12 @@
                               onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
                               className="px-3 py-2 border rounded-lg text-sm"
                             >
-                              <option>Q1 2026</option>
-                              <option>Q2 2026</option>
-                              <option>Q3 2026</option>
-                              <option>Q4 2026</option>
-                              <option>2026年度</option>
+                              <option>2025-Q1</option>
+                              <option>2025-Q2</option>
+                              <option>2025-Q3</option>
+                              <option>2025-Q4</option>
+                              <option>2026-Q1</option>
+                              <option>2026-Q2</option>
                             </select>
                             <select
                               value={objectiveForm.level}
@@ -2490,7 +2511,6 @@
                             >
                               <option>公司级</option>
                               <option>部门级</option>
-                              <option>团队级</option>
                               <option>个人级</option>
                             </select>
                           </div>
@@ -2589,6 +2609,22 @@
                                   />
                                   <div className="text-xs text-gray-400 mt-1">影响目标整体进度</div>
                                 </div>
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-600 mb-1">负责人</label>
+                                <select
+                                  value={krForm.owner}
+                                  onChange={e => setKRForm({ ...krForm, owner: e.target.value })}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                >
+                                  <option value="">请选择负责人</option>
+                                  {currentUser && (
+                                    <option value={currentUser.open_id}>👤 {currentUser.name}（我）</option>
+                                  )}
+                                  {members.filter(m => m.id !== currentUser?.open_id).map(m => (
+                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
                                 💡 <strong>自动计算规则：</strong>
@@ -2731,7 +2767,7 @@
                                               className="w-full px-3 py-2 border rounded-lg text-sm"
                                               placeholder="项目名称 *"
                                             />
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-3 gap-2">
                                               <select
                                                 value={projectForm.category}
                                                 onChange={e => setProjectForm({ ...projectForm, category: e.target.value })}
@@ -2742,12 +2778,25 @@
                                                 <option value="供应链优化">供应链优化</option>
                                                 <option value="系统建设">系统建设</option>
                                               </select>
+                                              <select
+                                                value={projectForm.owner}
+                                                onChange={e => setProjectForm({ ...projectForm, owner: e.target.value })}
+                                                className="px-3 py-2 border rounded-lg text-sm"
+                                              >
+                                                <option value="">负责人</option>
+                                                {currentUser && (
+                                                  <option value={currentUser.open_id}>{currentUser.name}（我）</option>
+                                                )}
+                                                {members.filter(m => m.id !== currentUser?.open_id).map(m => (
+                                                  <option key={m.id} value={m.id}>{m.name}</option>
+                                                ))}
+                                              </select>
                                               <input
                                                 type="date"
                                                 value={projectForm.targetDate}
                                                 onChange={e => setProjectForm({ ...projectForm, targetDate: e.target.value })}
                                                 className="px-3 py-2 border rounded-lg text-sm"
-                                                placeholder="计划上线日期"
+                                                placeholder="上线日期"
                                               />
                                             </div>
                                             <div className="flex gap-2">
@@ -3533,6 +3582,7 @@
                   products={data.products}
                   tasks={data.tasks}
                   nodes={data.processNodes}
+                  members={data.members}
                   onRefresh={fetchData}
                 />
               )}
