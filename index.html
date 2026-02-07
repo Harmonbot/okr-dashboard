@@ -400,6 +400,7 @@
             assigneeName: r.fields['负责人']?.[0]?.name || '',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
+            completedDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
             outputFile: r.fields['输出文件']?.[0] || null // 附件字段是数组，取第一个
           };
         });
@@ -3450,15 +3451,15 @@
         const pending = memberTasks.filter(t => t.status !== '已完成' && t.status !== '进行中').length;
         const overdue = memberTasks.filter(t => {
           if (t.status === '已完成') return false;
-          if (!t.deadline) return false;
-          return new Date(t.deadline) < now;
+          if (!t.dueDate) return false;
+          return new Date(t.dueDate) < now;
         }).length;
         const rate = memberTasks.length > 0 ? Math.round((completed / memberTasks.length) * 100) : 0;
         
         // 按状态排序：逾期 → 进行中 → 待开始 → 已完成
         const sortedTasks = [...memberTasks].sort((a, b) => {
           const statusOrder = (t) => {
-            if (t.status !== '已完成' && t.deadline && new Date(t.deadline) < now) return 0;
+            if (t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < now) return 0;
             if (t.status === '进行中') return 1;
             if (t.status !== '已完成' && t.status !== '进行中') return 2;
             return 3;
@@ -3636,13 +3637,48 @@
                       </tr>
                       {/* 展开行：按状态分组显示任务 */}
                       {isExpanded && member.total > 0 && (() => {
-                        const overdueTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.deadline && new Date(t.deadline) < now);
-                        const inProgressTasks = member.memberTasks.filter(t => t.status === '进行中' && !(t.deadline && new Date(t.deadline) < now));
-                        const pendingTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.status !== '进行中' && !(t.deadline && new Date(t.deadline) < now));
+                        const overdueTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < now);
+                        const inProgressTasks = member.memberTasks.filter(t => t.status === '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
+                        const pendingTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.status !== '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
                         const completedTasks = member.memberTasks.filter(t => t.status === '已完成');
                         
                         const TaskItem = ({ task, isOverdue }) => {
                           const product = products.find(p => p.id === task.productId);
+                          
+                          // 时效计算
+                          let timeTag = null;
+                          const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+                          
+                          if (task.status === '已完成') {
+                            const doneDate = task.completedDate ? new Date(task.completedDate) : null;
+                            if (dueDate && doneDate) {
+                              const diffDays = Math.ceil((dueDate - doneDate) / (1000*60*60*24));
+                              if (diffDays >= 0) {
+                                timeTag = { text: diffDays === 0 ? '按时完成' : `提前${diffDays}天`, cls: 'bg-green-50 text-green-600 border border-green-200' };
+                              } else {
+                                timeTag = { text: `逾期${Math.abs(diffDays)}天完成`, cls: 'bg-orange-50 text-orange-600 border border-orange-200' };
+                              }
+                            } else if (!dueDate) {
+                              timeTag = { text: '未设期限', cls: 'bg-gray-50 text-gray-400' };
+                            }
+                          } else {
+                            // 进行中 / 待开始
+                            if (dueDate) {
+                              const diffDays = Math.ceil((dueDate - now) / (1000*60*60*24));
+                              if (diffDays < 0) {
+                                timeTag = { text: `逾期${Math.abs(diffDays)}天`, cls: 'bg-red-100 text-red-600 font-medium' };
+                              } else if (diffDays <= 2) {
+                                timeTag = { text: diffDays === 0 ? '今天截止' : `剩${diffDays}天`, cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' };
+                              } else if (diffDays <= 7) {
+                                timeTag = { text: `剩${diffDays}天`, cls: 'bg-blue-50 text-blue-500' };
+                              } else {
+                                timeTag = { text: `剩${diffDays}天`, cls: 'bg-gray-50 text-gray-400' };
+                              }
+                            } else {
+                              timeTag = { text: '未设期限', cls: 'bg-gray-50 text-gray-400' };
+                            }
+                          }
+                          
                           return (
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isOverdue ? 'bg-red-50 border border-red-200' : 'bg-white'}`}>
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -3654,12 +3690,10 @@
                               <span className={`truncate flex-1 ${isOverdue ? 'text-red-700' : 'text-gray-700'}`}>{task.name}</span>
                               {product && <span className="text-xs text-gray-400 flex-shrink-0">{product.name}</span>}
                               {task.stage && <span className="text-xs text-gray-300 flex-shrink-0">{task.stage}</span>}
-                              {isOverdue && task.deadline && (
-                                <span className="text-xs text-red-500 font-medium flex-shrink-0">
-                                  逾期 {Math.ceil((now - new Date(task.deadline)) / (1000*60*60*24))}天
-                                </span>
+                              {timeTag && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${timeTag.cls}`}>{timeTag.text}</span>
                               )}
-                              {!isOverdue && (
+                              {!isOverdue && !timeTag && (
                                 <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
                                   task.status === '已完成' ? 'bg-green-50 text-green-600' :
                                   task.status === '进行中' ? 'bg-blue-50 text-blue-600' :
