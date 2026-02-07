@@ -836,9 +836,10 @@
       // 检查当前用户是否是任务负责人
       const isTaskAssignee = (task) => {
         if (!currentUser) return false;
-        // 比较名字（飞书用户名和成员表中的名字）
-        return task.assignee === currentUser.name || 
-               task.assignee === currentUser.en_name;
+        // 比较多种方式：open_id、中文名、英文名
+        return task.assignee === currentUser.open_id ||
+               task.assigneeName === currentUser.name ||
+               task.assigneeName === currentUser.en_name;
       };
       
       // 筛选该节点的任务
@@ -1272,8 +1273,11 @@
                               
                               {/* 非负责人看到的提示 */}
                               {(task.status === '待开始' || task.status === '未开始') && !isTaskAssignee(task) && (
-                                <span className="text-xs text-gray-400 italic">
-                                  仅 {task.assignee || '负责人'} 可接受
+                                <span className="text-xs text-gray-400 italic flex items-center gap-1">
+                                  {assignee?.avatarUrl && (
+                                    <img src={assignee.avatarUrl} alt="" className="w-4 h-4 rounded-full" />
+                                  )}
+                                  仅 {task.assigneeName || assignee?.name || '负责人'} 可接受
                                 </span>
                               )}
                               
@@ -1327,8 +1331,11 @@
                               
                               {/* 进行中状态：非负责人看到的提示 */}
                               {task.status === '进行中' && !isTaskAssignee(task) && (
-                                <span className="text-xs text-gray-400 italic">
-                                  仅 {task.assignee || '负责人'} 可完成
+                                <span className="text-xs text-gray-400 italic flex items-center gap-1">
+                                  {assignee?.avatarUrl && (
+                                    <img src={assignee.avatarUrl} alt="" className="w-4 h-4 rounded-full" />
+                                  )}
+                                  仅 {task.assigneeName || assignee?.name || '负责人'} 可完成
                                 </span>
                               )}
                               
