@@ -32,9 +32,6 @@
 
     // 数据转换函数
     const transformData = (rawData) => {
-      console.log('=== transformData 开始 ===');
-      console.log('rawData:', rawData);
-      
       const data = {
         objectives: [],
         keyResults: [],
@@ -50,7 +47,6 @@
 
       // 转换目标表
       if (rawData['目标 Objectives']) {
-        console.log('目标原始数据:', rawData['目标 Objectives'].records);
         data.objectives = rawData['目标 Objectives'].records.map(r => {
           // 处理富文本字段格式: [{ text: '...', type: 'text' }]
           let objName = '';
@@ -73,16 +69,33 @@
       }
 
       // 转换关键结果表
-      console.log('Raw data tables:', Object.keys(rawData));
-      console.log('关键结果表存在:', !!rawData['关键结果 Key Results']);
       if (rawData['关键结果 Key Results']) {
-        console.log('关键结果原始数据:', rawData['关键结果 Key Results'].records);
-        data.keyResults = rawData['关键结果 Key Results'].records.map(r => {
-          // 处理关联字段格式: { link_record_ids: ['recXXX'] }
+        data.keyResults = rawData['关键结果 Key Results'].records.map((r, idx) => {
+          // 处理关联字段 - 支持多种格式
           let objectiveId = null;
           const linkedObj = r.fields['所属目标'];
-          if (linkedObj?.link_record_ids?.[0]) {
-            objectiveId = linkedObj.link_record_ids[0];
+          
+          if (linkedObj) {
+            // 格式1: { link_record_ids: ['recXXX'] }
+            if (linkedObj.link_record_ids?.[0]) {
+              objectiveId = linkedObj.link_record_ids[0];
+            }
+            // 格式2: ['recXXX'] 数组
+            else if (Array.isArray(linkedObj) && linkedObj.length > 0) {
+              if (typeof linkedObj[0] === 'string') {
+                objectiveId = linkedObj[0];
+              } else if (linkedObj[0]?.record_id) {
+                objectiveId = linkedObj[0].record_id;
+              } else if (linkedObj[0]?.id) {
+                objectiveId = linkedObj[0].id;
+              } else if (linkedObj[0]?.link_record_ids?.[0]) {
+                objectiveId = linkedObj[0].link_record_ids[0];
+              }
+            }
+            // 格式3: 直接字符串
+            else if (typeof linkedObj === 'string') {
+              objectiveId = linkedObj;
+            }
           }
           
           // 处理富文本字段格式: [{ text: '...', type: 'text' }]
@@ -1551,12 +1564,6 @@
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
     const OKROverview = ({ objectives, keyResults, products, onRefresh }) => {
-      // 调试：输出数据
-      console.log('=== OKR Debug ===');
-      console.log('Objectives:', objectives);
-      console.log('KeyResults:', keyResults);
-      console.log('Products:', products);
-      
       const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -1595,8 +1602,14 @@
 
       // 获取某目标下的关键结果
       const getKRsForObjective = (objectiveId) => {
+        console.log(`查找目标ID: "${objectiveId}"`);
+        console.log('所有KR:', keyResults.map(kr => ({ 
+          name: kr.name, 
+          objectiveId: kr.objectiveId, 
+          objectiveIdType: typeof kr.objectiveId 
+        })));
         const result = keyResults.filter(kr => kr.objectiveId === objectiveId);
-        console.log(`getKRsForObjective(${objectiveId}):`, result, '全部KR:', keyResults.map(kr => ({ id: kr.id, objId: kr.objectiveId })));
+        console.log(`匹配结果: ${result.length} 条`);
         return result;
       };
 
