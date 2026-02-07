@@ -264,6 +264,20 @@
             }
           }
           
+          // 处理项目负责人
+          const ownerField = r.fields['项目负责人'];
+          let ownerId = null;
+          let ownerName = '';
+          if (ownerField) {
+            if (Array.isArray(ownerField) && ownerField[0]) {
+              ownerId = ownerField[0].id || null;
+              ownerName = ownerField[0].name || '';
+            } else if (ownerField.id) {
+              ownerId = ownerField.id;
+              ownerName = ownerField.name || '';
+            }
+          }
+          
           return {
             id: r.record_id,
             name: r.fields['项目名称'] || '',
@@ -274,7 +288,9 @@
             status: r.fields['项目状态'] || '进行中',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
-            krId: krId
+            krId: krId,
+            ownerId: ownerId,
+            ownerName: ownerName
           };
         });
       }
@@ -568,8 +584,28 @@
         return '未开始';
       };
       const autoStatus = getAutoStatus();
+
+      // 自动计算当前阶段：最后一个有进行中任务的节点
+      const getAutoCurrentStage = () => {
+        let lastActiveNode = null;
+        // 按节点顺序遍历，找最后一个有进行中/部分完成任务的节点
+        for (const node of nodes) {
+          const nodeTasks = productTasks.filter(t => t.stage === node.name);
+          const hasActive = nodeTasks.some(t => t.status === '进行中');
+          const hasCompleted = nodeTasks.some(t => t.status === '已完成');
+          const hasIncomplete = nodeTasks.some(t => t.status !== '已完成');
+          if (hasActive || (hasCompleted && hasIncomplete)) {
+            lastActiveNode = node.name;
+          }
+        }
+        return lastActiveNode || product.currentStage;
+      };
+      const autoCurrentStage = getAutoCurrentStage();
       
       const isOverdue = daysRemaining !== null && daysRemaining < 0 && autoStatus !== '已完成';
+
+      // 找到项目负责人的成员信息（用于显示头像）
+      const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
 
       return (
         <div 
@@ -604,9 +640,9 @@
             <div className="mb-3">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs text-gray-500">当前阶段</span>
-                <span className="text-sm font-medium text-blue-600">{product.currentStage}</span>
+                <span className="text-sm font-medium text-blue-600">{autoCurrentStage}</span>
               </div>
-              <MiniStageIndicator currentStage={product.currentStage} nodes={nodes} tasks={productTasks} />
+              <MiniStageIndicator currentStage={autoCurrentStage} nodes={nodes} tasks={productTasks} />
             </div>
 
             <div className="mb-3">
@@ -625,8 +661,22 @@
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <div className="text-xs text-gray-500">
-                任务 {completedTasks}/{productTasks.length}
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-gray-500">
+                  任务 {completedTasks}/{productTasks.length}
+                </div>
+                {product.ownerName && (
+                  <div className="flex items-center gap-1 text-xs text-gray-400">
+                    {ownerMember?.avatarUrl ? (
+                      <img src={ownerMember.avatarUrl} alt="" className="w-4 h-4 rounded-full" />
+                    ) : (
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px]">
+                        {product.ownerName.charAt(0)}
+                      </span>
+                    )}
+                    {product.ownerName}
+                  </div>
+                )}
               </div>
               <div className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
                 {autoStatus === '已完成' ? (
@@ -899,7 +949,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       const [showAddForm, setShowAddForm] = useState(false);
@@ -916,6 +966,36 @@
       });
       
       if (!node) return null;
+
+      // 检查前置节点任务是否全部完成
+      const checkPredecessorCompleted = () => {
+        if (!node.prevNode || !nodes) return { canAccept: true, blockedBy: null };
+        
+        // 找到前置节点
+        const prevNodeName = node.prevNode;
+        
+        // 前置节点已跳过 → 允许接受
+        if (skippedNodes.has(prevNodeName)) {
+          return { canAccept: true, blockedBy: null };
+        }
+        
+        const prevNodeTasks = tasks.filter(t => t.stage === prevNodeName);
+        
+        // 前置节点无任务 → 不能接
+        if (prevNodeTasks.length === 0) {
+          return { canAccept: false, blockedBy: prevNodeName, reason: 'no_tasks', message: `前置节点「${prevNodeName}」还没有创建任务` };
+        }
+        
+        // 前置节点有未完成任务 → 不能接
+        const unfinished = prevNodeTasks.filter(t => t.status !== '已完成');
+        if (unfinished.length > 0) {
+          return { canAccept: false, blockedBy: prevNodeName, reason: 'incomplete', message: `前置节点「${prevNodeName}」还有 ${unfinished.length} 个任务未完成`, unfinishedTasks: unfinished };
+        }
+        
+        return { canAccept: true, blockedBy: null };
+      };
+
+      const predecessorCheck = checkPredecessorCompleted();
       
       // 检查当前用户是否是任务负责人
       const isTaskAssignee = (task) => {
@@ -986,6 +1066,12 @@
 
       // 接受任务：设置开始日期为今天，截止日期根据节点预计工时计算，状态改为进行中
       const handleAcceptTask = async (task) => {
+        // 检查前置节点是否完成
+        if (!predecessorCheck.canAccept) {
+          showToast?.(`⚠️ ${predecessorCheck.message}，请等待前置节点完成后再接受任务`, 'error');
+          return;
+        }
+        
         const nodeDays = parseInt(node.days, 10) || 7; // 确保是数字，默认7天
         if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期将设为今天，截止日期根据节点预计工时（${nodeDays}天）自动计算。`)) {
           return;
@@ -1347,13 +1433,26 @@
                             <div className="mt-2 flex gap-2">
                               {/* 待开始状态：显示接受任务按钮（仅负责人可见） */}
                               {(task.status === '待开始' || task.status === '未开始') && isTaskAssignee(task) && (
-                                <button
-                                  onClick={() => handleAcceptTask(task)}
-                                  disabled={isActioning}
-                                  className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                  {isActioning ? '处理中...' : '🚀 接受任务'}
-                                </button>
+                                predecessorCheck.canAccept ? (
+                                  <button
+                                    onClick={() => handleAcceptTask(task)}
+                                    disabled={isActioning}
+                                    className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                                  >
+                                    {isActioning ? '处理中...' : '🚀 接受任务'}
+                                  </button>
+                                ) : (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg flex items-center gap-1">
+                                      ⚠️ {predecessorCheck.message}
+                                    </span>
+                                    {predecessorCheck.unfinishedTasks && (
+                                      <div className="text-xs text-gray-400 pl-2">
+                                        未完成: {predecessorCheck.unfinishedTasks.map(t => t.name).join('、')}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
                               )}
                               
                               {/* 非负责人看到的提示 */}
@@ -1472,12 +1571,42 @@
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
     const ProductDetailModal = ({ product, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onClose, onRefresh }) => {
       const [selectedNode, setSelectedNode] = useState(null);
+      const [skippedNodes, setSkippedNodes] = useState(new Set());
+      const currentUser = useContext(UserContext);
+      const showToast = useToast();
       
       if (!product) return null;
       const productTasks = tasks.filter(t => t.productId === product.id);
 
+      // 检查当前用户是否是项目负责人
+      const isProjectOwner = currentUser && (
+        currentUser.open_id === product.ownerId ||
+        currentUser.name === product.ownerName ||
+        currentUser.en_name === product.ownerName
+      );
+
+      // 自动计算当前阶段
+      const getAutoCurrentStage = () => {
+        let lastActiveNode = null;
+        for (const node of nodes) {
+          const nodeTasks = productTasks.filter(t => t.stage === node.name);
+          const hasActive = nodeTasks.some(t => t.status === '进行中');
+          const hasCompleted = nodeTasks.some(t => t.status === '已完成');
+          const hasIncomplete = nodeTasks.some(t => t.status !== '已完成');
+          if (hasActive || (hasCompleted && hasIncomplete)) {
+            lastActiveNode = node.name;
+          }
+        }
+        return lastActiveNode || product.currentStage;
+      };
+      const autoCurrentStage = getAutoCurrentStage();
+
+      // 找到项目负责人的成员信息
+      const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
+
       // 获取节点状态（基于任务状态）
       const getNodeStatus = (nodeName) => {
+        if (skippedNodes.has(nodeName)) return 'skipped'; // 已跳过
         const nodeTasks = productTasks.filter(t => t.stage === nodeName);
         if (nodeTasks.length === 0) return 'pending'; // 无任务 → 灰色
         const completedCount = nodeTasks.filter(t => t.status === '已完成').length;
@@ -1485,6 +1614,26 @@
         if (completedCount === nodeTasks.length) return 'completed'; // 全部完成 → 绿色
         if (inProgressCount > 0 || completedCount > 0) return 'inProgress'; // 有进行中或部分完成 → 红色
         return 'pending'; // 全部未开始 → 灰色
+      };
+
+      // 跳过节点（仅项目负责人可操作）
+      const handleSkipNode = (nodeName, e) => {
+        e.stopPropagation();
+        if (!isProjectOwner) {
+          showToast?.('只有项目负责人才能跳过节点', 'error');
+          return;
+        }
+        if (!confirm(`确认跳过节点「${nodeName}」？\n\n跳过后，后续节点将不受此节点限制。`)) return;
+        setSkippedNodes(prev => {
+          const next = new Set(prev);
+          if (next.has(nodeName)) {
+            next.delete(nodeName);
+          } else {
+            next.add(nodeName);
+          }
+          return next;
+        });
+        showToast?.(`节点「${nodeName}」已跳过`, 'success');
       };
 
       // 构建流程链（每条链是一个独立的行）
@@ -1627,7 +1776,26 @@
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold">{product.name}</h2>
-                    <div className="text-white/80 text-sm">{product.category}</div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-white/80 text-sm">{product.category}</span>
+                      <span className="text-white/60 text-sm">|</span>
+                      <span className="text-white/80 text-sm">📍 {autoCurrentStage}</span>
+                      {product.ownerName && (
+                        <>
+                          <span className="text-white/60 text-sm">|</span>
+                          <span className="flex items-center gap-1.5 text-sm text-white/90">
+                            {ownerMember?.avatarUrl ? (
+                              <img src={ownerMember.avatarUrl} alt="" className="w-5 h-5 rounded-full border border-white/30" />
+                            ) : (
+                              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">
+                                {product.ownerName.charAt(0)}
+                              </span>
+                            )}
+                            👤 {product.ownerName}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">×</button>
@@ -1673,17 +1841,20 @@
                             <div className="w-24 flex flex-col items-center">
                               {node ? (
                                 <div 
-                                  className="flex flex-col items-center cursor-pointer group"
+                                  className="flex flex-col items-center cursor-pointer group relative"
                                   onClick={() => setSelectedNode(node)}
                                 >
                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all group-hover:scale-110 group-hover:shadow-lg ${
+                                    getNodeStatus(node.name) === 'skipped' ? 'bg-yellow-100 text-yellow-600 border-2 border-dashed border-yellow-400' :
                                     getNodeStatus(node.name) === 'completed' ? 'bg-green-500 text-white group-hover:bg-green-600' :
                                     getNodeStatus(node.name) === 'inProgress' ? 'bg-red-500 text-white ring-4 ring-red-200 group-hover:bg-red-600' :
                                     'bg-gray-200 text-gray-400 group-hover:bg-gray-300'
                                   }`}>
-                                    {getNodeStatus(node.name) === 'completed' ? '✓' : node.order}
+                                    {getNodeStatus(node.name) === 'completed' ? '✓' : 
+                                     getNodeStatus(node.name) === 'skipped' ? '⏭' : node.order}
                                   </div>
                                   <div className={`text-xs mt-1 text-center leading-tight group-hover:font-semibold ${
+                                    getNodeStatus(node.name) === 'skipped' ? 'text-yellow-600 line-through' :
                                     getNodeStatus(node.name) === 'inProgress' ? 'text-red-600 font-semibold' :
                                     getNodeStatus(node.name) === 'completed' ? 'text-green-600' : 'text-gray-500'
                                   }`}>
@@ -1701,6 +1872,26 @@
                                     }
                                     return null;
                                   })()}
+                                  {/* 跳过按钮 - 仅项目负责人可见 */}
+                                  {isProjectOwner && getNodeStatus(node.name) === 'pending' && (
+                                    <button
+                                      onClick={(e) => handleSkipNode(node.name, e)}
+                                      className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-yellow-500"
+                                      title="跳过此节点"
+                                    >
+                                      ⏭
+                                    </button>
+                                  )}
+                                  {/* 取消跳过按钮 */}
+                                  {isProjectOwner && getNodeStatus(node.name) === 'skipped' && (
+                                    <button
+                                      onClick={(e) => handleSkipNode(node.name, e)}
+                                      className="absolute -top-1 -right-1 w-4 h-4 bg-gray-400 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-500"
+                                      title="取消跳过"
+                                    >
+                                      ↩
+                                    </button>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="w-10 h-10"></div>
@@ -1738,8 +1929,11 @@
                     <span className="flex items-center gap-1">
                       <span className="w-3 h-3 rounded-full bg-gray-200"></span> 待开始
                     </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded-full bg-yellow-100 border border-dashed border-yellow-400"></span> 已跳过
+                    </span>
                   </div>
-                  <span className="text-purple-500">💡 点击节点查看任务详情</span>
+                  <span className="text-purple-500">💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</span>
                 </div>
               </div>
 
@@ -1764,6 +1958,8 @@
               members={members}
               product={product}
               nodeRecordId={selectedNode.id}
+              nodes={nodes}
+              skippedNodes={skippedNodes}
               onClose={() => setSelectedNode(null)}
               onTaskCreated={onRefresh}
             />
@@ -1781,6 +1977,8 @@
       const [editingObjective, setEditingObjective] = useState(null);
       const [editingKR, setEditingKR] = useState(null);
       const [isSubmitting, setIsSubmitting] = useState(false);
+      const [showAddProject, setShowAddProject] = useState(null); // krId
+      const showToast = useToast();
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
@@ -1789,6 +1987,51 @@
       const [krForm, setKRForm] = useState({
         name: '', target: 100, current: 0, weight: 1, status: '未开始', objectiveId: ''
       });
+      const [projectForm, setProjectForm] = useState({
+        name: '', category: '新品开发', targetDate: ''
+      });
+
+      // 创建新项目并关联到 KR
+      const handleCreateProject = async (krId) => {
+        if (!projectForm.name.trim()) {
+          showToast?.('请输入项目名称', 'error');
+          return;
+        }
+        setIsSubmitting(true);
+        try {
+          const fields = {
+            '项目名称': projectForm.name,
+            '项目类型': projectForm.category,
+            '项目状态': '未开始',
+            '关联KR': { link_record_ids: [krId] }
+          };
+          if (projectForm.targetDate) {
+            fields['计划上线日期'] = new Date(projectForm.targetDate).getTime();
+          }
+          
+          const res = await fetch(API_BASE + '/api/create-record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblYM02NyVj3rUkR',
+              fields: fields
+            })
+          });
+          const result = await res.json();
+          if (result.success) {
+            showToast?.('项目创建成功', 'success');
+            setShowAddProject(null);
+            setProjectForm({ name: '', category: '新品开发', targetDate: '' });
+            if (onRefresh) onRefresh();
+          } else {
+            throw new Error(result.error || '创建失败');
+          }
+        } catch (err) {
+          showToast?.('创建失败: ' + err.message, 'error');
+        }
+        setIsSubmitting(false);
+      };
 
       // 切换目标展开状态
       const toggleObjective = (id) => {
@@ -2409,17 +2652,75 @@
                                   {/* 项目列表 */}
                                   {isKRExpanded && !isKREditing && (
                                     <div className="border-t bg-gray-50 p-3">
-                                      <div className="text-xs font-semibold text-gray-500 mb-2">
-                                        📦 关联项目 ({krProjects.length}) 
-                                        {krAuto.autoCalculated && (
-                                          <span className="ml-2 text-green-600">
-                                            ✅ {krAuto.completedProjects}/{krProjects.length} 已完成
-                                          </span>
-                                        )}
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="text-xs font-semibold text-gray-500">
+                                          📦 关联项目 ({krProjects.length}) 
+                                          {krAuto.autoCalculated && (
+                                            <span className="ml-2 text-green-600">
+                                              ✅ {krAuto.completedProjects}/{krProjects.length} 已完成
+                                            </span>
+                                          )}
+                                        </div>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setShowAddProject(showAddProject === kr.id ? null : kr.id); }}
+                                          className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                        >
+                                          ➕ 添加项目
+                                        </button>
                                       </div>
-                                      {krProjects.length === 0 ? (
+                                      
+                                      {/* 添加项目表单 */}
+                                      {showAddProject === kr.id && (
+                                        <div className="bg-white rounded-lg border p-3 mb-3" onClick={e => e.stopPropagation()}>
+                                          <div className="space-y-2">
+                                            <input
+                                              type="text"
+                                              value={projectForm.name}
+                                              onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
+                                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                                              placeholder="项目名称 *"
+                                            />
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <select
+                                                value={projectForm.category}
+                                                onChange={e => setProjectForm({ ...projectForm, category: e.target.value })}
+                                                className="px-3 py-2 border rounded-lg text-sm"
+                                              >
+                                                <option value="新品开发">新品开发</option>
+                                                <option value="营销推广">营销推广</option>
+                                                <option value="供应链优化">供应链优化</option>
+                                                <option value="系统建设">系统建设</option>
+                                              </select>
+                                              <input
+                                                type="date"
+                                                value={projectForm.targetDate}
+                                                onChange={e => setProjectForm({ ...projectForm, targetDate: e.target.value })}
+                                                className="px-3 py-2 border rounded-lg text-sm"
+                                                placeholder="计划上线日期"
+                                              />
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <button 
+                                                onClick={() => setShowAddProject(null)} 
+                                                className="px-3 py-1.5 border rounded text-xs hover:bg-gray-50"
+                                              >
+                                                取消
+                                              </button>
+                                              <button 
+                                                onClick={() => handleCreateProject(kr.id)} 
+                                                disabled={isSubmitting}
+                                                className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50"
+                                              >
+                                                {isSubmitting ? '创建中...' : '创建项目'}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {krProjects.length === 0 && showAddProject !== kr.id ? (
                                         <div className="text-xs text-gray-400 text-center py-3">
-                                          暂无关联项目 - 在「产品进度」中关联项目到此KR
+                                          暂无关联项目 - 点击上方「添加项目」创建
                                         </div>
                                       ) : (
                                         <div className="grid grid-cols-2 gap-2">
@@ -2472,8 +2773,24 @@
         ? products
         : products.filter(p => p.status === filterStatus);
 
+      // 自动计算每个产品的当前阶段
+      const getProductAutoStage = (product) => {
+        const productTasks = tasks.filter(t => t.productId === product.id);
+        let lastActiveNode = null;
+        for (const node of nodes) {
+          const nodeTasks = productTasks.filter(t => t.stage === node.name);
+          const hasActive = nodeTasks.some(t => t.status === '进行中');
+          const hasCompleted = nodeTasks.some(t => t.status === '已完成');
+          const hasIncomplete = nodeTasks.some(t => t.status !== '已完成');
+          if (hasActive || (hasCompleted && hasIncomplete)) {
+            lastActiveNode = node.name;
+          }
+        }
+        return lastActiveNode || product.currentStage;
+      };
+
       const productsByStage = nodes.reduce((acc, node) => {
-        acc[node.name] = products.filter(p => p.currentStage === node.name);
+        acc[node.name] = products.filter(p => getProductAutoStage(p) === node.name);
         return acc;
       }, {});
 
