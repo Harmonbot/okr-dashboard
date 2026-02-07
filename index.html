@@ -1619,7 +1619,7 @@
         return products.filter(p => p.krId === krId);
       };
 
-      // 计算 KR 的自动进度（基于关联项目完成情况）
+      // 计算 KR 的自动进度和状态（基于关联项目完成情况）
       const getKRAutoProgress = (kr) => {
         const relatedProjects = getProjectsForKR(kr.id);
         
@@ -1628,37 +1628,83 @@
           const completedCount = relatedProjects.filter(p => 
             p.progress >= 100 || p.status === '已完成'
           ).length;
+          const inProgressCount = relatedProjects.filter(p => 
+            p.progress > 0 && p.progress < 100 && p.status !== '已完成'
+          ).length;
           const progress = kr.target > 0 ? Math.min(100, Math.round((completedCount / kr.target) * 100)) : 0;
+          
+          // 自动计算状态
+          let autoStatus = '未开始';
+          if (completedCount >= kr.target || completedCount >= relatedProjects.length) {
+            // 所有关联项目都完成，或已完成数量达到目标值
+            autoStatus = '已完成';
+          } else if (inProgressCount > 0 || completedCount > 0) {
+            // 有进行中的项目，或部分已完成
+            autoStatus = '进行中';
+          }
+          
           return {
             current: completedCount,
             progress: progress,
             autoCalculated: true,
             totalProjects: relatedProjects.length,
-            completedProjects: completedCount
+            completedProjects: completedCount,
+            inProgressProjects: inProgressCount,
+            autoStatus: autoStatus
           };
         } else {
-          // 无关联项目：使用手动填写的值
+          // 无关联项目：使用手动填写的值和状态
           const progress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
           return {
             current: kr.current,
             progress: progress,
             autoCalculated: false,
             totalProjects: 0,
-            completedProjects: 0
+            completedProjects: 0,
+            inProgressProjects: 0,
+            autoStatus: kr.status // 保持手动设置的状态
           };
         }
       };
 
-      // 计算目标进度（基于 KR 进度加权平均）
-      const calculateObjectiveProgress = (objectiveId) => {
+      // 计算目标进度和状态（基于 KR 进度加权平均）
+      const calculateObjectiveProgressAndStatus = (objectiveId) => {
         const krs = getKRsForObjective(objectiveId);
-        if (krs.length === 0) return 0;
+        if (krs.length === 0) {
+          return { progress: 0, autoStatus: '未开始' };
+        }
+        
         const totalWeight = krs.reduce((sum, kr) => sum + (kr.weight || 1), 0);
+        let allCompleted = true;
+        let hasInProgress = false;
+        
         const weightedProgress = krs.reduce((sum, kr) => {
-          const { progress } = getKRAutoProgress(kr);
-          return sum + progress * (kr.weight || 1);
+          const krAuto = getKRAutoProgress(kr);
+          
+          // 检查 KR 状态
+          if (krAuto.autoStatus === '已完成') {
+            // 已完成
+          } else if (krAuto.autoStatus === '进行中') {
+            allCompleted = false;
+            hasInProgress = true;
+          } else {
+            allCompleted = false;
+          }
+          
+          return sum + krAuto.progress * (kr.weight || 1);
         }, 0);
-        return Math.round(weightedProgress / totalWeight);
+        
+        const progress = Math.round(weightedProgress / totalWeight);
+        
+        // 自动计算目标状态
+        let autoStatus = '未开始';
+        if (allCompleted && krs.length > 0) {
+          autoStatus = '已完成';
+        } else if (hasInProgress) {
+          autoStatus = '进行中';
+        }
+        
+        return { progress, autoStatus };
       };
 
       // 创建目标
@@ -1857,7 +1903,7 @@
                     required
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-600 mb-1">目标周期</label>
                     <select
@@ -1885,19 +1931,9 @@
                       <option>个人级</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">状态</label>
-                    <select
-                      value={objectiveForm.status}
-                      onChange={e => setObjectiveForm({ ...objectiveForm, status: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
-                    >
-                      <option>未开始</option>
-                      <option>进行中</option>
-                      <option>已完成</option>
-                      <option>有风险</option>
-                    </select>
-                  </div>
+                </div>
+                <div className="text-xs text-purple-600 bg-purple-100 px-3 py-2 rounded-lg">
+                  💡 状态自动计算：有进行中的KR→进行中，所有KR完成→已完成
                 </div>
                 <div className="flex gap-2 pt-2">
                   <button type="button" onClick={() => setShowAddObjective(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
@@ -1919,7 +1955,7 @@
             <div className="space-y-4">
               {objectives.map(objective => {
                 const krs = getKRsForObjective(objective.id);
-                const progress = calculateObjectiveProgress(objective.id);
+                const { progress, autoStatus } = calculateObjectiveProgressAndStatus(objective.id);
                 const isExpanded = expandedObjectives.has(objective.id);
                 const isEditing = editingObjective?.id === objective.id;
 
@@ -1940,7 +1976,7 @@
                               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none text-lg font-semibold"
                             />
                           </div>
-                          <div className="grid grid-cols-3 gap-4">
+                          <div className="grid grid-cols-2 gap-4">
                             <select
                               value={objectiveForm.cycle}
                               onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
@@ -1962,17 +1998,8 @@
                               <option>团队级</option>
                               <option>个人级</option>
                             </select>
-                            <select
-                              value={objectiveForm.status}
-                              onChange={e => setObjectiveForm({ ...objectiveForm, status: e.target.value })}
-                              className="px-3 py-2 border rounded-lg text-sm"
-                            >
-                              <option>未开始</option>
-                              <option>进行中</option>
-                              <option>已完成</option>
-                              <option>有风险</option>
-                            </select>
                           </div>
+                          <div className="text-xs text-gray-500">💡 状态根据关键结果自动计算：有进行中KR→进行中，全部KR完成→已完成</div>
                           <div className="flex gap-2">
                             <button type="button" onClick={() => setEditingObjective(null)} className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50">取消</button>
                             <button type="submit" disabled={isSubmitting} className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 disabled:opacity-50">
@@ -1987,8 +2014,9 @@
                             <div className="flex items-center gap-3">
                               <span className="text-2xl">🎯</span>
                               <h3 className="text-lg font-bold text-gray-800">{objective.name}</h3>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(objective.status)}`}>
-                                {objective.status}
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(autoStatus)}`}>
+                                {autoStatus}
+                                {krs.length > 0 && <span className="ml-1">🔄</span>}
                               </span>
                             </div>
                             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
@@ -2042,7 +2070,7 @@
                                   required
                                 />
                               </div>
-                              <div className="grid grid-cols-3 gap-3">
+                              <div className="grid grid-cols-2 gap-3">
                                 <div>
                                   <label className="block text-xs text-gray-600 mb-1">目标值 *</label>
                                   <input
@@ -2064,23 +2092,13 @@
                                     className="w-full px-3 py-2 border rounded-lg text-sm"
                                     min="1" max="100"
                                   />
-                                </div>
-                                <div>
-                                  <label className="block text-xs text-gray-600 mb-1">状态</label>
-                                  <select
-                                    value={krForm.status}
-                                    onChange={e => setKRForm({ ...krForm, status: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                                  >
-                                    <option>未开始</option>
-                                    <option>进行中</option>
-                                    <option>已完成</option>
-                                    <option>有风险</option>
-                                  </select>
+                                  <div className="text-xs text-gray-400 mt-1">影响目标整体进度</div>
                                 </div>
                               </div>
                               <div className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-                                💡 当前值会自动计算：当关联的项目完成100%时，计入当前值
+                                💡 <strong>自动计算规则：</strong>
+                                <br />• 当前值 = 关联项目中已完成的数量
+                                <br />• 状态：无项目→未开始，有进行中→进行中，全部完成→已完成
                               </div>
                               <div className="flex gap-2">
                                 <button type="button" onClick={() => setShowAddKR(null)} className="flex-1 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -2122,7 +2140,7 @@
                                           onChange={e => setKRForm({ ...krForm, name: e.target.value })}
                                           className="w-full px-3 py-2 border rounded-lg text-sm"
                                         />
-                                        <div className="grid grid-cols-3 gap-3">
+                                        <div className="grid grid-cols-2 gap-3">
                                           <input
                                             type="number"
                                             value={krForm.target}
@@ -2137,17 +2155,8 @@
                                             className="px-3 py-2 border rounded-lg text-sm"
                                             placeholder="权重"
                                           />
-                                          <select
-                                            value={krForm.status}
-                                            onChange={e => setKRForm({ ...krForm, status: e.target.value })}
-                                            className="px-3 py-2 border rounded-lg text-sm"
-                                          >
-                                            <option>未开始</option>
-                                            <option>进行中</option>
-                                            <option>已完成</option>
-                                            <option>有风险</option>
-                                          </select>
                                         </div>
+                                        <div className="text-xs text-gray-500">💡 状态和当前值根据关联项目自动计算</div>
                                         <div className="flex gap-2">
                                           <button type="button" onClick={() => setEditingKR(null)} className="px-3 py-1.5 border rounded text-xs hover:bg-gray-50">取消</button>
                                           <button type="submit" disabled={isSubmitting} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50">
@@ -2162,8 +2171,9 @@
                                           <div className="flex items-center gap-2">
                                             <span className="text-lg">🔑</span>
                                             <span className="font-medium text-gray-800">{kr.name}</span>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(kr.status)}`}>
-                                              {kr.status}
+                                            <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(krAuto.autoStatus)}`}>
+                                              {krAuto.autoStatus}
+                                              {krAuto.autoCalculated && <span className="ml-1">🔄</span>}
                                             </span>
                                             {kr.weight > 1 && (
                                               <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full">
@@ -2175,7 +2185,6 @@
                                             <span>目标: {kr.target}</span>
                                             <span className={krAuto.autoCalculated ? 'text-green-600 font-medium' : ''}>
                                               当前: {krCurrent}
-                                              {krAuto.autoCalculated && <span className="ml-1" title="自动计算：已完成项目数">🔄</span>}
                                             </span>
                                             <span>📦 {krProjects.length} 个项目 {krAuto.autoCalculated && `(${krAuto.completedProjects}已完成)`}</span>
                                           </div>
