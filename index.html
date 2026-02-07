@@ -2041,7 +2041,7 @@
             '项目名称': projectForm.name,
             '项目类型': projectForm.category,
             '项目状态': '未开始',
-            '关联KR': { link_record_ids: [krId] }
+            '关联KR': [krId]
           };
           if (projectForm.targetDate) {
             fields['计划上线日期'] = new Date(projectForm.targetDate).getTime();
