@@ -132,14 +132,8 @@ function buildOverdueCard(memberName, overdueTasks, taskStats) {
 }
 
 export default async function handler(req, res) {
-  // 验证 Vercel Cron 密钥（防止外部调用）
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // 开发环境允许手动调用
-    if (process.env.NODE_ENV === 'production' && req.headers['x-vercel-cron'] !== '1') {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-  }
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     const token = await getTenantToken();
