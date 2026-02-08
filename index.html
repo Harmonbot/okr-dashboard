@@ -1971,6 +1971,7 @@
                     <div className="text-xs mt-1">请在飞书多维表格中为此类型创建流程模板和节点</div>
                   </div>
                 ) : (
+                <>
                 <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
                   <div className="min-w-max">
                     {/* 网格布局 */}
@@ -2076,7 +2077,7 @@
                   </div>
                   <span className="text-purple-500">💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</span>
                 </div>
-              </div>
+                </>
               )}
               </div>
 
