@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>微铸项目管理</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -314,7 +314,7 @@
             name: r.fields['项目名称'] || '',
             category: r.fields['项目类型'] || '',
             image: projectEmojis[idx % projectEmojis.length],
-            currentStage: r.fields['当前阶段'] || '产品调研',
+            currentStage: r.fields['当前阶段'] || '',
             progress: progress,
             status: r.fields['项目状态'] || '进行中',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
@@ -399,10 +399,12 @@
             productId: productId,
             assignee: r.fields['负责人']?.[0]?.id || null,
             assigneeName: r.fields['负责人']?.[0]?.name || '',
+            collaborators: (r.fields['协作人'] || []).map(c => c.name || '').filter(Boolean),
+            description: (() => { let d = r.fields['任务描述'] || ''; if (Array.isArray(d)) d = d.map(x => x.text || x).join(''); return d; })(),
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
             completedDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
-            outputFile: r.fields['输出文件']?.[0] || null // 附件字段是数组，取第一个
+            outputFile: r.fields['输出文件']?.[0] || null
           };
         });
       }
@@ -564,6 +566,61 @@
       return data;
     };
 
+    // 根据项目类型获取对应模板的流程节点
+    const getNodesForProduct = (product, allNodes, templates) => {
+      if (!product || !templates) return allNodes;
+      const matchingTemplateId = Object.keys(templates).find(tplId => 
+        templates[tplId].type === product.category
+      );
+      if (!matchingTemplateId) return [];
+      return allNodes.filter(n => n.templateId === matchingTemplateId);
+    };
+
+    // 根据任务计算项目进度（模板感知）
+    const calcProjectProgress = (product, allNodes, templates, tasks) => {
+      const pTasks = tasks.filter(t => t.productId === product.id);
+      const pNodes = getNodesForProduct(product, allNodes, templates);
+      if (pNodes.length === 0) {
+        // 无模板：直接用任务完成率
+        if (pTasks.length === 0) return 0;
+        return Math.round(pTasks.filter(t => t.status === '已完成').length / pTasks.length * 100);
+      }
+      let total = 0;
+      for (const nd of pNodes) {
+        const nt = pTasks.filter(t => t.stage === nd.name);
+        if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
+      }
+      return Math.round(total / pNodes.length);
+    };
+
+    // 自动计算项目状态
+    const calcProjectStatus = (product, tasks) => {
+      const pTasks = tasks.filter(t => t.productId === product.id);
+      if (pTasks.length === 0) return '未开始';
+      const completed = pTasks.filter(t => t.status === '已完成').length;
+      const inProgress = pTasks.filter(t => t.status === '进行中').length;
+      if (completed === pTasks.length) return '已完成';
+      if (inProgress > 0 || completed > 0) return '进行中';
+      return '未开始';
+    };
+
+    // 自动计算当前阶段
+    const calcCurrentStage = (product, allNodes, templates, tasks) => {
+      const pTasks = tasks.filter(t => t.productId === product.id);
+      const pNodes = getNodesForProduct(product, allNodes, templates);
+      let lastActiveNode = null;
+      for (const node of pNodes) {
+        const nodeTasks = pTasks.filter(t => t.stage === node.name);
+        const hasActive = nodeTasks.some(t => t.status === '进行中');
+        const hasCompleted = nodeTasks.some(t => t.status === '已完成');
+        const hasIncomplete = nodeTasks.some(t => t.status !== '已完成');
+        if (hasActive || (hasCompleted && hasIncomplete)) {
+          lastActiveNode = node.name;
+        }
+      }
+      return lastActiveNode || (pNodes.length > 0 ? pNodes[0].name : '');
+    };
+
     // 获取节点状态
     const getNodeStatus = (nodeName, currentStage, nodes) => {
       const currentIndex = nodes.findIndex(n => n.name === currentStage);
@@ -621,145 +678,6 @@
     };
 
     // 产品卡片
-    const ProductCard = ({ product, nodes, members, tasks, onClick }) => {
-      const productTasks = tasks.filter(t => t.productId === product.id);
-      const completedTasks = productTasks.filter(t => t.status === '已完成').length;
-      const inProgressTasks = productTasks.filter(t => t.status === '进行中').length;
-      const daysRemaining = product.targetDate 
-        ? Math.ceil((new Date(product.targetDate) - new Date()) / (1000 * 60 * 60 * 24))
-        : null;
-      
-      // 自动计算项目进度：每个节点的任务完成度 / 节点总数
-      const getAutoProgress = () => {
-        if (nodes.length === 0) return product.progress;
-        let totalNodeProgress = 0;
-        for (const node of nodes) {
-          const nodeTasks = productTasks.filter(t => t.stage === node.name);
-          if (nodeTasks.length > 0) {
-            const completedCount = nodeTasks.filter(t => t.status === '已完成').length;
-            totalNodeProgress += (completedCount / nodeTasks.length) * 100;
-          }
-          // 无任务的节点按0%计算
-        }
-        return Math.round(totalNodeProgress / nodes.length);
-      };
-      const autoProgress = getAutoProgress();
-
-      // 自动计算项目状态
-      const getAutoStatus = () => {
-        if (productTasks.length === 0) return '未开始';
-        if (completedTasks === productTasks.length) return '已完成';
-        if (inProgressTasks > 0 || completedTasks > 0) return '进行中';
-        return '未开始';
-      };
-      const autoStatus = getAutoStatus();
-
-      // 自动计算当前阶段：最后一个有进行中任务的节点
-      const getAutoCurrentStage = () => {
-        let lastActiveNode = null;
-        // 按节点顺序遍历，找最后一个有进行中/部分完成任务的节点
-        for (const node of nodes) {
-          const nodeTasks = productTasks.filter(t => t.stage === node.name);
-          const hasActive = nodeTasks.some(t => t.status === '进行中');
-          const hasCompleted = nodeTasks.some(t => t.status === '已完成');
-          const hasIncomplete = nodeTasks.some(t => t.status !== '已完成');
-          if (hasActive || (hasCompleted && hasIncomplete)) {
-            lastActiveNode = node.name;
-          }
-        }
-        return lastActiveNode || product.currentStage;
-      };
-      const autoCurrentStage = getAutoCurrentStage();
-      
-      const isOverdue = daysRemaining !== null && daysRemaining < 0 && autoStatus !== '已完成';
-
-      // 找到项目负责人的成员信息（用于显示头像）
-      const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
-
-      return (
-        <div 
-          className={`bg-white rounded-xl card-shadow overflow-hidden cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 ${
-            autoStatus === '已完成' ? 'border-2 border-green-200' : ''
-          }`}
-          onClick={() => onClick(product)}
-        >
-          <div className={`h-1.5 ${
-            autoStatus === '已完成' ? 'bg-green-500' :
-            isOverdue ? 'bg-red-500' : 'bg-blue-500'
-          }`} />
-          
-          <div className="p-4">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center text-2xl">
-                {product.image}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-gray-800 truncate">{product.name}</div>
-                <div className="text-xs text-gray-400">{product.category}</div>
-              </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                autoStatus === '已完成' ? 'bg-green-100 text-green-600' : 
-                autoStatus === '未开始' ? 'bg-gray-100 text-gray-500' :
-                'bg-blue-100 text-blue-600'
-              }`}>
-                {autoStatus}
-              </span>
-            </div>
-
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-gray-500">当前阶段</span>
-                <span className="text-sm font-medium text-blue-600">{autoCurrentStage}</span>
-              </div>
-              <MiniStageIndicator currentStage={autoCurrentStage} nodes={nodes} tasks={productTasks} />
-            </div>
-
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500">整体进度</span>
-                <span className="text-sm font-medium text-gray-800">{autoProgress}%</span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all ${
-                    autoProgress === 100 ? 'bg-green-500' : 'bg-blue-500'
-                  }`}
-                  style={{ width: `${autoProgress}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <div className="flex items-center gap-2">
-                <div className="text-xs text-gray-500">
-                  任务 {completedTasks}/{productTasks.length}
-                </div>
-                {product.ownerName && (
-                  <div className="flex items-center gap-1 text-xs text-gray-400">
-                    {ownerMember?.avatarUrl ? (
-                      <img src={ownerMember.avatarUrl} alt="" className="w-4 h-4 rounded-full" />
-                    ) : (
-                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px]">
-                        {product.ownerName.charAt(0)}
-                      </span>
-                    )}
-                    {product.ownerName}
-                  </div>
-                )}
-              </div>
-              <div className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                {autoStatus === '已完成' ? (
-                  <span className="text-green-600">✓ 已上线</span>
-                ) : daysRemaining !== null ? (
-                  isOverdue ? `⚠️ 逾期 ${Math.abs(daysRemaining)} 天` : `📅 剩余 ${daysRemaining} 天`
-                ) : ''}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
     // 甘特图组件
     const GanttChart = ({ tasks, members, product }) => {
       // 计算时间范围
@@ -2113,7 +2031,7 @@
     };
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
-    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], members = [], onRefresh }) => {
+    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], templates = {}, members = [], onRefresh }) => {
       const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -2122,6 +2040,8 @@
       const [editingKR, setEditingKR] = useState(null);
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [showAddProject, setShowAddProject] = useState(null); // krId
+      const [filterCycle, setFilterCycle] = useState('all');
+      const [filterObjStatus, setFilterObjStatus] = useState('all');
       const showToast = useToast();
       const currentUser = useContext(UserContext);
       
@@ -2478,9 +2398,26 @@
         <div className="space-y-4">
           {/* 顶部操作栏 */}
           <div className="flex items-center justify-between bg-white rounded-xl p-4 shadow-sm">
-            <div>
-              <h2 className="text-lg font-bold text-gray-800">🎯 OKR 目标管理</h2>
-              <p className="text-sm text-gray-500 mt-1">目标 → 关键结果 → 项目 层级视图</p>
+            <div className="flex items-center gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">🎯 OKR 目标管理</h2>
+              </div>
+              <div className="flex items-center gap-2 ml-4">
+                <select value={filterCycle} onChange={e => setFilterCycle(e.target.value)}
+                  className="px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none bg-white">
+                  <option value="all">全部周期</option>
+                  {[...new Set(objectives.map(o => o.cycle).filter(Boolean))].sort().map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select value={filterObjStatus} onChange={e => setFilterObjStatus(e.target.value)}
+                  className="px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none bg-white">
+                  <option value="all">全部状态</option>
+                  <option value="进行中">进行中</option>
+                  <option value="已完成">已完成</option>
+                  <option value="未开始">未开始</option>
+                </select>
+              </div>
             </div>
             <button
               onClick={() => setShowAddObjective(true)}
@@ -2575,7 +2512,24 @@
             </div>
           ) : (
             <div className="space-y-4">
-              {objectives.map(objective => {
+              {(() => {
+                const filteredObjectives = objectives.filter(o => {
+                  if (filterCycle !== 'all' && o.cycle !== filterCycle) return false;
+                  if (filterObjStatus !== 'all') {
+                    const { autoStatus } = calculateObjectiveProgressAndStatus(o.id);
+                    if (autoStatus !== filterObjStatus) return false;
+                  }
+                  return true;
+                });
+                if (filteredObjectives.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="text-4xl mb-3">🎯</div>
+                      <div>没有符合筛选条件的目标</div>
+                    </div>
+                  );
+                }
+                return filteredObjectives.map(objective => {
                 const krs = getKRsForObjective(objective.id);
                 const { progress, autoStatus } = calculateObjectiveProgressAndStatus(objective.id);
                 const isExpanded = expandedObjectives.has(objective.id);
@@ -2958,25 +2912,17 @@
                                       ) : (
                                         <div className="grid grid-cols-2 gap-2">
                                           {krProjects.map(project => {
-                                            // 自动计算项目进度
-                                            const pTasks = tasks.filter(t => t.productId === project.id);
-                                            let pAutoProgress = 0;
-                                            if (nodes.length > 0) {
-                                              let total = 0;
-                                              for (const nd of nodes) {
-                                                const nt = pTasks.filter(t => t.stage === nd.name);
-                                                if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
-                                              }
-                                              pAutoProgress = Math.round(total / nodes.length);
-                                            }
-                                            const isCompleted = pAutoProgress >= 100 || project.status === '已完成';
+                                            const pAutoProgress = calcProjectProgress(project, nodes, templates, tasks);
+                                            const pAutoStage = calcCurrentStage(project, nodes, templates, tasks);
+                                            const pAutoStatus = calcProjectStatus(project, tasks);
+                                            const isCompleted = pAutoStatus === '已完成';
                                             return (
                                               <div key={project.id} className={`bg-white rounded-lg p-3 border flex items-center gap-3 ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
                                                 <span className="text-2xl">{project.image}</span>
                                                 <div className="flex-1 min-w-0">
                                                   <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
                                                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                                                    <span>{project.currentStage}</span>
+                                                    <span>{pAutoStage || project.category}</span>
                                                     {project.ownerName && (() => {
                                                       const pOwner = members.find(m => m.id === project.ownerId || m.name === project.ownerName);
                                                       return (
@@ -3015,7 +2961,8 @@
                     )}
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
           )}
         </div>
@@ -3027,6 +2974,7 @@
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [viewMode, setViewMode] = useState('grid');
+      const [searchProject, setSearchProject] = useState('');
 
       // 跳过节点状态 - 按项目ID存储，持久化到 localStorage
       const [skippedNodesMap, setSkippedNodesMap] = useState(() => {
@@ -3059,38 +3007,25 @@
       };
 
       // 自动计算项目进度
-      const getAutoProgress = (product) => {
-        const pTasks = tasks.filter(t => t.productId === product.id);
-        if (nodes.length === 0) return product.progress || 0;
-        let total = 0;
-        for (const nd of nodes) {
-          const nt = pTasks.filter(t => t.stage === nd.name);
-          if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
-        }
-        return Math.round(total / nodes.length);
-      };
-
-      // 自动计算项目状态
-      const getAutoStatus = (product) => {
-        const pTasks = tasks.filter(t => t.productId === product.id);
-        const completed = pTasks.filter(t => t.status === '已完成').length;
-        const inProgress = pTasks.filter(t => t.status === '进行中').length;
-        if (pTasks.length === 0) return '未开始';
-        if (completed === pTasks.length) return '已完成';
-        if (inProgress > 0 || completed > 0) return '进行中';
-        return '未开始';
-      };
+      const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks);
+      const getAutoStatus = (product) => calcProjectStatus(product, tasks);
 
       // 筛选
-      const filteredProducts = filterStatus === 'all'
-        ? products
-        : filterStatus === '逾期'
-          ? products.filter(p => {
-              if (getAutoStatus(p) === '已完成') return false;
-              if (!p.targetDate) return false;
-              return new Date(p.targetDate) < new Date();
-            })
-          : products.filter(p => getAutoStatus(p) === filterStatus);
+      const filteredProducts = (() => {
+        let list = products;
+        if (searchProject) {
+          list = list.filter(p => p.name?.includes(searchProject) || p.category?.includes(searchProject) || p.ownerName?.includes(searchProject));
+        }
+        if (filterStatus === 'all') return list;
+        if (filterStatus === '逾期') {
+          return list.filter(p => {
+            if (getAutoStatus(p) === '已完成') return false;
+            if (!p.targetDate) return false;
+            return new Date(p.targetDate) < new Date();
+          });
+        }
+        return list.filter(p => getAutoStatus(p) === filterStatus);
+      })();
 
       // 构建 OKR 分组结构
       const getProjectsForKR = (krId) => {
@@ -3196,7 +3131,7 @@
       return (
         <div>
           <div className="flex items-center justify-between mb-6">
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               {['all', '进行中', '已完成', '逾期'].map(status => (
                 <button
                   key={status}
@@ -3205,9 +3140,14 @@
                     filterStatus === status ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'
                   }`}
                 >
-                  {status === 'all' ? '全部项目' : status}
+                  {status === 'all' ? `全部(${products.length})` : status}
                 </button>
               ))}
+              <input 
+                type="text" value={searchProject} onChange={e => setSearchProject(e.target.value)}
+                placeholder="🔍 搜索项目..." 
+                className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700 w-40 focus:ring-2 focus:ring-blue-300 outline-none ml-2"
+              />
             </div>
             <div className="flex gap-2">
               <button
@@ -3507,6 +3447,10 @@
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
       const [expandedMember, setExpandedMember] = useState(null);
+      const [searchName, setSearchName] = useState('');
+      const [sortBy, setSortBy] = useState('overdue');
+      const showToast = useToast();
+      const currentUser = useContext(UserContext);
 
       const departments = [...new Set(members.map(m => m.department).filter(d => d))];
       const availableGroups = filterDept === 'all' 
@@ -3551,13 +3495,25 @@
       let filtered = membersWithStats.filter(m => {
         const deptMatch = filterDept === 'all' || m.department === filterDept;
         const groupMatch = filterGroup === 'all' || m.group === filterGroup;
-        return deptMatch && groupMatch;
+        const nameMatch = !searchName || m.name?.includes(searchName) || m.larkName?.includes(searchName);
+        return deptMatch && groupMatch && nameMatch;
       });
 
       const activeMembers = filtered.filter(m => m.total > 0);
       const inactiveMembers = filtered.filter(m => m.total === 0);
       const displayMembers = showAll ? [...activeMembers, ...inactiveMembers] : activeMembers;
-      displayMembers.sort((a, b) => b.overdue - a.overdue || b.inProgress - a.inProgress || b.total - a.total);
+      
+      // 排序
+      const sortFns = {
+        overdue: (a, b) => b.overdue - a.overdue || b.inProgress - a.inProgress || b.total - a.total,
+        total: (a, b) => b.total - a.total || b.overdue - a.overdue,
+        rate: (a, b) => a.rate - b.rate || b.total - a.total,
+        name: (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN')
+      };
+      displayMembers.sort(sortFns[sortBy] || sortFns.overdue);
+
+      // 人均任务数
+      const avgTasks = activeMembers.length > 0 ? (filtered.reduce((s, m) => s + m.total, 0) / activeMembers.length) : 0;
 
       // 汇总统计
       const totalActive = activeMembers.length;
@@ -3585,9 +3541,8 @@
       return (
         <div>
           {/* 筛选栏 */}
-          <div className="flex items-center gap-4 mb-4 flex-wrap">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">部门</span>
               <select value={filterDept} onChange={e => handleDeptChange(e.target.value)}
                 className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700">
                 <option value="all">全部部门</option>
@@ -3595,13 +3550,24 @@
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">组别</span>
               <select value={filterGroup} onChange={e => setFilterGroup(e.target.value)}
                 className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700">
                 <option value="all">全部组别</option>
                 {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
+            <input 
+              type="text" value={searchName} onChange={e => setSearchName(e.target.value)}
+              placeholder="🔍 搜索成员..." 
+              className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700 w-36 focus:ring-2 focus:ring-blue-300 outline-none"
+            />
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700">
+              <option value="overdue">按逾期排序</option>
+              <option value="total">按任务量排序</option>
+              <option value="rate">按完成率排序</option>
+              <option value="name">按姓名排序</option>
+            </select>
             <label className="flex items-center gap-1.5 text-sm text-gray-500 cursor-pointer ml-auto">
               <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} className="rounded" />
               显示无任务成员
@@ -3613,6 +3579,7 @@
             <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
               <div className="text-2xl font-bold text-gray-800">{totalActive}</div>
               <div className="text-xs text-gray-500">活跃成员</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">人均 {avgTasks.toFixed(1)} 任务</div>
             </div>
             <div className="bg-white rounded-lg px-4 py-3 card-shadow text-center">
               <div className="text-2xl font-bold text-gray-800">{totalTasks}</div>
@@ -3700,7 +3667,10 @@
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center font-medium text-sm text-gray-700">{member.total || '-'}</td>
+                        <td className="px-4 py-3 text-center font-medium text-sm">
+                          <span className={member.total > avgTasks * 2 && avgTasks > 0 ? 'text-red-600' : 'text-gray-700'}>{member.total || '-'}</span>
+                          {member.total > avgTasks * 2 && avgTasks > 0 && <span className="text-[9px] text-red-400 block">超负荷</span>}
+                        </td>
                         <td className="px-4 py-3 text-center font-medium text-sm text-blue-600">{member.inProgress || '-'}</td>
                         <td className="px-4 py-3 text-center font-medium text-sm text-gray-500">{member.pending || '-'}</td>
                         <td className="px-4 py-3 text-center font-medium text-sm text-green-600">{member.completed || '-'}</td>
@@ -3756,6 +3726,37 @@
                             }
                           }
                           
+                          // 快捷操作
+                          const handleQuickAction = async (e, action) => {
+                            e.stopPropagation();
+                            try {
+                              const fields = {};
+                              if (action === 'accept') {
+                                fields['状态'] = '进行中';
+                                fields['开始日期'] = Date.now();
+                              } else if (action === 'complete') {
+                                fields['状态'] = '已完成';
+                                fields['完成日期'] = Date.now();
+                              }
+                              const res = await fetch(API_BASE + '/api/update-task', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblFwmxmjRJPzVmV', record_id: task.id, fields })
+                              });
+                              const result = await res.json();
+                              if (result.success) {
+                                showToast?.(`任务已${action === 'accept' ? '接受' : '完成'}`, 'success');
+                              } else {
+                                throw new Error(result.error);
+                              }
+                            } catch (err) {
+                              showToast?.('操作失败: ' + err.message, 'error');
+                            }
+                          };
+                          
+                          const isMyTask = task.assignee === currentUser?.open_id || task.assigneeName === currentUser?.name;
+                          const priorityColors = { P0: 'bg-red-500 text-white', P1: 'bg-orange-100 text-orange-700', P2: 'bg-blue-50 text-blue-500', P3: 'bg-gray-100 text-gray-400' };
+                          
                           return (
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isOverdue ? 'bg-red-50 border border-red-200' : 'bg-white'}`}>
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -3764,18 +3765,19 @@
                                 task.status === '进行中' ? 'bg-blue-500' :
                                 'bg-gray-300'
                               }`} />
+                              {task.priority && (
+                                <span className={`text-[10px] px-1 py-0.5 rounded flex-shrink-0 leading-none ${priorityColors[task.priority] || 'bg-gray-100 text-gray-400'}`}>{task.priority}</span>
+                              )}
                               <span className={`truncate flex-1 ${isOverdue ? 'text-red-700' : 'text-gray-700'}`}>{task.name}</span>
                               {product && <span className="text-xs text-gray-400 flex-shrink-0">{product.name}</span>}
-                              {task.stage && <span className="text-xs text-gray-300 flex-shrink-0">{task.stage}</span>}
                               {timeTag && (
                                 <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${timeTag.cls}`}>{timeTag.text}</span>
                               )}
-                              {!isOverdue && !timeTag && (
-                                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                  task.status === '已完成' ? 'bg-green-50 text-green-600' :
-                                  task.status === '进行中' ? 'bg-blue-50 text-blue-600' :
-                                  'bg-gray-100 text-gray-500'
-                                }`}>{task.status}</span>
+                              {isMyTask && task.status === '待开始' && (
+                                <button onClick={e => handleQuickAction(e, 'accept')} className="text-[10px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600 flex-shrink-0">接受</button>
+                              )}
+                              {isMyTask && task.status === '进行中' && (
+                                <button onClick={e => handleQuickAction(e, 'complete')} className="text-[10px] px-1.5 py-0.5 bg-green-500 text-white rounded hover:bg-green-600 flex-shrink-0">完成</button>
                               )}
                             </div>
                           );
@@ -3981,17 +3983,10 @@
         const totalKRs = data.keyResults.length;
         const completedKRs = data.keyResults.filter(kr => kr.status === '已完成').length;
         
-        // 项目平均进度
+        // 项目平均进度（模板感知）
         const avgProgress = data.products.length > 0 
           ? Math.round(data.products.reduce((sum, p) => {
-              const pTasks = data.tasks.filter(t => t.productId === p.id);
-              if (data.processNodes.length === 0) return sum + p.progress;
-              let total = 0;
-              for (const nd of data.processNodes) {
-                const nt = pTasks.filter(t => t.stage === nd.name);
-                if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
-              }
-              return sum + Math.round(total / data.processNodes.length);
+              return sum + calcProjectProgress(p, data.processNodes, data.templates, data.tasks);
             }, 0) / data.products.length) 
           : 0;
         
@@ -4102,6 +4097,7 @@
                   products={data.products}
                   tasks={data.tasks}
                   nodes={data.processNodes}
+                  templates={data.templates}
                   members={data.members}
                   onRefresh={fetchData}
                 />
