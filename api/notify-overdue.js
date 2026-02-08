@@ -1,4 +1,4 @@
-// /api/notify-overdue.js - 逾期任务飞书通知 (Vercel Cron)
+// /api/notify-overdue.js - 逾期+临期任务飞书通知 (Vercel Cron)
 const LARK_APP_ID = process.env.LARK_APP_ID;
 const LARK_APP_SECRET = process.env.LARK_APP_SECRET;
 const APP_TOKEN = 'N5OqbwkO1a2PbpsaM05ckGrMnxg';
@@ -33,16 +33,13 @@ async function fetchAllRecords(token, tableId) {
 
 function parseLarkDate(val) {
   if (!val) return null;
-  // 飞书日期可能是毫秒时间戳或 ISO 字符串
   if (typeof val === 'number') return new Date(val);
   return new Date(val);
 }
 
 function extractLarkUser(field) {
   if (!field) return null;
-  if (Array.isArray(field) && field[0]) {
-    return { id: field[0].id, name: field[0].name };
-  }
+  if (Array.isArray(field) && field[0]) return { id: field[0].id, name: field[0].name };
   if (field.id) return { id: field.id, name: field.name };
   return null;
 }
@@ -71,87 +68,104 @@ async function sendCardMessage(token, openId, card) {
   return res.json();
 }
 
-function buildOverdueCard(memberName, overdueTasks, taskStats) {
-  const taskRows = overdueTasks.slice(0, 5).map(t => {
-    const overdueDays = Math.ceil((Date.now() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24));
-    return {
-      tag: 'div',
-      fields: [
-        { is_short: true, text: { tag: 'lark_md', content: `**${t.name}**` } },
-        { is_short: true, text: { tag: 'lark_md', content: `${t.projectName || '未关联项目'}` } },
-        { is_short: true, text: { tag: 'lark_md', content: `${t.priority || 'P2'}` } },
-        { is_short: true, text: { tag: 'lark_md', content: `逾期 **${overdueDays}** 天` } }
-      ]
-    };
+// 分类任务紧急程度
+function classifyTask(daysRemaining) {
+  if (daysRemaining < 0) return { level: 'overdue', label: `逾期 ${Math.abs(daysRemaining)} 天`, color: '🔴', sort: 0 };
+  if (daysRemaining === 0) return { level: 'today', label: '今天截止', color: '🔴', sort: 1 };
+  if (daysRemaining === 1) return { level: 'urgent', label: '明天截止', color: '🟠', sort: 2 };
+  if (daysRemaining <= 3) return { level: 'warning', label: `${daysRemaining} 天后截止`, color: '🟡', sort: 3 };
+  if (daysRemaining <= 5) return { level: 'notice', label: `${daysRemaining} 天后截止`, color: '🔵', sort: 4 };
+  return null;
+}
+
+function buildReminderCard(memberName, taskGroups, taskStats) {
+  const elements = [];
+  const totalCount = taskGroups.reduce((s, g) => s + g.tasks.length, 0);
+
+  elements.push({
+    tag: 'div',
+    text: { tag: 'lark_md', content: `**${memberName}**，你有 **${totalCount}** 项任务需要关注：` }
   });
 
-  const extraNote = overdueTasks.length > 5 
-    ? [{ tag: 'div', text: { tag: 'lark_md', content: `...还有 ${overdueTasks.length - 5} 项逾期任务` } }]
-    : [];
+  for (const group of taskGroups) {
+    elements.push({ tag: 'hr' });
+    elements.push({
+      tag: 'div',
+      text: { tag: 'lark_md', content: `${group.icon} **${group.title}**（${group.tasks.length}项）` }
+    });
+
+    const showTasks = group.tasks.slice(0, 5);
+    for (const t of showTasks) {
+      elements.push({
+        tag: 'div',
+        fields: [
+          { is_short: true, text: { tag: 'lark_md', content: `${t.classification.color} **${t.name}**` } },
+          { is_short: true, text: { tag: 'lark_md', content: `${t.projectName || '-'}` } },
+          { is_short: true, text: { tag: 'lark_md', content: `${t.priority}` } },
+          { is_short: true, text: { tag: 'lark_md', content: `${t.classification.label}` } }
+        ]
+      });
+    }
+    if (group.tasks.length > 5) {
+      elements.push({
+        tag: 'div',
+        text: { tag: 'lark_md', content: `...还有 ${group.tasks.length - 5} 项` }
+      });
+    }
+  }
+
+  elements.push({ tag: 'hr' });
+  elements.push({
+    tag: 'div',
+    text: { tag: 'lark_md', content: `📊 任务总览：进行中 ${taskStats.inProgress} | 待开始 ${taskStats.pending} | 已完成 ${taskStats.completed}` }
+  });
+  elements.push({
+    tag: 'action',
+    actions: [{
+      tag: 'button',
+      text: { tag: 'plain_text', content: '查看项目管理面板' },
+      url: DASHBOARD_URL,
+      type: 'primary'
+    }]
+  });
+
+  const topLevel = taskGroups[0]?.level || 'notice';
+  const headerTemplate = (topLevel === 'overdue' || topLevel === 'today') ? 'red'
+    : topLevel === 'urgent' ? 'orange'
+    : topLevel === 'warning' ? 'yellow'
+    : 'blue';
+
+  const headerTitle = (topLevel === 'overdue' || topLevel === 'today')
+    ? `⚠️ 逾期/紧急任务提醒（${totalCount}项）`
+    : `📋 临期任务提醒（${totalCount}项）`;
 
   return {
     config: { wide_screen_mode: true },
     header: {
-      title: { tag: 'plain_text', content: `⚠️ 逾期任务提醒 (${overdueTasks.length}项)` },
-      template: 'red'
+      title: { tag: 'plain_text', content: headerTitle },
+      template: headerTemplate
     },
-    elements: [
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: `**${memberName}**，你有 **${overdueTasks.length}** 项任务已逾期，请及时处理：` }
-      },
-      { tag: 'hr' },
-      // 表头
-      {
-        tag: 'div',
-        fields: [
-          { is_short: true, text: { tag: 'lark_md', content: '**任务**' } },
-          { is_short: true, text: { tag: 'lark_md', content: '**项目**' } },
-          { is_short: true, text: { tag: 'lark_md', content: '**优先级**' } },
-          { is_short: true, text: { tag: 'lark_md', content: '**逾期天数**' } }
-        ]
-      },
-      ...taskRows,
-      ...extraNote,
-      { tag: 'hr' },
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: `📊 任务总览：进行中 ${taskStats.inProgress} | 待开始 ${taskStats.pending} | 已完成 ${taskStats.completed} | 逾期 ${overdueTasks.length}` }
-      },
-      {
-        tag: 'action',
-        actions: [{
-          tag: 'button',
-          text: { tag: 'plain_text', content: '查看项目管理面板' },
-          url: DASHBOARD_URL,
-          type: 'primary'
-        }]
-      }
-    ]
+    elements
   };
 }
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     const token = await getTenantToken();
 
-    // 1. 获取所有任务、成员、项目
     const [taskRecords, memberRecords, projectRecords] = await Promise.all([
       fetchAllRecords(token, TASKS_TABLE),
       fetchAllRecords(token, MEMBERS_TABLE),
       fetchAllRecords(token, PROJECTS_TABLE)
     ]);
 
-    // 2. 建立项目 ID → 名称映射
     const projectMap = {};
     projectRecords.forEach(r => {
       projectMap[r.record_id] = r.fields['项目名称'] || '';
     });
 
-    // 3. 建立成员信息映射（open_id → 成员信息）
     const memberMap = {};
     memberRecords.forEach(r => {
       const larkUser = extractLarkUser(r.fields['飞书用户']);
@@ -162,13 +176,11 @@ export default async function handler(req, res) {
       }
     });
 
-    // 4. 解析任务，找出逾期任务
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    
-    // 按负责人分组
-    const overdueByMember = {}; // openId → [tasks]
-    const statsByMember = {};   // openId → {inProgress, pending, completed}
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const alertsByMember = {};
+    const statsByMember = {};
 
     taskRecords.forEach(r => {
       const status = r.fields['状态'] || '待开始';
@@ -176,8 +188,6 @@ export default async function handler(req, res) {
       if (!assignee?.id) return;
 
       const openId = assignee.id;
-
-      // 初始化统计
       if (!statsByMember[openId]) {
         statsByMember[openId] = { inProgress: 0, pending: 0, completed: 0 };
       }
@@ -189,40 +199,58 @@ export default async function handler(req, res) {
       if (status === '进行中') statsByMember[openId].inProgress++;
       else statsByMember[openId].pending++;
 
-      // 检查是否逾期
       const dueDate = parseLarkDate(r.fields['截止日期']);
-      if (!dueDate || dueDate >= now) return;
+      if (!dueDate) return;
+
+      const dueDateNorm = new Date(dueDate);
+      dueDateNorm.setHours(0, 0, 0, 0);
+      const daysRemaining = Math.ceil((dueDateNorm - today) / (1000 * 60 * 60 * 24));
+
+      const classification = classifyTask(daysRemaining);
+      if (!classification) return;
 
       let taskName = r.fields['任务名称'] || '';
       if (Array.isArray(taskName)) taskName = taskName.map(n => n.text || n).join('');
-      
+
       const projectId = extractLinkedId(r.fields['所属项目']);
       const priority = (r.fields['优先级'] || 'P2').replace(/-.*$/, '');
 
-      if (!overdueByMember[openId]) overdueByMember[openId] = [];
-      overdueByMember[openId].push({
+      if (!alertsByMember[openId]) alertsByMember[openId] = [];
+      alertsByMember[openId].push({
         name: taskName,
-        dueDate: dueDate.toISOString().split('T')[0],
+        dueDate: dueDateNorm.toISOString().split('T')[0],
         priority,
         projectName: projectId ? projectMap[projectId] : '',
-        status
+        classification,
+        daysRemaining
       });
     });
 
-    // 5. 发送通知
     const results = [];
-    for (const [openId, overdueTasks] of Object.entries(overdueByMember)) {
-      if (overdueTasks.length === 0) continue;
-
+    for (const [openId, tasks] of Object.entries(alertsByMember)) {
+      if (tasks.length === 0) continue;
       const memberInfo = memberMap[openId];
       if (!memberInfo) continue;
 
-      // 按优先级排序：P0 > P1 > P2 > P3
-      overdueTasks.sort((a, b) => (a.priority || 'P2').localeCompare(b.priority || 'P2'));
+      tasks.sort((a, b) => a.classification.sort - b.classification.sort || (a.priority || '').localeCompare(b.priority || ''));
 
-      const card = buildOverdueCard(
+      const groupDefs = [
+        { level: 'overdue', icon: '🔴', title: '已逾期', filter: t => t.classification.level === 'overdue' },
+        { level: 'today', icon: '⏰', title: '今天截止', filter: t => t.classification.level === 'today' },
+        { level: 'urgent', icon: '🟠', title: '明天截止', filter: t => t.classification.level === 'urgent' },
+        { level: 'warning', icon: '🟡', title: '3天内截止', filter: t => t.classification.level === 'warning' },
+        { level: 'notice', icon: '🔵', title: '5天内截止', filter: t => t.classification.level === 'notice' }
+      ];
+
+      const taskGroups = groupDefs
+        .map(g => ({ ...g, tasks: tasks.filter(g.filter) }))
+        .filter(g => g.tasks.length > 0);
+
+      if (taskGroups.length === 0) continue;
+
+      const card = buildReminderCard(
         memberInfo.name,
-        overdueTasks,
+        taskGroups,
         statsByMember[openId] || { inProgress: 0, pending: 0, completed: 0 }
       );
 
@@ -230,7 +258,10 @@ export default async function handler(req, res) {
       results.push({
         member: memberInfo.name,
         openId,
-        overdueCount: overdueTasks.length,
+        overdue: tasks.filter(t => t.classification.level === 'overdue').length,
+        today: tasks.filter(t => t.classification.level === 'today').length,
+        upcoming: tasks.filter(t => ['urgent', 'warning', 'notice'].includes(t.classification.level)).length,
+        total: tasks.length,
         sent: sendResult.code === 0,
         error: sendResult.code !== 0 ? sendResult.msg : undefined
       });
@@ -240,8 +271,7 @@ export default async function handler(req, res) {
       success: true,
       timestamp: new Date().toISOString(),
       notified: results.length,
-      details: results,
-      totalOverdueTasks: Object.values(overdueByMember).reduce((s, t) => s + t.length, 0)
+      details: results
     });
 
   } catch (error) {
