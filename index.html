@@ -165,6 +165,7 @@
         processNodeLayers: [], // DAG分层
         nodeMap: {}, // 节点名称到节点的映射
         nodeToLayer: {}, // 节点名称到层级的映射
+        templates: {}, // templateId -> { name, type }
         groups: []
       };
 
@@ -445,6 +446,18 @@
         data.groups = Array.from(groupSet).filter(g => g);
       }
 
+      // 转换流程模板表
+      if (rawData['流程模板 Process Templates']) {
+        rawData['流程模板 Process Templates'].records.forEach(r => {
+          let tplName = r.fields['模板名称'];
+          if (Array.isArray(tplName)) tplName = tplName.map(n => n.text || n).join('');
+          data.templates[r.record_id] = {
+            name: tplName || '',
+            type: r.fields['模板类型'] || ''
+          };
+        });
+      }
+
       // 转换流程节点表 - 支持DAG结构
       if (rawData['流程节点 Process Nodes']) {
         const rawNodes = rawData['流程节点 Process Nodes'].records
@@ -463,6 +476,14 @@
             if (typeof days === 'string') {
               days = parseInt(days, 10) || 0;
             }
+            // 提取所属模板ID
+            let templateId = null;
+            const templateField = r.fields['所属模板'];
+            if (templateField) {
+              if (templateField.link_record_ids?.[0]) templateId = templateField.link_record_ids[0];
+              else if (Array.isArray(templateField) && typeof templateField[0] === 'string') templateId = templateField[0];
+              else if (Array.isArray(templateField) && templateField[0]?.record_ids?.[0]) templateId = templateField[0].record_ids[0];
+            }
             return {
               id: r.record_id,
               name: nodeName || '',
@@ -470,7 +491,8 @@
               type: r.fields['节点类型'] || '中间节点',
               days: days,
               role: r.fields['默认负责角色'] || '',
-              prevNode: prevNode || null // 前置节点名称
+              prevNode: prevNode || null, // 前置节点名称
+              templateId: templateId
             };
           });
         
@@ -1616,7 +1638,51 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh }) => {
+    const ProductDetailModal = ({ product, nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh }) => {
+      // 根据项目类型匹配模板，筛选对应节点
+      const matchingTemplateId = Object.keys(templates).find(tplId => 
+        templates[tplId].type === product.category
+      );
+      
+      // 筛选属于该模板的节点
+      const nodes = matchingTemplateId 
+        ? allNodes.filter(n => n.templateId === matchingTemplateId)
+        : allNodes;
+      
+      // 重建分层（如果筛选了节点）
+      const nodeLayers = (() => {
+        if (!matchingTemplateId) return allNodeLayers;
+        const layers = [];
+        const visited = new Set();
+        const startNodes = nodes.filter(n => !n.prevNode || !nodes.some(nn => nn.name === n.prevNode));
+        if (startNodes.length > 0) {
+          layers.push(startNodes);
+          startNodes.forEach(n => visited.add(n.name));
+        }
+        let li = 1;
+        while (visited.size < nodes.length && li < 20) {
+          const nextLayer = nodes.filter(n => {
+            if (visited.has(n.name)) return false;
+            if (!n.prevNode) return false;
+            return visited.has(n.prevNode);
+          });
+          if (nextLayer.length === 0) break;
+          layers.push(nextLayer);
+          nextLayer.forEach(n => visited.add(n.name));
+          li++;
+        }
+        return layers;
+      })();
+      
+      const nodeMap = {};
+      nodes.forEach(n => { nodeMap[n.name] = n; });
+      
+      const nodeToLayer = {};
+      nodeLayers.forEach((layer, idx) => {
+        layer.forEach(n => { nodeToLayer[n.name] = idx; });
+      });
+      
+      const hasMatchingTemplate = matchingTemplateId || allNodes.length === 0;
       const [selectedNode, setSelectedNode] = useState(null);
       const currentUser = useContext(UserContext);
       const showToast = useToast();
@@ -1898,6 +1964,13 @@
 
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
+                {nodes.length === 0 ? (
+                  <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400">
+                    <div className="text-2xl mb-2">📋</div>
+                    <div className="text-sm">该项目类型「{product.category}」暂无对应流程模板</div>
+                    <div className="text-xs mt-1">请在飞书多维表格中为此类型创建流程模板和节点</div>
+                  </div>
+                ) : (
                 <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
                   <div className="min-w-max">
                     {/* 网格布局 */}
@@ -2003,6 +2076,8 @@
                   </div>
                   <span className="text-purple-500">💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</span>
                 </div>
+              </div>
+              )}
               </div>
 
               <div>
@@ -2947,7 +3022,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, members, tasks, onRefresh }) => {
+    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [viewMode, setViewMode] = useState('grid');
@@ -3326,6 +3401,7 @@
               nodeLayers={nodeLayers}
               nodeMap={nodeMap}
               nodeToLayer={nodeToLayer}
+              templates={templates}
               members={members}
               tasks={tasks}
               skippedNodes={getSkippedNodes(selectedProduct?.id)}
@@ -4039,6 +4115,7 @@
                   nodeLayers={data.processNodeLayers}
                   nodeMap={data.nodeMap}
                   nodeToLayer={data.nodeToLayer}
+                  templates={data.templates}
                   members={data.members}
                   tasks={data.tasks}
                   onRefresh={fetchData}
