@@ -6,5 +6,11 @@
     "api/upload-file.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/notify-overdue",
+      "schedule": "0 1 * * 1-5"
+    }
+  ]
 }
