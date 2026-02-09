@@ -2197,120 +2197,6 @@
               )}
               </div>
 
-              {/* 时间线概览 */}
-              {productTasks.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">⏱ 时间线概览</h3>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  {(() => {
-                    const now = new Date(); now.setHours(0,0,0,0);
-                    // 按节点分组统计时间信息
-                    const nodeTimeData = nodes.map(node => {
-                      const nTasks = productTasks.filter(t => t.stage === node.name);
-                      if (nTasks.length === 0) return { node, status: 'empty' };
-                      
-                      const completedCount = nTasks.filter(t => t.status === '已完成').length;
-                      const allCompleted = completedCount === nTasks.length;
-                      
-                      // 找最早和最晚截止日期
-                      const dueDates = nTasks.filter(t => t.dueDate).map(t => new Date(t.dueDate));
-                      const earliestDue = dueDates.length > 0 ? new Date(Math.min(...dueDates)) : null;
-                      const latestDue = dueDates.length > 0 ? new Date(Math.max(...dueDates)) : null;
-                      
-                      // 逾期统计
-                      const overdueCount = nTasks.filter(t => {
-                        if (t.status === '已完成' || !t.dueDate) return false;
-                        const d = new Date(t.dueDate); d.setHours(0,0,0,0);
-                        return now > d;
-                      }).length;
-                      
-                      // 已完成的准时率
-                      const completedTasks = nTasks.filter(t => t.status === '已完成');
-                      const onTimeCount = completedTasks.filter(t => {
-                        if (!t.dueDate) return true;
-                        const due = new Date(t.dueDate); due.setHours(0,0,0,0);
-                        const comp = t.completeDate ? new Date(t.completeDate) : now;
-                        comp.setHours(0,0,0,0);
-                        return comp <= due;
-                      }).length;
-                      
-                      // 延期天数
-                      const maxDelay = completedTasks.reduce((max, t) => {
-                        if (!t.dueDate || !t.completeDate) return max;
-                        const due = new Date(t.dueDate); due.setHours(0,0,0,0);
-                        const comp = new Date(t.completeDate); comp.setHours(0,0,0,0);
-                        const delay = Math.ceil((comp - due) / 86400000);
-                        return delay > max ? delay : max;
-                      }, 0);
-
-                      let timeStatus = 'normal';
-                      if (allCompleted) {
-                        timeStatus = onTimeCount === completedTasks.length ? 'onTime' : 'delayed';
-                      } else if (overdueCount > 0) {
-                        timeStatus = 'overdue';
-                      } else if (latestDue) {
-                        const diff = Math.ceil((latestDue - now) / 86400000);
-                        if (diff >= 0 && diff <= 3) timeStatus = 'urgent';
-                      }
-                      
-                      return {
-                        node, status: timeStatus, taskCount: nTasks.length,
-                        completedCount, overdueCount, onTimeCount,
-                        totalCompleted: completedTasks.length,
-                        earliestDue, latestDue, maxDelay, allCompleted
-                      };
-                    }).filter(d => d.status !== 'empty');
-
-                    if (nodeTimeData.length === 0) {
-                      return <div className="text-center text-gray-400 py-4 text-sm">暂无任务时间数据</div>;
-                    }
-
-                    return (
-                      <div className="space-y-2">
-                        {/* 图例 */}
-                        <div className="flex items-center gap-4 mb-3 text-xs text-gray-500">
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> 按时完成</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span> 延期完成</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> 逾期中</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block"></span> 即将到期</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block"></span> 正常</span>
-                        </div>
-                        {nodeTimeData.map(d => {
-                          const statusConfig = {
-                            onTime: { color: 'bg-green-500', barBg: 'bg-green-100', text: 'text-green-700', label: '✅ 按时完成' },
-                            delayed: { color: 'bg-orange-500', barBg: 'bg-orange-100', text: 'text-orange-700', label: `⚠️ 延期${d.maxDelay}天完成` },
-                            overdue: { color: 'bg-red-500', barBg: 'bg-red-100', text: 'text-red-700', label: `🚨 ${d.overdueCount}项逾期` },
-                            urgent: { color: 'bg-yellow-500', barBg: 'bg-yellow-100', text: 'text-yellow-700', label: '⏰ 即将到期' },
-                            normal: { color: 'bg-blue-400', barBg: 'bg-blue-50', text: 'text-blue-700', label: '进行中' },
-                          }[d.status];
-                          const progress = d.taskCount > 0 ? Math.round((d.completedCount / d.taskCount) * 100) : 0;
-                          
-                          return (
-                            <div key={d.node.name} className={`flex items-center gap-3 p-2.5 rounded-lg ${statusConfig.barBg} transition-all hover:shadow-sm`}>
-                              <div className={`w-2.5 h-2.5 rounded-full ${statusConfig.color} flex-shrink-0`}></div>
-                              <div className="w-24 text-sm font-medium text-gray-700 truncate flex-shrink-0">{d.node.name}</div>
-                              <div className="flex-1 min-w-0">
-                                <div className="h-2 bg-white/60 rounded-full overflow-hidden">
-                                  <div className={`h-full ${statusConfig.color} rounded-full transition-all`} style={{ width: `${progress}%` }}></div>
-                                </div>
-                              </div>
-                              <div className="text-xs text-gray-500 flex-shrink-0 w-12 text-right">{d.completedCount}/{d.taskCount}</div>
-                              <div className={`text-xs ${statusConfig.text} flex-shrink-0 w-28 text-right font-medium`}>{statusConfig.label}</div>
-                              {d.latestDue && (
-                                <div className="text-xs text-gray-400 flex-shrink-0 w-20 text-right">
-                                  截止 {d.latestDue.getMonth()+1}/{d.latestDue.getDate()}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-              )}
-
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📅 项目甘特图</h3>
                 {productTasks.length > 0 ? (
@@ -3806,6 +3692,85 @@
         }).length;
         const rate = memberTasks.length > 0 ? Math.round((completed / memberTasks.length) * 100) : 0;
         
+        // === 时间加权负荷计算 ===
+        const activeTasks = memberTasks.filter(t => t.status !== '已完成');
+        const priorityWeight = { 'P0': 1.5, 'P1': 1.2, 'P2': 1.0, 'P3': 0.8 };
+        
+        // 计算每日并行任务加权数（从今天到最晚截止日）
+        let workloadIndex = 0;
+        let peakLoad = 0;
+        let dailyLoads = [];
+        
+        if (activeTasks.length > 0) {
+          const today = new Date(); today.setHours(0,0,0,0);
+          
+          // 找最晚截止日
+          const dueDates = activeTasks.filter(t => t.dueDate).map(t => { const d = new Date(t.dueDate); d.setHours(0,0,0,0); return d; });
+          const noDueTasks = activeTasks.filter(t => !t.dueDate);
+          
+          // 最晚截止日，如果全部无截止日则看未来14天
+          let endDate;
+          if (dueDates.length > 0) {
+            endDate = new Date(Math.max(...dueDates));
+            // 至少看7天
+            const min7 = new Date(today); min7.setDate(min7.getDate() + 7);
+            if (endDate < min7) endDate = min7;
+          } else {
+            endDate = new Date(today); endDate.setDate(endDate.getDate() + 14);
+          }
+          
+          const totalDays = Math.max(1, Math.ceil((endDate - today) / 86400000) + 1);
+          
+          // 遍历每一天，计算该天的加权并行任务数
+          for (let d = 0; d < totalDays; d++) {
+            const checkDate = new Date(today); checkDate.setDate(checkDate.getDate() + d);
+            let dayLoad = 0;
+            
+            activeTasks.forEach(t => {
+              // 任务的时间范围：开始日（或今天）到截止日
+              let startD = t.startDate ? new Date(t.startDate) : today;
+              startD.setHours(0,0,0,0);
+              if (startD < today) startD = new Date(today);
+              
+              let endD = t.dueDate ? new Date(t.dueDate) : endDate;
+              endD.setHours(0,0,0,0);
+              // 已逾期的任务：到期日已过，但仍在进行中，算到今天
+              if (endD < today) endD = new Date(today);
+              
+              if (checkDate >= startD && checkDate <= endD) {
+                const pw = priorityWeight[t.priority] || 1.0;
+                dayLoad += pw;
+              }
+            });
+            
+            // 无截止日的任务在每天都算
+            noDueTasks.forEach(t => {
+              const pw = priorityWeight[t.priority] || 1.0;
+              dayLoad += pw;
+            });
+            
+            dailyLoads.push(Math.round(dayLoad * 10) / 10);
+            if (dayLoad > peakLoad) peakLoad = dayLoad;
+          }
+          
+          // 平均日负荷
+          workloadIndex = dailyLoads.length > 0 ? Math.round((dailyLoads.reduce((s,v) => s+v, 0) / dailyLoads.length) * 10) / 10 : 0;
+        }
+        
+        // 负荷等级
+        let workloadLevel, workloadColor, workloadLabel;
+        if (peakLoad <= 0) {
+          workloadLevel = 'idle'; workloadColor = 'text-gray-400'; workloadLabel = '空闲';
+        } else if (peakLoad <= 2) {
+          workloadLevel = 'light'; workloadColor = 'text-green-600'; workloadLabel = '轻松';
+        } else if (peakLoad <= 4) {
+          workloadLevel = 'normal'; workloadColor = 'text-blue-600'; workloadLabel = '正常';
+        } else if (peakLoad <= 6) {
+          workloadLevel = 'heavy'; workloadColor = 'text-orange-600'; workloadLabel = '较重';
+        } else {
+          workloadLevel = 'overload'; workloadColor = 'text-red-600'; workloadLabel = '超负荷';
+        }
+        
         // 按状态排序：逾期 → 进行中 → 待开始 → 已完成
         const sortedTasks = [...memberTasks].sort((a, b) => {
           const statusOrder = (t) => {
@@ -3817,7 +3782,8 @@
           return statusOrder(a) - statusOrder(b);
         });
         
-        return { ...member, memberTasks: sortedTasks, total: memberTasks.length, completed, inProgress, pending, overdue, rate };
+        return { ...member, memberTasks: sortedTasks, total: memberTasks.length, completed, inProgress, pending, overdue, rate,
+          workloadIndex, peakLoad, workloadLevel, workloadColor, workloadLabel, dailyLoads };
       });
 
       // 筛选
@@ -3836,6 +3802,7 @@
       const sortFns = {
         overdue: (a, b) => b.overdue - a.overdue || b.inProgress - a.inProgress || b.total - a.total,
         total: (a, b) => b.total - a.total || b.overdue - a.overdue,
+        workload: (a, b) => b.peakLoad - a.peakLoad || b.workloadIndex - a.workloadIndex || b.total - a.total,
         rate: (a, b) => a.rate - b.rate || b.total - a.total,
         name: (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN')
       };
@@ -3852,17 +3819,42 @@
       const totalPending = filtered.reduce((s, m) => s + m.pending, 0);
       const totalOverdue = filtered.reduce((s, m) => s + m.overdue, 0);
 
-      // 工作量条形图
+      // 工作量条形图 - 带负荷热力指示
       const WorkloadBar = ({ member }) => {
         if (member.total === 0) return <div className="h-2 bg-gray-100 rounded-full" />;
         const cW = (member.completed / member.total) * 100;
         const iW = (member.inProgress / member.total) * 100;
         const pW = (member.pending / member.total) * 100;
+        
+        // 负荷等级颜色映射
+        const levelBg = { idle: 'bg-gray-100', light: 'bg-green-50', normal: 'bg-blue-50', heavy: 'bg-orange-50', overload: 'bg-red-50' };
+        const levelBorder = { idle: '', light: '', normal: '', heavy: 'border border-orange-200', overload: 'border border-red-200' };
+        const levelEmoji = { idle: '', light: '🟢', normal: '🔵', heavy: '🟠', overload: '🔴' };
+        
         return (
-          <div className="flex h-2 rounded-full overflow-hidden bg-gray-100" title={`已完成 ${member.completed} | 进行中 ${member.inProgress} | 待开始 ${member.pending}`}>
-            {cW > 0 && <div className="bg-green-500 transition-all" style={{ width: `${cW}%` }} />}
-            {iW > 0 && <div className="bg-blue-500 transition-all" style={{ width: `${iW}%` }} />}
-            {pW > 0 && <div className="bg-gray-300 transition-all" style={{ width: `${pW}%` }} />}
+          <div className={`rounded-lg p-1.5 ${levelBg[member.workloadLevel]} ${levelBorder[member.workloadLevel]}`}>
+            <div className="flex h-2 rounded-full overflow-hidden bg-gray-100/80" title={`已完成 ${member.completed} | 进行中 ${member.inProgress} | 待开始 ${member.pending}`}>
+              {cW > 0 && <div className="bg-green-500 transition-all" style={{ width: `${cW}%` }} />}
+              {iW > 0 && <div className="bg-blue-500 transition-all" style={{ width: `${iW}%` }} />}
+              {pW > 0 && <div className="bg-gray-300 transition-all" style={{ width: `${pW}%` }} />}
+            </div>
+            <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />{member.completed}
+                </div>
+                <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />{member.inProgress}
+                </div>
+                <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />{member.pending}
+                </div>
+              </div>
+              <div className={`text-[10px] font-medium ${member.workloadColor}`} title={`峰值负荷: ${member.peakLoad} | 平均负荷: ${member.workloadIndex}`}>
+                {levelEmoji[member.workloadLevel]} {member.workloadLabel}
+                {member.peakLoad > 0 && <span className="text-gray-400 ml-0.5">({member.peakLoad})</span>}
+              </div>
+            </div>
           </div>
         );
       };
@@ -3893,6 +3885,7 @@
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
               className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700">
               <option value="overdue">按逾期排序</option>
+              <option value="workload">按负荷排序</option>
               <option value="total">按任务量排序</option>
               <option value="rate">按完成率排序</option>
               <option value="name">按姓名排序</option>
@@ -3982,23 +3975,9 @@
                         </td>
                         <td className="px-4 py-3">
                           <WorkloadBar member={member} />
-                          {member.total > 0 && (
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
-                                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{member.completed}
-                              </div>
-                              <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
-                                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />{member.inProgress}
-                              </div>
-                              <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
-                                <span className="w-2 h-2 rounded-full bg-gray-300 inline-block" />{member.pending}
-                              </div>
-                            </div>
-                          )}
                         </td>
                         <td className="px-4 py-3 text-center font-medium text-sm">
-                          <span className={member.total > avgTasks * 2 && avgTasks > 0 ? 'text-red-600' : 'text-gray-700'}>{member.total || '-'}</span>
-                          {member.total > avgTasks * 2 && avgTasks > 0 && <span className="text-[9px] text-red-400 block">超负荷</span>}
+                          <span className="text-gray-700">{member.total || '-'}</span>
                         </td>
                         <td className="px-4 py-3 text-center font-medium text-sm text-blue-600">{member.inProgress || '-'}</td>
                         <td className="px-4 py-3 text-center font-medium text-sm text-gray-500">{member.pending || '-'}</td>
