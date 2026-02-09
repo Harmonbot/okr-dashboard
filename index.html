@@ -2798,27 +2798,28 @@
                 const levelCfg = levelConfig.find(l => l.key === objective.level) || levelConfig[0];
 
                 return (
-                  <div key={objective.id} className={`bg-white rounded-xl border ${levelCfg.border} shadow-sm overflow-hidden hover:shadow-md transition-shadow`}>
+                  <div key={objective.id} className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow flex">
+                    {/* 左侧彩条 */}
+                    <div className={`w-1 flex-shrink-0 bg-gradient-to-b ${levelCfg.color}`} />
+                    <div className="flex-1 min-w-0">
                     {/* 目标头部 */}
                     <div 
-                      className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-50/50 transition-colors"
                       onClick={() => !isEditing && toggleObjective(objective.id)}
                     >
                       {isEditing ? (
-                        <form onSubmit={handleUpdateObjective} className="space-y-4" onClick={e => e.stopPropagation()}>
-                          <div>
-                            <input
-                              type="text"
-                              value={objectiveForm.name}
-                              onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
-                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none text-lg font-semibold"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
+                        <form onSubmit={handleUpdateObjective} className="space-y-2" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={objectiveForm.name}
+                            onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
+                            className="w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none text-sm font-semibold"
+                          />
+                          <div className="flex items-center gap-2 flex-wrap">
                             <select
                               value={objectiveForm.cycle}
                               onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
-                              className="px-3 py-2 border rounded-lg text-sm"
+                              className="px-2 py-1 border rounded text-xs"
                             >
                               {(() => {
                                 const existing = [...new Set(objectives.map(o => o.cycle).filter(Boolean))];
@@ -2833,18 +2834,15 @@
                             <select
                               value={objectiveForm.level}
                               onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value })}
-                              className="px-3 py-2 border rounded-lg text-sm"
+                              className="px-2 py-1 border rounded text-xs"
                             >
                               <option>公司级</option>
                               <option>部门级</option>
                               <option>个人级</option>
                             </select>
-                          </div>
-                          <div className="text-xs text-gray-500">💡 状态根据关键结果自动计算：有进行中KR→进行中，全部KR完成→已完成</div>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setEditingObjective(null)} className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-                            <button type="submit" disabled={isSubmitting} className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 disabled:opacity-50">
-                              {isSubmitting ? '保存中...' : '保存'}
+                            <button type="button" onClick={() => setEditingObjective(null)} className="px-2 py-1 border rounded text-xs hover:bg-gray-50 ml-auto">取消</button>
+                            <button type="submit" disabled={isSubmitting} className="px-3 py-1 bg-purple-500 text-white rounded text-xs hover:bg-purple-600 disabled:opacity-50">
+                              {isSubmitting ? '...' : '保存'}
                             </button>
                           </div>
                         </form>
@@ -2892,7 +2890,7 @@
 
                     {/* 关键结果列表 */}
                     {isExpanded && !isEditing && (
-                      <div className="border-t bg-gray-50 p-4">
+                      <div className="border-t bg-gray-50/80 px-4 py-3">
                         {/* 添加 KR 按钮 */}
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-sm font-semibold text-gray-600">🔑 关键结果 ({krs.length})</h4>
@@ -3220,6 +3218,7 @@
                       </div>
                     )}
                   </div>
+                  </div>
                 );
                 };
                 
@@ -3272,7 +3271,6 @@
     const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
-      const [viewMode, setViewMode] = useState('grid');
       const [searchProject, setSearchProject] = useState('');
 
       // 跳过节点状态 - 按项目ID存储，持久化到 localStorage
@@ -3353,11 +3351,6 @@
         }
         return lastActiveNode || product.currentStage;
       };
-
-      const productsByStage = nodes.reduce((acc, node) => {
-        acc[node.name] = products.filter(p => getProductAutoStage(p) === node.name);
-        return acc;
-      }, {});
 
       // 紧凑项目卡片（用于分组视图）
       const CompactProjectCard = ({ product }) => {
@@ -3448,28 +3441,9 @@
                 className="px-3 py-1.5 rounded-lg text-sm border bg-white text-gray-700 w-40 focus:ring-2 focus:ring-blue-300 outline-none ml-2"
               />
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
-                }`}
-              >
-                分组
-              </button>
-              <button
-                onClick={() => setViewMode('pipeline')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  viewMode === 'pipeline' ? 'bg-blue-100 text-blue-600' : 'bg-white text-gray-400'
-                }`}
-              >
-                管道
-              </button>
-            </div>
           </div>
 
-          {viewMode === 'grid' && (
-            <div className="space-y-6">
+          <div className="space-y-6">
               {objectives.map(objective => {
                 const objKRs = keyResults.filter(kr => kr.objectiveId === objective.id);
                 // 检查该目标下是否有筛选后的项目
@@ -3477,35 +3451,35 @@
                 if (!objHasProjects && filterStatus !== 'all') return null;
                 
                 return (
-                  <div key={objective.id} className="bg-white rounded-xl card-shadow overflow-hidden">
+                  <div key={objective.id} className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
                     {/* 目标头 */}
-                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 px-6 py-4 border-b">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl">🎯</span>
-                          <div>
-                            <h3 className="font-bold text-gray-800">{objective.name}</h3>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                              <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded">{objective.cycle}</span>
-                              <span>{objective.level}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
-                              {objective.ownerName && (() => {
+                    <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
+                      <div className={`w-1 h-8 rounded-full ${
+                        objective.level === '部门级' ? 'bg-blue-500' : objective.level === '个人级' ? 'bg-green-500' : 'bg-purple-500'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-gray-800 text-sm">{objective.name}</h3>
+                        <div className="flex items-center gap-2 text-[11px] text-gray-400 mt-0.5">
+                          <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">{objective.cycle}</span>
+                          <span>{objective.level}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
+                          {objective.ownerName && (() => {
                                 const objOwner = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
                                 return (
                                   <span className="flex items-center gap-1">
                                     {objOwner?.avatarUrl ? (
-                                      <img src={objOwner.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
+                                      <img src={objOwner.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
                                     ) : (
-                                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px]">{objective.ownerName.charAt(0)}</span>
+                                      <span className="w-3.5 h-3.5 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[9px]">{objective.ownerName.charAt(0)}</span>
                                     )}
                                     {objective.ownerName}
                                   </span>
                                 );
                               })()}
-                              <span>🔑 {objKRs.length} KR</span>
-                            </div>
-                          </div>
                         </div>
                       </div>
+                      <span className="text-[11px] text-gray-400">{objKRs.length} KR</span>
+                            </div>
+                          </div>
                     </div>
                     
                     {/* KR 及项目 */}
@@ -3515,7 +3489,7 @@
                         if (krProjects.length === 0 && filterStatus !== 'all') return null;
                         
                         return (
-                          <div key={kr.id} className="px-6 py-4">
+                          <div key={kr.id} className="px-5 py-3">
                             <div className="flex items-center gap-2 mb-3">
                               <span className="text-sm">🔑</span>
                               <span className="text-sm font-medium text-gray-700">{kr.name}</span>
@@ -3577,64 +3551,8 @@
                 <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
               )}
             </div>
-          )}
 
-          {viewMode === 'pipeline' && (
-            <div className="overflow-x-auto pb-4">
-              <div className="flex gap-4 min-w-max">
-                {nodes.map(node => (
-                  <div key={node.id} className="w-64 flex-shrink-0">
-                    <div className="bg-gray-100 rounded-t-xl px-4 py-3 flex items-center justify-between">
-                      <span className="font-medium text-gray-700">{node.name}</span>
-                      <span className="bg-white text-gray-500 text-sm px-2 py-0.5 rounded-full">
-                        {productsByStage[node.name]?.length || 0}
-                      </span>
-                    </div>
-                    <div className="bg-gray-50 rounded-b-xl p-3 min-h-[300px] space-y-3">
-                      {productsByStage[node.name]?.map(product => {
-                        // 自动计算项目进度
-                        const pTasks = tasks.filter(t => t.productId === product.id);
-                        let pProgress = 0;
-                        if (nodes.length > 0) {
-                          let total = 0;
-                          for (const nd of nodes) {
-                            const nt = pTasks.filter(t => t.stage === nd.name);
-                            if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
-                          }
-                          pProgress = Math.round(total / nodes.length);
-                        }
-                        return (
-                        <div
-                          key={product.id}
-                          className="bg-white rounded-lg p-3 card-shadow cursor-pointer hover:shadow-md"
-                          onClick={() => setSelectedProduct(product)}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xl">{product.image}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-800 text-sm truncate">{product.name}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="h-1.5 flex-1 bg-gray-100 rounded-full overflow-hidden mr-2">
-                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pProgress}%` }} />
-                            </div>
-                            <span className="text-xs text-gray-500">{pProgress}%</span>
-                          </div>
-                        </div>
-                        );
-                      })}
-                      {(!productsByStage[node.name] || productsByStage[node.name].length === 0) && (
-                        <div className="text-center text-gray-400 text-sm py-8">暂无产品</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {selectedProduct && (
+                    {selectedProduct && (
             <ProductDetailModal
               product={selectedProduct}
               nodes={nodes}
