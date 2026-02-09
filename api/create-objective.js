@@ -40,6 +40,7 @@ export default async function handler(req, res) {
     if (objective.level) fields['目标层级'] = objective.level;
     if (objective.department) fields['所属部门'] = objective.department;
     if (objective.status) fields['状态'] = objective.status;
+    if (objective.owner) fields['负责人'] = [{ id: objective.owner }];
     
     // 创建记录
     const createRes = await fetch(
