@@ -486,6 +486,18 @@
               else if (Array.isArray(templateField) && typeof templateField[0] === 'string') templateId = templateField[0];
               else if (Array.isArray(templateField) && templateField[0]?.record_ids?.[0]) templateId = templateField[0].record_ids[0];
             }
+            // 提取指导说明链接
+            let guideUrl = null;
+            const guideField = r.fields['指导说明'];
+            if (guideField) {
+              if (typeof guideField === 'string') guideUrl = guideField;
+              else if (guideField.link) guideUrl = guideField.link;
+              else if (guideField.text) guideUrl = guideField.text;
+              else if (Array.isArray(guideField) && guideField[0]) {
+                const g = guideField[0];
+                guideUrl = g.link || g.text || (typeof g === 'string' ? g : null);
+              }
+            }
             return {
               id: r.record_id,
               name: nodeName || '',
@@ -494,7 +506,8 @@
               days: days,
               role: r.fields['默认负责角色'] || '',
               prevNode: prevNode || null, // 前置节点名称
-              templateId: templateId
+              templateId: templateId,
+              guideUrl: guideUrl
             };
           });
         
@@ -1262,6 +1275,17 @@
                 </div>
                 <button onClick={onClose} className="text-white/80 hover:text-white text-xl">×</button>
               </div>
+              {node.guideUrl && (
+                <a
+                  href={node.guideUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm text-white transition-colors"
+                >
+                  📖 查看指导说明（SOP）
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              )}
             </div>
 
             {/* 统计卡片 */}
