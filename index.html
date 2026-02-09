@@ -199,6 +199,7 @@
             name: objName,
             cycle: r.fields['目标周期'] || '',
             level: r.fields['目标层级'] || '',
+            department: r.fields['所属部门'] || '',
             progress: r.fields['进度'] || 0,
             status: r.fields['状态'] || '未开始',
             ownerId,
@@ -2261,7 +2262,7 @@
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
-        name: '', cycle: '2026-Q1', level: '公司级', status: '进行中', owner: ''
+        name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: ''
       });
       const [krForm, setKRForm] = useState({
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
@@ -2467,7 +2468,7 @@
           if (result.success) {
             showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', status: '进行中', owner: '' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -2574,6 +2575,7 @@
           name: obj.name,
           cycle: obj.cycle || '2026-Q1',
           level: obj.level || '公司级',
+          department: obj.department || '',
           status: obj.status || '进行中'
         });
       };
@@ -2689,7 +2691,7 @@
                     <label className="block text-sm text-gray-600 mb-1">目标层级</label>
                     <select
                       value={objectiveForm.level}
-                      onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value })}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value, department: e.target.value !== '部门级' ? '' : objectiveForm.department })}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
                       <option>公司级</option>
@@ -2698,6 +2700,21 @@
                     </select>
                   </div>
                 </div>
+                {objectiveForm.level === '部门级' && (
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">所属部门</label>
+                    <select
+                      value={objectiveForm.department}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, department: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                    >
+                      <option value="">请选择部门</option>
+                      {[...new Set(members.map(m => m.department).filter(Boolean))].sort().map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">负责人</label>
                   <select
@@ -2823,7 +2840,7 @@
                             </div>
                             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                               <span>📅 {objective.cycle || '未设置周期'}</span>
-                              <span>📊 {objective.level || '未设置层级'}</span>
+                              <span>📊 {objective.level || '未设置层级'}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
                               {objective.ownerName && (() => {
                                 const objOwnerMember = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
                                 return (
@@ -3414,7 +3431,7 @@
                             <h3 className="font-bold text-gray-800">{objective.name}</h3>
                             <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
                               <span className="px-2 py-0.5 bg-purple-100 text-purple-600 rounded">{objective.cycle}</span>
-                              <span>{objective.level}</span>
+                              <span>{objective.level}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
                               {objective.ownerName && (() => {
                                 const objOwner = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
                                 return (
