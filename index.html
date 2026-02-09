@@ -2668,12 +2668,21 @@
                       onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
-                      <option>2025-Q1</option>
-                      <option>2025-Q2</option>
-                      <option>2025-Q3</option>
-                      <option>2025-Q4</option>
-                      <option>2026-Q1</option>
-                      <option>2026-Q2</option>
+                      {(() => {
+                        // 从已有目标动态提取周期 + 自动生成当前年份前后的季度
+                        const existing = [...new Set(objectives.map(o => o.cycle).filter(Boolean))];
+                        const now = new Date();
+                        const y = now.getFullYear();
+                        const q = Math.ceil((now.getMonth() + 1) / 3);
+                        const generated = [];
+                        for (let yr = y - 1; yr <= y + 1; yr++) {
+                          for (let qt = 1; qt <= 4; qt++) {
+                            generated.push(`${yr}-Q${qt}`);
+                          }
+                        }
+                        const all = [...new Set([...generated, ...existing])].sort();
+                        return all.map(c => <option key={c}>{c}</option>);
+                      })()}
                     </select>
                   </div>
                   <div>
@@ -2772,12 +2781,15 @@
                               onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
                               className="px-3 py-2 border rounded-lg text-sm"
                             >
-                              <option>2025-Q1</option>
-                              <option>2025-Q2</option>
-                              <option>2025-Q3</option>
-                              <option>2025-Q4</option>
-                              <option>2026-Q1</option>
-                              <option>2026-Q2</option>
+                              {(() => {
+                                const existing = [...new Set(objectives.map(o => o.cycle).filter(Boolean))];
+                                const y = new Date().getFullYear();
+                                const generated = [];
+                                for (let yr = y - 1; yr <= y + 1; yr++) {
+                                  for (let qt = 1; qt <= 4; qt++) generated.push(`${yr}-Q${qt}`);
+                                }
+                                return [...new Set([...generated, ...existing])].sort().map(c => <option key={c}>{c}</option>);
+                              })()}
                             </select>
                             <select
                               value={objectiveForm.level}
