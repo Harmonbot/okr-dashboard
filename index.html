@@ -2773,17 +2773,35 @@
                     </div>
                   );
                 }
-                return filteredObjectives.map(objective => {
+                
+                // 按层级分组
+                const levelConfig = [
+                  { key: '公司级', icon: '🏢', color: 'from-purple-600 to-indigo-600', bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' },
+                  { key: '部门级', icon: '🏛️', color: 'from-blue-600 to-cyan-600', bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+                  { key: '个人级', icon: '👤', color: 'from-green-600 to-teal-600', bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-700' }
+                ];
+                
+                const grouped = {};
+                filteredObjectives.forEach(o => {
+                  const lv = o.level || '未分类';
+                  if (!grouped[lv]) grouped[lv] = [];
+                  grouped[lv].push(o);
+                });
+                
+                // 按部门级再细分
+                const renderObjectiveCard = (objective) => {
                 const krs = getKRsForObjective(objective.id);
                 const { progress, autoStatus } = calculateObjectiveProgressAndStatus(objective.id);
                 const isExpanded = expandedObjectives.has(objective.id);
                 const isEditing = editingObjective?.id === objective.id;
+                const objOwnerMember = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
+                const levelCfg = levelConfig.find(l => l.key === objective.level) || levelConfig[0];
 
                 return (
-                  <div key={objective.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                  <div key={objective.id} className={`bg-white rounded-xl border ${levelCfg.border} shadow-sm overflow-hidden hover:shadow-md transition-shadow`}>
                     {/* 目标头部 */}
                     <div 
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
                       onClick={() => !isEditing && toggleObjective(objective.id)}
                     >
                       {isEditing ? (
@@ -2832,44 +2850,39 @@
                         </form>
                       ) : (
                         <div className="flex items-center gap-4">
-                          <div className="text-xl">{isExpanded ? '▼' : '▶'}</div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3">
-                              <span className="text-2xl">🎯</span>
-                              <h3 className="text-lg font-bold text-gray-800">{objective.name}</h3>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(autoStatus)}`}>
-                                {autoStatus}
-                                {krs.length > 0 && <span className="ml-1">🔄</span>}
-                              </span>
+                          <div className="text-xl text-gray-400">{isExpanded ? '▼' : '▶'}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-bold text-gray-800">{objective.name}</h3>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full ${getStatusColor(autoStatus)}`}>{autoStatus}</span>
                             </div>
-                            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                              <span>📅 {objective.cycle || '未设置周期'}</span>
-                              <span>📊 {objective.level || '未设置层级'}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
-                              {objective.ownerName && (() => {
-                                const objOwnerMember = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
-                                return (
-                                  <span className="flex items-center gap-1">
-                                    {objOwnerMember?.avatarUrl ? (
-                                      <img src={objOwnerMember.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
-                                    ) : (
-                                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px]">{objective.ownerName.charAt(0)}</span>
-                                    )}
-                                    {objective.ownerName}
-                                  </span>
-                                );
-                              })()}
-                              <span>🔑 {krs.length} 个关键结果</span>
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px] text-gray-500">📅 {objective.cycle}</span>
+                              {objective.level === '部门级' && objective.department && (
+                                <span className={`px-1.5 py-0.5 rounded text-[11px] ${levelCfg.badge}`}>{objective.department}</span>
+                              )}
+                              {objOwnerMember && (
+                                <span className="flex items-center gap-1">
+                                  {objOwnerMember.avatarUrl ? (
+                                    <img src={objOwnerMember.avatarUrl} className="w-4 h-4 rounded-full" alt="" />
+                                  ) : (
+                                    <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px]">{objective.ownerName?.charAt(0)}</span>
+                                  )}
+                                  <span className="text-[11px] text-gray-500">{objective.ownerName}</span>
+                                </span>
+                              )}
+                              <span className="text-[11px] text-gray-400">🔑 {krs.length} KR</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-bold text-purple-600">{progress}%</div>
-                            <div className="w-32 h-2 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                          <div className="text-right flex-shrink-0">
+                            <div className={`text-xl font-bold ${progress >= 80 ? 'text-green-600' : progress >= 50 ? 'text-blue-600' : 'text-purple-600'}`}>{progress}%</div>
+                            <div className="w-24 h-1.5 bg-gray-200 rounded-full mt-1 overflow-hidden">
                               <div className={`h-full ${getProgressColor(progress)} transition-all`} style={{ width: `${progress}%` }} />
                             </div>
                           </div>
                           <button
                             onClick={(e) => { e.stopPropagation(); startEditObjective(objective); }}
-                            className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
+                            className="p-1.5 text-gray-300 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
                           >
                             ✏️
                           </button>
@@ -3208,7 +3221,46 @@
                     )}
                   </div>
                 );
-              });
+                };
+                
+                // 按层级分组渲染
+                return levelConfig.filter(lc => grouped[lc.key]?.length > 0).map(lc => {
+                  const objs = grouped[lc.key];
+                  // 部门级目标再按部门细分
+                  const deptGroups = lc.key === '部门级' 
+                    ? [...new Set(objs.map(o => o.department || '未分配'))].sort()
+                    : null;
+                  
+                  return (
+                    <div key={lc.key} className="mb-6">
+                      <div className={`flex items-center gap-2 mb-3 pb-2 border-b-2`} style={{ borderColor: lc.key === '公司级' ? '#7c3aed' : lc.key === '部门级' ? '#2563eb' : '#059669' }}>
+                        <span className="text-lg">{lc.icon}</span>
+                        <h3 className="font-bold text-gray-800">{lc.key}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${lc.badge}`}>{objs.length}</span>
+                      </div>
+                      {deptGroups ? (
+                        deptGroups.map(dept => {
+                          const deptObjs = objs.filter(o => (o.department || '未分配') === dept);
+                          return (
+                            <div key={dept} className="mb-4">
+                              <div className="flex items-center gap-2 mb-2 ml-1">
+                                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{dept}</span>
+                                <span className="text-[10px] text-gray-400">{deptObjs.length} 个目标</span>
+                              </div>
+                              <div className="space-y-3 ml-1">
+                                {deptObjs.map(o => renderObjectiveCard(o))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="space-y-3">
+                          {objs.map(o => renderObjectiveCard(o))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
               })()}
             </div>
           )}
@@ -4893,7 +4945,7 @@
           )}
 
           <div className="text-center py-6 text-gray-400 text-sm">
-            深圳微铸 @2026
+            数据来源：飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
         </UserContext.Provider>
