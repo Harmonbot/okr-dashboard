@@ -2268,7 +2268,7 @@
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', category: '新品开发', targetDate: '', owner: ''
+        name: '', category: '', targetDate: '', owner: ''
       });
 
       // 创建新项目并关联到 KR
@@ -2305,7 +2305,7 @@
           if (result.success) {
             showToast?.('项目创建成功', 'success');
             setShowAddProject(null);
-            setProjectForm({ name: '', category: '新品开发', targetDate: '', owner: '' });
+            setProjectForm({ name: '', category: '', targetDate: '', owner: '' });
             if (onRefresh) onRefresh();
           } else {
             throw new Error(result.error || '创建失败');
@@ -3118,10 +3118,13 @@
                                                 onChange={e => setProjectForm({ ...projectForm, category: e.target.value })}
                                                 className="px-3 py-2 border rounded-lg text-sm"
                                               >
-                                                <option value="新品开发">新品开发</option>
-                                                <option value="营销推广">营销推广</option>
-                                                <option value="供应链优化">供应链优化</option>
-                                                <option value="系统建设">系统建设</option>
+                                                <option value="">选择类型</option>
+                                                {(() => {
+                                                  const types = [...new Set(products.map(p => p.category).filter(Boolean))];
+                                                  const defaults = ['新品开发', '营销推广', '供应链优化', '系统建设', '老品更新', '储评计划'];
+                                                  const all = [...new Set([...defaults, ...types])];
+                                                  return all.map(t => <option key={t} value={t}>{t}</option>);
+                                                })()}
                                               </select>
                                               <select
                                                 value={projectForm.owner}
