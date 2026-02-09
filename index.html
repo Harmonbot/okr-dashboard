@@ -3505,7 +3505,7 @@
     };
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
-    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, getSkippedNodes, onRefresh }) => {
+    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, onRefresh }) => {
       const [filterDept, setFilterDept] = useState('all');
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
@@ -3514,6 +3514,18 @@
       const [sortBy, setSortBy] = useState('overdue');
       const showToast = useToast();
       const currentUser = useContext(UserContext);
+
+      // 读取跳过节点数据（与 ProductOverview 共享 localStorage）
+      const getSkippedNodes = (productId) => {
+        try {
+          const saved = localStorage.getItem('okr_skipped_nodes');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            return parsed[productId] ? new Set(parsed[productId]) : new Set();
+          }
+        } catch (e) {}
+        return new Set();
+      };
 
       const departments = [...new Set(members.map(m => m.department).filter(d => d))];
       const availableGroups = filterDept === 'all' 
@@ -3794,7 +3806,7 @@
                           const taskProduct = products.find(p => p.id === task.productId);
                           const taskNodes = taskProduct ? getNodesForProduct(taskProduct, nodes, templates) : [];
                           const taskNode = taskNodes.find(n => n.name === task.stage);
-                          const productSkipped = taskProduct && getSkippedNodes ? getSkippedNodes(taskProduct.id) : new Set();
+                          const productSkipped = taskProduct ? getSkippedNodes(taskProduct.id) : new Set();
                           
                           // 前置节点检查 - 与 NodeTaskModal 逻辑完全一致
                           const checkPredecessor = () => {
@@ -4267,7 +4279,6 @@
                   groups={data.groups}
                   nodes={data.processNodes}
                   templates={data.templates}
-                  getSkippedNodes={getSkippedNodes}
                   onRefresh={fetchData}
                 />
               )}
