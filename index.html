@@ -1321,14 +1321,6 @@
           if (hasText) notesParts.push(`📝 交付说明: ${outputText.trim()}`);
           
           // 更新任务状态为已完成
-          const updateFields = {
-            status: '已完成',
-            completeDate: new Date().toISOString().split('T')[0]
-          };
-          if (notesParts.length > 0) {
-            updateFields.description = notesParts.join('\n');
-          }
-          
           const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1336,11 +1328,31 @@
               app_token: APP_TOKEN,
               table_id: 'tblFwmxmjRJPzVmV',
               record_id: task.id,
-              fields: updateFields
+              fields: {
+                status: '已完成',
+                completeDate: new Date().toISOString().split('T')[0]
+              }
             })
           });
           
           const result = await res.json();
+          if (!result.success) throw new Error(result.error || '更新状态失败');
+          
+          // 如果有链接/文字交付内容，通过通用接口写入任务描述
+          if (notesParts.length > 0) {
+            try {
+              await fetch(API_BASE + '/api/update-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  app_token: APP_TOKEN,
+                  table_id: 'tblFwmxmjRJPzVmV',
+                  record_id: task.id,
+                  fields: { '任务描述': notesParts.join('\n') }
+                })
+              });
+            } catch (e) { console.warn('交付内容写入失败', e); }
+          }
           if (result.success) {
             if (onTaskCreated) onTaskCreated();
             setShowCompleteForm(null);
@@ -2527,30 +2539,30 @@
         if (relatedProjects.length > 0) {
           // 计算每个项目的自动进度
           const projectProgresses = relatedProjects.map(p => {
+            const autoProgress = calcProjectProgress(p, nodes, templates, tasks);
+            const pAutoStatus = calcProjectStatus(p, tasks);
             const pTasks = tasks.filter(t => t.productId === p.id);
-            if (nodes.length === 0 || pTasks.length === 0) return { ...p, autoProgress: 0, hasProgress: false };
-            let totalNodeProgress = 0;
-            for (const node of nodes) {
-              const nodeTasks = pTasks.filter(t => t.stage === node.name);
-              if (nodeTasks.length > 0) {
-                const completed = nodeTasks.filter(t => t.status === '已完成').length;
-                totalNodeProgress += (completed / nodeTasks.length) * 100;
-              }
-            }
-            const autoProgress = Math.round(totalNodeProgress / nodes.length);
             const hasProgress = pTasks.some(t => t.status === '进行中' || t.status === '已完成');
-            return { ...p, autoProgress, hasProgress };
+            return { ...p, autoProgress, hasProgress, autoStatus: pAutoStatus };
           });
 
           const completedCount = projectProgresses.filter(p => 
-            p.autoProgress >= 100 || p.status === '已完成'
+            p.autoProgress >= 100 || p.autoStatus === '已完成'
           ).length;
           const hasAnyProgress = projectProgresses.some(p => p.hasProgress);
-          const inProgressCount = projectProgresses.filter(p => p.hasProgress && p.autoProgress < 100 && p.status !== '已完成').length;
+          const inProgressCount = projectProgresses.filter(p => p.hasProgress && p.autoProgress < 100 && p.autoStatus !== '已完成').length;
           
-          const progress = kr.target > 0 ? Math.min(100, Math.round((completedCount / kr.target) * 100)) : 0;
+          // 用项目平均进度作为KR进度（而非仅统计完成数）
+          const avgProgress = projectProgresses.length > 0 
+            ? Math.round(projectProgresses.reduce((sum, p) => sum + p.autoProgress, 0) / projectProgresses.length)
+            : 0;
           
-          // 自动计算状态：任何项目有进度就是进行中
+          // 等效当前值（用于显示，如 target=1 且平均50% → current=0.5）
+          const equivCurrent = kr.target > 0 
+            ? Math.round((avgProgress / 100) * kr.target * 10) / 10
+            : completedCount;
+          
+          // 自动计算状态
           let autoStatus = '未开始';
           if (completedCount >= kr.target || completedCount >= relatedProjects.length) {
             autoStatus = '已完成';
@@ -2559,8 +2571,8 @@
           }
           
           return {
-            current: completedCount,
-            progress: progress,
+            current: equivCurrent,
+            progress: avgProgress,
             autoCalculated: true,
             totalProjects: relatedProjects.length,
             completedProjects: completedCount,
