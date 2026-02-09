@@ -2425,7 +2425,7 @@
 
     // OKR 视图组件 - 展示目标 → 关键结果 → 项目的层级关系
     const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], templates = {}, members = [], onRefresh }) => {
-      const [expandedObjectives, setExpandedObjectives] = useState(new Set(objectives.map(o => o.id)));
+      const [expandedObjectives, setExpandedObjectives] = useState(new Set());
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
       const [showAddKR, setShowAddKR] = useState(null); // objectiveId
@@ -2966,6 +2966,70 @@
             </div>
           )}
 
+          {/* OKR 总览仪表盘 */}
+          {objectives.length > 0 && (() => {
+            const allObjData = objectives
+              .filter(o => filterCycle === 'all' || o.cycle === filterCycle)
+              .map(o => {
+                const { progress, autoStatus } = calculateObjectiveProgressAndStatus(o.id);
+                const krs = getKRsForObjective(o.id);
+                return { ...o, progress, autoStatus, krCount: krs.length };
+              });
+            if (allObjData.length === 0) return null;
+            const completed = allObjData.filter(o => o.autoStatus === '已完成').length;
+            const inProgress = allObjData.filter(o => o.autoStatus === '进行中').length;
+            const avgProgress = Math.round(allObjData.reduce((s, o) => s + o.progress, 0) / allObjData.length);
+            const levelColors = { '公司级': 'from-purple-500 to-indigo-500', '部门级': 'from-blue-500 to-cyan-500', '个人级': 'from-green-500 to-teal-500' };
+            const levelBorders = { '公司级': 'border-purple-200', '部门级': 'border-blue-200', '个人级': 'border-green-200' };
+            return (
+              <div className="card-flat p-4 mb-2">
+                {/* 汇总统计 */}
+                <div className="flex items-center gap-6 mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="relative w-10 h-10">
+                      <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="url(#okrGrad)" strokeWidth="3" strokeLinecap="round"
+                          strokeDasharray={`${avgProgress * 0.94} 100`} />
+                        <defs><linearGradient id="okrGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#8b5cf6" /><stop offset="100%" stopColor="#3b82f6" /></linearGradient></defs>
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{avgProgress}%</span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      <div className="font-semibold text-gray-700">{allObjData.length} 个目标</div>
+                      <div>{completed} 完成 · {inProgress} 进行中</div>
+                    </div>
+                  </div>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => {
+                      if (expandedObjectives.size > 0) setExpandedObjectives(new Set());
+                      else setExpandedObjectives(new Set(allObjData.map(o => o.id)));
+                    }}
+                    className="text-[11px] px-2.5 py-1 rounded-lg border text-gray-500 hover:bg-gray-50"
+                  >
+                    {expandedObjectives.size > 0 ? '全部收起' : '全部展开'}
+                  </button>
+                </div>
+                {/* 目标进度条列表 */}
+                <div className="grid gap-1.5">
+                  {allObjData.map(o => (
+                    <div key={o.id} className="flex items-center gap-2 group cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors"
+                      onClick={() => { setExpandedObjectives(new Set([o.id])); setTimeout(() => document.getElementById('obj-' + o.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }}>
+                      <div className={`w-1 h-6 rounded-full bg-gradient-to-b ${levelColors[o.level] || 'from-gray-400 to-gray-500'}`} />
+                      <span className="text-xs text-gray-700 truncate flex-1" style={{maxWidth: '200px'}}>{o.name}</span>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden" style={{maxWidth: '280px'}}>
+                        <div className={`h-full rounded-full transition-all bg-gradient-to-r ${levelColors[o.level] || 'from-gray-400 to-gray-500'}`} style={{ width: `${o.progress}%` }} />
+                      </div>
+                      <span className={`text-xs font-medium w-10 text-right ${o.progress >= 80 ? 'text-green-600' : o.progress >= 40 ? 'text-blue-600' : 'text-gray-500'}`}>{o.progress}%</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getStatusColor(o.autoStatus)}`}>{o.autoStatus}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 目标列表 */}
           {objectives.length === 0 ? (
             <div className="bg-white rounded-xl p-12 text-center">
@@ -3016,7 +3080,7 @@
                 const levelCfg = levelConfig.find(l => l.key === objective.level) || levelConfig[0];
 
                 return (
-                  <div key={objective.id} className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow flex">
+                  <div key={objective.id} id={'obj-' + objective.id} className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow flex">
                     {/* 左侧彩条 */}
                     <div className={`w-1 flex-shrink-0 bg-gradient-to-b ${levelCfg.color}`} />
                     <div className="flex-1 min-w-0">
