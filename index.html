@@ -3707,7 +3707,6 @@
           
           // 找最晚截止日
           const dueDates = activeTasks.filter(t => t.dueDate).map(t => { const d = new Date(t.dueDate); d.setHours(0,0,0,0); return d; });
-          const noDueTasks = activeTasks.filter(t => !t.dueDate);
           
           // 最晚截止日，如果全部无截止日则看未来14天
           let endDate;
@@ -3728,26 +3727,20 @@
             let dayLoad = 0;
             
             activeTasks.forEach(t => {
-              // 任务的时间范围：开始日（或今天）到截止日
-              let startD = t.startDate ? new Date(t.startDate) : today;
+              // 任务的时间范围：开始日（或今天）到截止日（或窗口末尾）
+              let startD = t.startDate ? new Date(t.startDate) : new Date(today);
               startD.setHours(0,0,0,0);
               if (startD < today) startD = new Date(today);
               
-              let endD = t.dueDate ? new Date(t.dueDate) : endDate;
+              let endD = t.dueDate ? new Date(t.dueDate) : new Date(endDate);
               endD.setHours(0,0,0,0);
-              // 已逾期的任务：到期日已过，但仍在进行中，算到今天
+              // 已逾期的任务：到期日已过，但仍未完成，算到今天
               if (endD < today) endD = new Date(today);
               
               if (checkDate >= startD && checkDate <= endD) {
                 const pw = priorityWeight[t.priority] || 1.0;
                 dayLoad += pw;
               }
-            });
-            
-            // 无截止日的任务在每天都算
-            noDueTasks.forEach(t => {
-              const pw = priorityWeight[t.priority] || 1.0;
-              dayLoad += pw;
             });
             
             dailyLoads.push(Math.round(dayLoad * 10) / 10);
