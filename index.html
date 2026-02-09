@@ -1029,7 +1029,7 @@
               {product.targetDate && (
                 <div className="flex border-b bg-purple-50/50">
                   <div className="w-56 flex-shrink-0 px-3 py-1 border-r flex items-center gap-2">
-                    <span className="text-sm">🎯</span>
+                    <Icon name="target" size={13} color="var(--c-accent)" />
                     <span className="text-sm font-medium text-purple-700">计划上线</span>
                     <span className="text-xs text-purple-400 ml-auto">{product.targetDate}</span>
                   </div>
@@ -1049,8 +1049,8 @@
           {hoveredTask && tooltipPos && (
             <div className="fixed z-50 bg-gray-800 text-white text-xs rounded-lg px-3 py-2 shadow-xl pointer-events-none" style={{left: Math.min(tooltipPos.x + 12, window.innerWidth - 260), top: tooltipPos.y - 80, maxWidth:'240px'}}>
               <div className="font-medium mb-1">{hoveredTask.name}</div>
-              <div className="text-gray-300">📅 {hoveredTask.startDate || '未设置'} ~ {hoveredTask.dueDate || '未设置'}</div>
-              <div className="text-gray-300">📋 {hoveredTask.status}{hoveredTask.priority ? ` · ${hoveredTask.priority}` : ''}</div>
+              <div className="text-gray-300">{hoveredTask.startDate || '未设置'} ~ {hoveredTask.dueDate || '未设置'}</div>
+              <div className="text-gray-300">{hoveredTask.status}{hoveredTask.priority ? ` · ${hoveredTask.priority}` : ''}</div>
               {hoveredTask.assigneeName && <div className="text-gray-300">👤 {hoveredTask.assigneeName}</div>}
               {hoveredTask.status !== '已完成' && hoveredTask.dueDate && new Date(hoveredTask.dueDate) < today && (
                 <div className="text-red-400 mt-1">⚠️ 逾期 {Math.ceil((today - new Date(hoveredTask.dueDate)) / 86400000)} 天</div>
@@ -1374,12 +1374,12 @@
             {/* 任务列表 */}
             <div className="p-4 max-h-[40vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-gray-700">📋 任务列表 ({nodeTasks.length})</h4>
+                <h4 className="text-sm font-semibold text-gray-700"><Icon name="clipboard" size={13} /> 任务列表 ({nodeTasks.length})</h4>
                 <button
                   onClick={() => setShowAddForm(true)}
                   className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white text-xs rounded-lg flex items-center gap-1 transition-colors"
                 >
-                  ➕ 新增任务
+                  <Icon name="plus" size={12} /> 新增任务
                 </button>
               </div>
               
@@ -1563,7 +1563,7 @@
                               
                               {task.dueDate && (
                                 <span className="text-xs text-gray-400">
-                                  📅 {task.dueDate}
+                                  {task.dueDate}
                                 </span>
                               )}
                             </div>
@@ -1697,7 +1697,7 @@
                     onClick={() => setShowAddForm(true)}
                     className="mt-3 px-4 py-2 bg-purple-100 text-purple-600 rounded-lg text-sm hover:bg-purple-200 transition-colors"
                   >
-                    ➕ 创建第一个任务
+                    <Icon name="plus" size={12} /> 创建第一个任务
                   </button>
                 </div>
               )}
@@ -2101,7 +2101,7 @@
                       <div className={`text-3xl font-bold ${avgDelay > 0 ? 'text-orange-600' : 'text-green-600'}`}>
                         {avgDelay > 0 ? avgDelay : 0}
                       </div>
-                      <div className="text-sm text-gray-500">📊 平均延期(天)</div>
+                      <div className="text-sm text-gray-500">平均延期(天)</div>
                       {avgDelay === 0 && completedTasks.length > 0 && (
                         <div className="text-xs text-green-400 mt-1">暂无延期 👍</div>
                       )}
@@ -2123,7 +2123,7 @@
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
                 {nodes.length === 0 ? (
                   <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400">
-                    <div className="text-2xl mb-2">📋</div>
+                    <div className="mb-2"><Icon name="clipboard" size={28} color="var(--c-text-muted)" /></div>
                     <div className="text-sm">该项目类型「{product.category}」暂无对应流程模板</div>
                     <div className="text-xs mt-1">请在飞书多维表格中为此类型创建流程模板和节点</div>
                   </div>
@@ -2263,7 +2263,7 @@
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">📅 项目甘特图</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4"><Icon name="calendar" size={14} /> 项目甘特图</h3>
                 {productTasks.length > 0 ? (
                   <GanttChart tasks={productTasks} members={members} product={product} nodes={getNodesForProduct(product, allNodes, templates)} />
                 ) : (
@@ -2687,7 +2687,7 @@
               onClick={() => setShowAddObjective(true)}
               className="tab-btn active text-xs"
             >
-              ＋ 新建目标
+              <Icon name="plus" size={12} /> 新建目标
             </button>
           </div>
 
@@ -2695,7 +2695,7 @@
           {showAddObjective && (
             <div className="card-flat p-5" style={{background:'var(--c-accent-bg)'}}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-sm" style={{color:'var(--c-accent)'}}>🎯 新建目标</h3>
+                <h3 className="font-semibold text-sm" style={{color:'var(--c-accent)'}}><Icon name="plus" size={14} /> 新建目标</h3>
                 <button onClick={() => setShowAddObjective(false)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
               <form onSubmit={handleCreateObjective} className="space-y-4">
@@ -2812,7 +2812,7 @@
                 if (filteredObjectives.length === 0) {
                   return (
                     <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-3">🎯</div>
+                      <div className="mb-3"><Icon name="target" size={40} color="var(--c-text-muted)" /></div>
                       <div>没有符合筛选条件的目标</div>
                     </div>
                   );
@@ -2820,9 +2820,9 @@
                 
                 // 按层级分组
                 const levelConfig = [
-                  { key: '公司级', icon: '🏢', color: 'from-purple-600 to-indigo-600', bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' },
-                  { key: '部门级', icon: '🏛️', color: 'from-blue-600 to-cyan-600', bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
-                  { key: '个人级', icon: '👤', color: 'from-green-600 to-teal-600', bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-700' }
+                  { key: '公司级', icon: 'building', color: 'from-purple-600 to-indigo-600', bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' },
+                  { key: '部门级', icon: 'dept', color: 'from-blue-600 to-cyan-600', bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+                  { key: '个人级', icon: 'user', color: 'from-green-600 to-teal-600', bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-700' }
                 ];
                 
                 const grouped = {};
@@ -2899,7 +2899,7 @@
                               <span className={`text-[10px] px-2 py-0.5 rounded-full ${getStatusColor(autoStatus)}`}>{autoStatus}</span>
                             </div>
                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px] text-gray-500">📅 {objective.cycle}</span>
+                              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px] text-gray-500">{objective.cycle}</span>
                               {objective.level === '部门级' && objective.department && (
                                 <span className={`px-1.5 py-0.5 rounded text-[11px] ${levelCfg.badge}`}>{objective.department}</span>
                               )}
@@ -2913,7 +2913,7 @@
                                   <span className="text-[11px] text-gray-500">{objective.ownerName}</span>
                                 </span>
                               )}
-                              <span className="text-[11px] text-gray-400">🔑 {krs.length} KR</span>
+                              <span className="text-[11px] text-gray-400">{krs.length} KR</span>
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
@@ -2926,7 +2926,7 @@
                             onClick={(e) => { e.stopPropagation(); startEditObjective(objective); }}
                             className="p-1.5 text-gray-300 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
                           >
-                            ✏️
+                            <Icon name="edit" size={13} />
                           </button>
                         </div>
                       )}
@@ -2937,12 +2937,12 @@
                       <div className="border-t bg-gray-50/80 px-4 py-3">
                         {/* 添加 KR 按钮 */}
                         <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-gray-600">🔑 关键结果 ({krs.length})</h4>
+                          <h4 className="text-sm font-semibold text-gray-600"><Icon name="key" size={13} /> 关键结果 ({krs.length})</h4>
                           <button
                             onClick={() => setShowAddKR(objective.id)}
                             className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
                           >
-                            ➕ 添加 KR
+                            <Icon name="plus" size={12} /> 添加 KR
                           </button>
                         </div>
 
@@ -3076,7 +3076,7 @@
                                         <div className="text-sm text-gray-400">{isKRExpanded ? '▼' : '▶'}</div>
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2">
-                                            <span className="text-lg">🔑</span>
+                                            <Icon name="key" size={16} color="var(--c-accent)" />
                                             <span className="font-medium text-gray-800">{kr.name}</span>
                                             <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(krAuto.autoStatus)}`}>
                                               {krAuto.autoStatus}
@@ -3106,7 +3106,7 @@
                                                 </span>
                                               );
                                             })()}
-                                            <span>📦 {krProjects.length} 个项目 {krAuto.autoCalculated && `(${krAuto.completedProjects}已完成)`}</span>
+                                            <span>{krProjects.length} 个项目 {krAuto.autoCalculated && `(${krAuto.completedProjects}已完成)`}</span>
                                           </div>
                                         </div>
                                         <div className="text-right">
@@ -3119,7 +3119,7 @@
                                           onClick={(e) => { e.stopPropagation(); startEditKR(kr); }}
                                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                                         >
-                                          ✏️
+                                          <Icon name="edit" size={13} />
                                         </button>
                                       </div>
                                     )}
@@ -3130,7 +3130,7 @@
                                     <div className="border-t bg-gray-50 p-3">
                                       <div className="flex items-center justify-between mb-2">
                                         <div className="text-xs font-semibold text-gray-500">
-                                          📦 关联项目 ({krProjects.length}) 
+                                          关联项目 ({krProjects.length}) 
                                           {krAuto.autoCalculated && (
                                             <span className="ml-2 text-green-600">
                                               ✅ {krAuto.completedProjects}/{krProjects.length} 已完成
@@ -3141,7 +3141,7 @@
                                           onClick={(e) => { e.stopPropagation(); setShowAddProject(showAddProject === kr.id ? null : kr.id); }}
                                           className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
                                         >
-                                          ➕ 添加项目
+                                          <Icon name="plus" size={12} /> 添加项目
                                         </button>
                                       </div>
                                       
@@ -3280,7 +3280,7 @@
                   return (
                     <div key={lc.key} className="mb-5">
                       <div className="flex items-center gap-2 mb-2.5 pb-2" style={{borderBottom: `2px solid ${lc.key === '公司级' ? 'var(--c-accent)' : lc.key === '部门级' ? 'var(--c-info)' : 'var(--c-success)'}`}}>
-                        <span className="text-base">{lc.icon}</span>
+                        <Icon name={lc.icon} size={16} color={lc.key === "公司级" ? "var(--c-accent)" : lc.key === "部门级" ? "var(--c-info)" : "var(--c-success)"} />
                         <span className="text-xs font-semibold uppercase tracking-wider" style={{color:'var(--c-text-secondary)'}}>{lc.key}</span>
                         <span className="badge badge-gray">{objs.length}</span>
                       </div>
@@ -3433,7 +3433,7 @@
             </div>
             <div className="flex items-center justify-between text-[11px]" style={{color:'var(--c-text-muted)'}}>
               <div className="flex items-center gap-2">
-                <span>📋 {completedCount}/{pTasks.length}</span>
+                <span><Icon name="clipboard" size={11} /> {completedCount}/{pTasks.length}</span>
                 {product.ownerName && (
                   <span className="flex items-center gap-1">
                     {ownerMember?.avatarUrl ? (
@@ -3450,7 +3450,7 @@
               ) : isOverdue ? (
                 <span className="badge badge-red">逾期 {Math.abs(daysRemaining)}天</span>
               ) : daysRemaining !== null ? (
-                <span className="text-[11px]" style={{color:'var(--c-text-muted)'}}>{daysRemaining <= 7 ? '⏰' : '📅'} 剩余 {daysRemaining} 天</span>
+                <span className="text-[11px]" style={{color:'var(--c-text-muted)'}}>剩余 {daysRemaining} 天</span>
               ) : null}
             </div>
           </div>
@@ -3527,7 +3527,7 @@
                         return (
                           <div key={kr.id} className="px-5 py-3">
                             <div className="flex items-center gap-2 mb-3">
-                              <span className="text-sm">🔑</span>
+                              <Icon name="key" size={14} color="var(--c-accent)" />
                               <span className="text-sm font-medium text-gray-700">{kr.name}</span>
                               {kr.ownerName && (() => {
                                 const krOwner = members.find(m => m.id === kr.ownerId || m.name === kr.ownerName);
@@ -4264,7 +4264,7 @@
                 <div className="bg-gray-50 rounded-xl p-3 mb-4">
                   <div className="font-medium text-gray-800">{completeTask.name}</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {completeTask.stage && <span className="mr-2">📋 {completeTask.stage}</span>}
+                    {completeTask.stage && <span className="mr-2">{completeTask.stage}</span>}
                     {completeTask.priority && <span className="mr-2">⚡ {completeTask.priority}</span>}
                   </div>
                 </div>
@@ -4503,7 +4503,7 @@
                       
                       return (
                         <div className="mb-5">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-3">📅 任务时间轴</h4>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-3"><Icon name="calendar" size={13} /> 任务时间轴</h4>
                           <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
                             {/* 负荷热力条 */}
                             <div className="relative h-5 mb-1 rounded overflow-hidden bg-gray-100">
@@ -4591,7 +4591,7 @@
                     })()}
                     
                     {/* 项目分布 */}
-                    {Object.keys(projectDist).length > 0 && (<div className="mb-5"><h4 className="text-sm font-semibold text-gray-700 mb-3">📊 项目分布</h4><div className="bg-gray-50 rounded-xl p-4"><div className="flex h-3 rounded-full overflow-hidden mb-3">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className={`${projectColors[i % projectColors.length]} transition-all`} style={{ width: `${(data.total / m.total) * 100}%` }} title={`${name}: ${data.total}项`} />))}</div><div className="grid grid-cols-2 gap-2">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className="flex items-center gap-2 text-sm"><span className={`w-2.5 h-2.5 rounded-full ${projectColors[i % projectColors.length]} flex-shrink-0`} /><span className="text-gray-700 truncate flex-1">{name}</span><span className="text-gray-400 text-xs">{data.total}项</span>{data.overdue > 0 && <span className="text-red-500 text-[10px]">{data.overdue}逾期</span>}<span className="text-xs text-gray-300">{data.completed}/{data.total}</span></div>))}</div></div></div>)}
+                    {Object.keys(projectDist).length > 0 && (<div className="mb-5"><h4 className="text-sm font-semibold text-gray-700 mb-3">项目分布</h4><div className="bg-gray-50 rounded-xl p-4"><div className="flex h-3 rounded-full overflow-hidden mb-3">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className={`${projectColors[i % projectColors.length]} transition-all`} style={{ width: `${(data.total / m.total) * 100}%` }} title={`${name}: ${data.total}项`} />))}</div><div className="grid grid-cols-2 gap-2">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className="flex items-center gap-2 text-sm"><span className={`w-2.5 h-2.5 rounded-full ${projectColors[i % projectColors.length]} flex-shrink-0`} /><span className="text-gray-700 truncate flex-1">{name}</span><span className="text-gray-400 text-xs">{data.total}项</span>{data.overdue > 0 && <span className="text-red-500 text-[10px]">{data.overdue}逾期</span>}<span className="text-xs text-gray-300">{data.completed}/{data.total}</span></div>))}</div></div></div>)}
                   </div>
                 </div>
               </div>
@@ -4603,7 +4603,33 @@
 
 
     // 统计卡片
-    // Apple-style SVG icons
+    // Unified SVG Icon system - Apple-style line icons
+    const Icon = ({ name, size = 16, color = 'currentColor', className = '' }) => {
+      const icons = {
+        target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
+        key: <><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78L15 14l2-2 4-4"/><path d="M14 4l3 3"/></>,
+        chart: <><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></>,
+        check: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+        shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>,
+        alert: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+        building: <><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M16 14h.01"/></>,
+        dept: <><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M12 2v3"/><path d="M2 10h20"/></>,
+        user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+        users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+        edit: <><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></>,
+        calendar: <><rect width="18" x="3" y="4" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></>,
+        clipboard: <><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></>,
+        folder: <><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></>,
+        plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+        clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+      };
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} style={{display:'inline-block',verticalAlign:'middle',flexShrink:0}}>
+          {icons[name] || icons.target}
+        </svg>
+      );
+    };
+
     const StatIcons = {
       target: (color) => (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -4877,9 +4903,9 @@
 
               <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{background:'var(--c-border)'}}>
                 {[
-                  { key: 'okr', label: 'OKR 视图', icon: '🎯' },
-                  { key: 'products', label: '项目管理', icon: '📋' },
-                  { key: 'team', label: '人员任务', icon: '👥' }
+                  { key: 'okr', label: 'OKR 视图', icon: 'target' },
+                  { key: 'products', label: '项目管理', icon: 'folder' },
+                  { key: 'team', label: '人员任务', icon: 'users' }
                 ].map(tab => (
                   <button
                     key={tab.key}
@@ -4890,7 +4916,7 @@
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    {tab.icon} {tab.label}
+                    {<Icon name={tab.icon} size={14} />} {tab.label}
                   </button>
                 ))}
               </div>
