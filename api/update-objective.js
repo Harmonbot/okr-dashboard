@@ -39,6 +39,7 @@ export default async function handler(req, res) {
     if (objective.level) fields['目标层级'] = objective.level;
     if (objective.department !== undefined) fields['所属部门'] = objective.department || '';
     if (objective.status) fields['状态'] = objective.status;
+    if (objective.owner) fields['负责人'] = [{ id: objective.owner }];
     if (objective.progress !== undefined) fields['进度'] = objective.progress;
     
     // 更新记录
