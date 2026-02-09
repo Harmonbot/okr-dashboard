@@ -3505,7 +3505,7 @@
     };
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
-    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, onRefresh }) => {
+    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, getSkippedNodes, onRefresh }) => {
       const [filterDept, setFilterDept] = useState('all');
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
@@ -3794,17 +3794,33 @@
                           const taskProduct = products.find(p => p.id === task.productId);
                           const taskNodes = taskProduct ? getNodesForProduct(taskProduct, nodes, templates) : [];
                           const taskNode = taskNodes.find(n => n.name === task.stage);
+                          const productSkipped = taskProduct && getSkippedNodes ? getSkippedNodes(taskProduct.id) : new Set();
                           
-                          // 前置节点检查
+                          // 前置节点检查 - 与 NodeTaskModal 逻辑完全一致
                           const checkPredecessor = () => {
-                            if (!taskNode || !taskNode.predecessors || taskNode.predecessors.length === 0) return { canAccept: true };
-                            const productTasks = tasks.filter(t => t.productId === task.productId);
-                            for (const predName of taskNode.predecessors) {
-                              const predTasks = productTasks.filter(t => t.stage === predName);
-                              if (predTasks.length === 0) continue; // 无前置任务，跳过
-                              const allDone = predTasks.every(t => t.status === '已完成');
-                              if (!allDone) return { canAccept: false, message: `前置节点「${predName}」尚未完成` };
+                            if (!taskNode || !taskNode.prevNode) return { canAccept: true };
+                            
+                            const prevNodeName = taskNode.prevNode;
+                            
+                            // 前置节点已被跳过 → 允许接受
+                            if (productSkipped.has(prevNodeName)) {
+                              return { canAccept: true };
                             }
+                            
+                            const productTasks = tasks.filter(t => t.productId === task.productId);
+                            const prevNodeTasks = productTasks.filter(t => t.stage === prevNodeName);
+                            
+                            // 前置节点无任务 → 不能接受（关键修复！）
+                            if (prevNodeTasks.length === 0) {
+                              return { canAccept: false, message: `前置节点「${prevNodeName}」还没有创建任务` };
+                            }
+                            
+                            // 前置节点有未完成任务 → 不能接受
+                            const unfinished = prevNodeTasks.filter(t => t.status !== '已完成');
+                            if (unfinished.length > 0) {
+                              return { canAccept: false, message: `前置节点「${prevNodeName}」还有 ${unfinished.length} 个任务未完成` };
+                            }
+                            
                             return { canAccept: true };
                           };
                           
@@ -4251,6 +4267,7 @@
                   groups={data.groups}
                   nodes={data.processNodes}
                   templates={data.templates}
+                  getSkippedNodes={getSkippedNodes}
                   onRefresh={fetchData}
                 />
               )}
