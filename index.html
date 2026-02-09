@@ -2801,8 +2801,13 @@
         });
       };
 
-      // 开始编辑 KR
+      // 开始编辑 KR（仅目标负责人可编辑）
       const startEditKR = (kr) => {
+        const obj = objectives.find(o => o.id === kr.objectiveId);
+        if (obj && currentUser.open_id !== obj.ownerId && currentUser.name !== obj.ownerName) {
+          showToast?.('仅目标负责人可编辑 KR', 'error');
+          return;
+        }
         setEditingKR(kr);
         setKRForm({
           name: kr.name,
@@ -3314,12 +3319,15 @@
                                             <div className={`h-full ${getProgressColor(krProgress)} transition-all`} style={{ width: `${krProgress}%` }} />
                                           </div>
                                         </div>
+                                        {(currentUser.open_id === objective.ownerId || currentUser.name === objective.ownerName) && (
                                         <button
                                           onClick={(e) => { e.stopPropagation(); startEditKR(kr); }}
                                           className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                          title="编辑 KR（仅目标负责人）"
                                         >
                                           <Icon name="edit" size={13} />
                                         </button>
+                                        )}
                                       </div>
                                     )}
                                   </div>
