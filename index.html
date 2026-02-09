@@ -2452,6 +2452,10 @@
       const handleCreateObjective = async (e) => {
         e.preventDefault();
         if (!objectiveForm.name.trim()) return alert('请输入目标名称');
+        if (!objectiveForm.cycle) return alert('请选择目标周期');
+        if (!objectiveForm.level) return alert('请选择目标层级');
+        if (objectiveForm.level === '部门级' && !objectiveForm.department) return alert('部门级目标请选择所属部门');
+        if (!objectiveForm.owner) return alert('请选择负责人');
         
         setIsSubmitting(true);
         try {
@@ -2664,7 +2668,7 @@
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">目标周期</label>
+                    <label className="block text-sm text-gray-600 mb-1">目标周期 *</label>
                     <select
                       value={objectiveForm.cycle}
                       onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
@@ -2688,7 +2692,7 @@
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">目标层级</label>
+                    <label className="block text-sm text-gray-600 mb-1">目标层级 *</label>
                     <select
                       value={objectiveForm.level}
                       onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value, department: e.target.value !== '部门级' ? '' : objectiveForm.department })}
@@ -2702,7 +2706,7 @@
                 </div>
                 {objectiveForm.level === '部门级' && (
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">所属部门</label>
+                    <label className="block text-sm text-gray-600 mb-1">所属部门 *</label>
                     <select
                       value={objectiveForm.department}
                       onChange={e => setObjectiveForm({ ...objectiveForm, department: e.target.value })}
@@ -2716,7 +2720,7 @@
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">负责人</label>
+                  <label className="block text-sm text-gray-600 mb-1">负责人 *</label>
                   <select
                     value={objectiveForm.owner}
                     onChange={e => setObjectiveForm({ ...objectiveForm, owner: e.target.value })}
@@ -4889,7 +4893,7 @@
           )}
 
           <div className="text-center py-6 text-gray-400 text-sm">
-            数据来源：飞书多维表格 · 每5分钟自动同步
+            深圳微铸 @2026
           </div>
         </div>
         </UserContext.Provider>
