@@ -38,6 +38,7 @@ export default async function handler(req, res) {
     };
     if (objective.cycle) fields['目标周期'] = objective.cycle;
     if (objective.level) fields['目标层级'] = objective.level;
+    if (objective.department) fields['所属部门'] = objective.department;
     if (objective.status) fields['状态'] = objective.status;
     
     // 创建记录
