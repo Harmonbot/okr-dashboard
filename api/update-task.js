@@ -73,9 +73,19 @@ export default async function handler(req, res) {
       updateFields['输出文件'] = fields.outputFile;
     }
     
-    // 任务描述（交付链接/文字）
+    // 任务描述
     if (fields.description) {
       updateFields['任务描述'] = fields.description;
+    }
+    
+    // 输出链接（Url 类型：需要 { link, text } 格式）
+    if (fields.outputUrl) {
+      updateFields['输出链接'] = { link: fields.outputUrl, text: fields.outputUrl };
+    }
+    
+    // 输出文字
+    if (fields.outputText) {
+      updateFields['输出文字'] = fields.outputText;
     }
     
     // 调用飞书 API 更新记录
