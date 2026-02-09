@@ -369,6 +369,7 @@
             status: r.fields['项目状态'] || '进行中',
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             targetDate: r.fields['计划上线日期'] ? new Date(r.fields['计划上线日期']).toISOString().split('T')[0] : '',
+            priority: r.fields['重要程度'] || '',
             krId: krId,
             ownerId: ownerId,
             ownerName: ownerName
@@ -2317,13 +2318,20 @@
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', category: '', targetDate: '', owner: ''
+        name: '', category: '', targetDate: '', owner: '', priority: ''
       });
 
       // 创建新项目并关联到 KR
       const handleCreateProject = async (krId) => {
-        if (!projectForm.name.trim()) {
-          showToast?.('请输入项目名称', 'error');
+        // 所有字段必填校验
+        const missingFields = [];
+        if (!projectForm.name.trim()) missingFields.push('项目名称');
+        if (!projectForm.category) missingFields.push('项目类型');
+        if (!projectForm.owner) missingFields.push('负责人');
+        if (!projectForm.priority) missingFields.push('重要程度');
+        if (!projectForm.targetDate) missingFields.push('计划上线日期');
+        if (missingFields.length > 0) {
+          showToast?.(`请填写: ${missingFields.join('、')}`, 'error');
           return;
         }
         setIsSubmitting(true);
@@ -2332,14 +2340,11 @@
             '项目名称': projectForm.name,
             '项目类型': projectForm.category,
             '项目状态': '未开始',
-            '关联KR': [krId]
+            '关联KR': [krId],
+            '重要程度': projectForm.priority,
+            '计划上线日期': new Date(projectForm.targetDate).getTime(),
+            '项目负责人': [{ id: projectForm.owner }]
           };
-          if (projectForm.targetDate) {
-            fields['计划上线日期'] = new Date(projectForm.targetDate).getTime();
-          }
-          if (projectForm.owner) {
-            fields['项目负责人'] = [{ id: projectForm.owner }];
-          }
           
           const res = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
@@ -2354,7 +2359,7 @@
           if (result.success) {
             showToast?.('项目创建成功', 'success');
             setShowAddProject(null);
-            setProjectForm({ name: '', category: '', targetDate: '', owner: '' });
+            setProjectForm({ name: '', category: '', targetDate: '', owner: '', priority: '' });
             if (onRefresh) onRefresh();
           } else {
             throw new Error(result.error || '创建失败');
@@ -2564,7 +2569,16 @@
       // 创建关键结果
       const handleCreateKR = async (e) => {
         e.preventDefault();
-        if (!krForm.name.trim()) return alert('请输入关键结果描述');
+        // 所有字段必填校验
+        const missingFields = [];
+        if (!krForm.name.trim()) missingFields.push('KR描述');
+        if (!krForm.target && krForm.target !== 0) missingFields.push('目标值');
+        if (!krForm.weight && krForm.weight !== 0) missingFields.push('权重');
+        if (!krForm.owner) missingFields.push('负责人');
+        if (missingFields.length > 0) {
+          showToast?.(`请填写: ${missingFields.join('、')}`, 'error');
+          return;
+        }
         
         setIsSubmitting(true);
         try {
@@ -2976,23 +2990,25 @@
                                   <div className="text-xs text-gray-400 mt-1">需完成的项目数量</div>
                                 </div>
                                 <div>
-                                  <label className="block text-xs text-gray-600 mb-1">权重</label>
+                                  <label className="block text-xs text-gray-600 mb-1">权重 *</label>
                                   <input
                                     type="number"
                                     value={krForm.weight}
                                     onChange={e => setKRForm({ ...krForm, weight: Number(e.target.value) })}
                                     className="w-full px-3 py-2 border rounded-lg text-sm"
                                     min="1" max="100"
+                                    required
                                   />
                                   <div className="text-xs text-gray-400 mt-1">影响目标整体进度</div>
                                 </div>
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">负责人</label>
+                                <label className="block text-xs text-gray-600 mb-1">负责人 *</label>
                                 <select
                                   value={krForm.owner}
                                   onChange={e => setKRForm({ ...krForm, owner: e.target.value })}
                                   className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  required
                                 >
                                   <option value="">请选择负责人</option>
                                   {currentUser && (
@@ -3154,16 +3170,18 @@
                                               type="text"
                                               value={projectForm.name}
                                               onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
-                                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                                              className={`w-full px-3 py-2 border rounded-lg text-sm ${!projectForm.name.trim() ? 'border-orange-300' : ''}`}
                                               placeholder="项目名称 *"
+                                              required
                                             />
-                                            <div className="grid grid-cols-3 gap-2">
+                                            <div className="grid grid-cols-2 gap-2">
                                               <select
                                                 value={projectForm.category}
                                                 onChange={e => setProjectForm({ ...projectForm, category: e.target.value })}
-                                                className="px-3 py-2 border rounded-lg text-sm"
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.category ? 'text-gray-400' : ''}`}
+                                                required
                                               >
-                                                <option value="">选择类型</option>
+                                                <option value="">类型 *</option>
                                                 {(() => {
                                                   const types = [...new Set(products.map(p => p.category).filter(Boolean))];
                                                   const defaults = ['新品开发', '营销推广', '供应链优化', '系统建设', '老品更新', '储评计划'];
@@ -3172,11 +3190,26 @@
                                                 })()}
                                               </select>
                                               <select
+                                                value={projectForm.priority}
+                                                onChange={e => setProjectForm({ ...projectForm, priority: e.target.value })}
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.priority ? 'text-gray-400' : ''}`}
+                                                required
+                                              >
+                                                <option value="">重要程度 *</option>
+                                                <option value="P0">🔴 P0 最高</option>
+                                                <option value="P1">🟠 P1 高</option>
+                                                <option value="P2">🔵 P2 中</option>
+                                                <option value="P3">⚪ P3 低</option>
+                                              </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <select
                                                 value={projectForm.owner}
                                                 onChange={e => setProjectForm({ ...projectForm, owner: e.target.value })}
-                                                className="px-3 py-2 border rounded-lg text-sm"
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.owner ? 'text-gray-400' : ''}`}
+                                                required
                                               >
-                                                <option value="">负责人</option>
+                                                <option value="">负责人 *</option>
                                                 {currentUser && (
                                                   <option value={currentUser.open_id}>{currentUser.name}（我）</option>
                                                 )}
@@ -3188,8 +3221,9 @@
                                                 type="date"
                                                 value={projectForm.targetDate}
                                                 onChange={e => setProjectForm({ ...projectForm, targetDate: e.target.value })}
-                                                className="px-3 py-2 border rounded-lg text-sm"
-                                                placeholder="上线日期"
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.targetDate ? 'text-gray-400' : ''}`}
+                                                placeholder="上线日期 *"
+                                                required
                                               />
                                             </div>
                                             <div className="flex gap-2">
@@ -3319,6 +3353,7 @@
     const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
+      const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
 
       // 跳过节点状态 - 按项目ID存储，持久化到 localStorage
@@ -3355,34 +3390,58 @@
       const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks);
       const getAutoStatus = (product) => calcProjectStatus(product, tasks);
 
+      // === 复合重要性评分算法 ===
+      // 目标层级分: 公司级=100, 部门级=60, 个人级=30
+      // KR权重分: 归一化到 0~100 (权重/最大权重 * 100)
+      // 项目优先级分: P0=100, P1=70, P2=40, P3=10
+      // 综合公式: 层级分 * 0.35 + KR权重分 * 0.30 + 优先级分 * 0.35
+      const levelScoreMap = { '公司级': 100, '部门级': 60, '个人级': 30 };
+      const priorityScoreMap = { 'P0': 100, 'P1': 70, 'P2': 40, 'P3': 10 };
+      const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
+      
+      const maxKRWeight = Math.max(1, ...keyResults.map(kr => kr.weight || 1));
+
+      const getProjectImportance = (product) => {
+        const kr = keyResults.find(k => k.id === product.krId);
+        const objective = kr ? objectives.find(o => o.id === kr.objectiveId) : null;
+        
+        const levelScore = objective ? (levelScoreMap[objective.level] || 30) : 0;
+        const krWeightScore = kr ? ((kr.weight || 1) / maxKRWeight) * 100 : 0;
+        const priorityScore = priorityScoreMap[product.priority] || 10;
+        
+        const composite = levelScore * 0.35 + krWeightScore * 0.30 + priorityScore * 0.35;
+        return { composite, levelScore, krWeightScore, priorityScore, kr, objective };
+      };
+
       // 筛选
       const filteredProducts = (() => {
         let list = products;
         if (searchProject) {
           list = list.filter(p => p.name?.includes(searchProject) || p.category?.includes(searchProject) || p.ownerName?.includes(searchProject));
         }
-        if (filterStatus === 'all') return list;
-        if (filterStatus === '逾期') {
-          return list.filter(p => {
-            if (getAutoStatus(p) === '已完成') return false;
-            if (!p.targetDate) return false;
-            return new Date(p.targetDate) < new Date();
-          });
+        if (filterPriority !== 'all') {
+          list = list.filter(p => p.priority === filterPriority);
         }
-        return list.filter(p => getAutoStatus(p) === filterStatus);
+        if (filterStatus !== 'all') {
+          if (filterStatus === '逾期') {
+            list = list.filter(p => {
+              if (getAutoStatus(p) === '已完成') return false;
+              if (!p.targetDate) return false;
+              return new Date(p.targetDate) < new Date();
+            });
+          } else {
+            list = list.filter(p => getAutoStatus(p) === filterStatus);
+          }
+        }
+        return list;
       })();
 
-      // 构建 OKR 分组结构
-      const getProjectsForKR = (krId) => {
-        return filteredProducts.filter(p => p.krId === krId);
-      };
-
-      // 找到已分组的项目ID
-      const groupedProductIds = new Set();
-      keyResults.forEach(kr => {
-        getProjectsForKR(kr.id).forEach(p => groupedProductIds.add(p.id));
+      // 按重要性排序
+      const sortedProducts = [...filteredProducts].sort((a, b) => {
+        const impA = getProjectImportance(a);
+        const impB = getProjectImportance(b);
+        return impB.composite - impA.composite;
       });
-      const ungroupedProducts = filteredProducts.filter(p => !groupedProductIds.has(p.id));
 
       // 自动计算当前阶段
       const getProductAutoStage = (product) => {
@@ -3400,8 +3459,8 @@
         return lastActiveNode || product.currentStage;
       };
 
-      // 紧凑项目卡片（用于分组视图）
-      const CompactProjectCard = ({ product }) => {
+      // 项目卡片（含 OKR 从属面包屑 + 重要性分）
+      const ProjectCard = ({ product, rank }) => {
         const progress = getAutoProgress(product);
         const status = getAutoStatus(product);
         const pTasks = tasks.filter(t => t.productId === product.id);
@@ -3411,23 +3470,68 @@
           : null;
         const isOverdue = daysRemaining !== null && daysRemaining < 0 && status !== '已完成';
         const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
+        const importance = getProjectImportance(product);
+        const priColor = priorityColorMap[product.priority] || priorityColorMap['P3'];
 
         return (
           <div
-            className="card cursor-pointer border-l-3 p-3.5"
+            className="card cursor-pointer border-l-3 p-4"
             style={{ borderLeftWidth: '3px', borderLeftColor: status === '已完成' ? 'var(--c-success)' : isOverdue ? 'var(--c-danger)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
             onClick={() => setSelectedProduct(product)}
           >
+            {/* 顶部：排名 + OKR面包屑 */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{
+                background: rank <= 3 ? 'linear-gradient(135deg, #F59E0B, #EF4444)' : 'var(--c-bg)',
+                color: rank <= 3 ? '#fff' : 'var(--c-text-muted)'
+              }}>
+                {rank}
+              </span>
+              <div className="flex items-center gap-1 text-[10px] min-w-0 flex-1 overflow-hidden" style={{color:'var(--c-text-muted)'}}>
+                {importance.objective ? (
+                  <>
+                    <span className={`px-1 py-0.5 rounded flex-shrink-0 ${
+                      importance.objective.level === '公司级' ? 'bg-purple-50 text-purple-600' :
+                      importance.objective.level === '部门级' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                    }`}>{importance.objective.level}</span>
+                    <span className="truncate">{importance.objective.name}</span>
+                    <span className="flex-shrink-0">›</span>
+                  </>
+                ) : null}
+                {importance.kr ? (
+                  <span className="truncate">KR: {importance.kr.name}</span>
+                ) : (
+                  <span className="text-gray-300">未关联OKR</span>
+                )}
+              </div>
+            </div>
+
+            {/* 项目名称 + 标签行 */}
             <div className="flex items-center gap-2.5 mb-2.5">
               <span className="text-xl">{product.image}</span>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-gray-800 truncate">{product.name}</div>
-                <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="badge badge-gray">{product.category || '未分类'}</span>
                   <span className={`badge ${status === '已完成' ? 'badge-green' : status === '进行中' ? 'badge-blue' : 'badge-gray'}`}>{status}</span>
+                  {product.priority && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{background: priColor.bg, color: priColor.text}}>
+                      {product.priority}
+                    </span>
+                  )}
+                  {importance.kr && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700">
+                      权重{importance.kr.weight || 1}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className={`text-lg font-bold ${progress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{progress}%</div>
+              <div className="text-right flex-shrink-0">
+                <div className={`text-lg font-bold ${progress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{progress}%</div>
+                <div className="text-[10px] font-medium" style={{color: importance.composite >= 70 ? '#DC2626' : importance.composite >= 50 ? '#EA580C' : '#6B7280'}}>
+                  {Math.round(importance.composite)}分
+                </div>
+              </div>
             </div>
             <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{background:'var(--c-border)'}}>
               <div className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }} />
@@ -3460,8 +3564,9 @@
 
       return (
         <div>
-          <div className="card-flat flex items-center justify-between px-5 py-3 mb-5">
-            <div className="flex gap-1.5 items-center">
+          {/* 筛选栏 */}
+          <div className="card-flat flex items-center justify-between px-5 py-3 mb-5 flex-wrap gap-2">
+            <div className="flex gap-1.5 items-center flex-wrap">
               {['all', '进行中', '已完成', '逾期'].map(status => (
                 <button
                   key={status}
@@ -3474,6 +3579,19 @@
                   {status === 'all' ? `全部(${products.length})` : status}
                 </button>
               ))}
+              <span className="w-px h-4 bg-gray-200 mx-1" />
+              {['all', 'P0', 'P1', 'P2', 'P3'].map(pri => (
+                <button
+                  key={pri}
+                  onClick={() => setFilterPriority(pri)}
+                  className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    filterPriority === pri ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  style={filterPriority === pri ? {background: pri === 'all' ? 'var(--c-accent)' : (priorityColorMap[pri]?.text || 'var(--c-accent)')} : {background:'var(--c-bg)'}}
+                >
+                  {pri === 'all' ? '全等级' : pri}
+                </button>
+              ))}
               <input 
                 type="text" value={searchProject} onChange={e => setSearchProject(e.target.value)}
                 placeholder="🔍 搜索项目..." 
@@ -3482,110 +3600,22 @@
             </div>
           </div>
 
-          <div className="space-y-6">
-              {objectives.map(objective => {
-                const objKRs = keyResults.filter(kr => kr.objectiveId === objective.id);
-                // 检查该目标下是否有筛选后的项目
-                const objHasProjects = objKRs.some(kr => getProjectsForKR(kr.id).length > 0);
-                if (!objHasProjects && filterStatus !== 'all') return null;
-                
-                return (
-                  <div key={objective.id} className="card-flat overflow-hidden">
-                    {/* 目标头 */}
-                    <div className="px-5 py-3 flex items-center gap-3" style={{background:'var(--c-bg)'}}>
-                      <div className={`w-1 h-8 rounded-full ${
-                        objective.level === '部门级' ? 'bg-blue-500' : objective.level === '个人级' ? 'bg-green-500' : 'bg-purple-500'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-800 text-sm">{objective.name}</h3>
-                        <div className="flex items-center gap-2 text-[11px] text-gray-400 mt-0.5">
-                          <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">{objective.cycle}</span>
-                          <span>{objective.level}{objective.level === '部门级' && objective.department ? ` · ${objective.department}` : ''}</span>
-                          {objective.ownerName && (() => {
-                                const objOwner = members.find(m => m.id === objective.ownerId || m.name === objective.ownerName);
-                                return (
-                                  <span className="flex items-center gap-1">
-                                    {objOwner?.avatarUrl ? (
-                                      <img src={objOwner.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
-                                    ) : (
-                                      <span className="w-3.5 h-3.5 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[9px]">{objective.ownerName.charAt(0)}</span>
-                                    )}
-                                    {objective.ownerName}
-                                  </span>
-                                );
-                              })()}
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-gray-400">{objKRs.length} KR</span>
-                    </div>
-                    
-                    {/* KR 及项目 */}
-                    <div className="divide-y divide-gray-100">
-                      {objKRs.map(kr => {
-                        const krProjects = getProjectsForKR(kr.id);
-                        if (krProjects.length === 0 && filterStatus !== 'all') return null;
-                        
-                        return (
-                          <div key={kr.id} className="px-5 py-3">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Icon name="key" size={14} color="var(--c-accent)" />
-                              <span className="text-sm font-medium text-gray-700">{kr.name}</span>
-                              {kr.ownerName && (() => {
-                                const krOwner = members.find(m => m.id === kr.ownerId || m.name === kr.ownerName);
-                                return (
-                                  <span className="flex items-center gap-1 text-xs text-gray-400 ml-2">
-                                    {krOwner?.avatarUrl ? (
-                                      <img src={krOwner.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
-                                    ) : (
-                                      <span className="w-3.5 h-3.5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px]">{kr.ownerName.charAt(0)}</span>
-                                    )}
-                                    {kr.ownerName}
-                                  </span>
-                                );
-                              })()}
-                              <span className="text-xs text-gray-400 ml-auto">{krProjects.length} 个项目</span>
-                            </div>
-                            {krProjects.length > 0 ? (
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {krProjects.map(project => (
-                                  <CompactProjectCard key={project.id} product={project} />
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-400 py-2">暂无关联项目</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+          {/* 排序说明 */}
+          <div className="text-[11px] px-1 mb-3 flex items-center gap-2" style={{color:'var(--c-text-muted)'}}>
+            <Icon name="info" size={12} />
+            按重要性排序: 目标层级(35%) + KR权重(30%) + 项目优先级(35%)
+          </div>
 
-              {/* 未关联项目 */}
-              {ungroupedProducts.length > 0 && (
-                <div className="card-flat overflow-hidden">
-                  <div className="px-5 py-3 flex items-center gap-3" style={{background:'var(--c-bg)'}}>
-                      <div className="w-1 h-8 rounded-full bg-gray-300" />
-                      <div>
-                        <h3 className="font-bold text-sm text-gray-800">未关联项目</h3>
-                        <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>尚未关联到任何 KR</div>
-                      </div>
-                  </div>
-                  <div className="px-5 py-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {ungroupedProducts.map(product => (
-                        <CompactProjectCard key={product.id} product={product} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+          {/* 项目卡片网格 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sortedProducts.map((product, idx) => (
+              <ProjectCard key={product.id} product={product} rank={idx + 1} />
+            ))}
+          </div>
 
-              {filteredProducts.length === 0 && (
-                <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
-              )}
-            </div>
+          {sortedProducts.length === 0 && (
+            <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
+          )}
 
                     {selectedProduct && (
             <ProductDetailModal
