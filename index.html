@@ -4278,294 +4278,215 @@
             </div>
           </div>
 
-          {/* 成员列表 */}
-          <div className="card-flat overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr style={{background:'var(--c-bg)'}}>
-                  <th className="px-4 py-2.5 text-left text-[12px] font-medium" style={{color:'var(--c-text-muted)'}}>成员</th>
-                  <th className="px-4 py-2.5 text-left text-[12px] font-medium" style={{color:'var(--c-text-muted)'}}>部门 / 组别</th>
-                  <th className="px-4 py-2.5 text-[12px] font-medium w-44" style={{color:'var(--c-text-muted)'}}>工作量</th>
-                  <th className="px-3 py-2.5 text-center w-12" style={{color:'var(--c-text-muted)'}} title="总任务"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[10px] font-bold" style={{background:'#f5f5f7',color:'#6e6e73'}}>全</span></th>
-                  <th className="px-3 py-2.5 text-center w-12" style={{color:'var(--c-text-muted)'}} title="进行中"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[10px] font-bold" style={{background:'#e8f0fe',color:'#007aff'}}>进</span></th>
-                  <th className="px-3 py-2.5 text-center w-12" style={{color:'var(--c-text-muted)'}} title="待开始"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[10px] font-bold" style={{background:'#f5f5f7',color:'#86868b'}}>待</span></th>
-                  <th className="px-3 py-2.5 text-center w-12" style={{color:'var(--c-text-muted)'}} title="已完成"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[10px] font-bold" style={{background:'#e5f8ed',color:'#34c759'}}>完</span></th>
-                  <th className="px-3 py-2.5 text-center w-12" style={{color:'var(--c-text-muted)'}} title="逾期"><span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[10px] font-bold" style={{background:'#ffeae8',color:'#ff3b30'}}>逾</span></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {displayMembers.map(member => {
-                  const isExpanded = expandedMember === member.id;
-                  return (
-                    <React.Fragment key={member.id}>
-                      <tr 
-                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${member.total === 0 ? 'opacity-40' : ''} ${member.overdue > 0 ? 'bg-red-50/50' : ''}`}
-                        onClick={() => member.total > 0 && setExpandedMember(isExpanded ? null : member.id)}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {member.avatarUrl ? (
-                              <img src={member.avatarUrl} className="w-8 h-8 rounded-full" alt="" />
-                            ) : (
-                              <span className={`w-8 h-8 ${member.color} rounded-full flex items-center justify-center text-white text-sm`}>
-                                {member.avatar}
-                              </span>
-                            )}
-                            <div>
-                              <div 
-                                className="font-medium text-gray-800 text-sm hover:text-blue-600 hover:underline cursor-pointer"
-                                onClick={(e) => { e.stopPropagation(); if (member.total > 0) setDetailMember(member); }}
-                              >{member.name}</div>
-                              <div className="text-xs text-gray-400">{member.position}</div>
-                            </div>
-                            {member.total > 0 && (
-                              <span className="text-gray-400 text-xs">{isExpanded ? '▼' : '▶'}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{member.department}</span>
-                            {member.group && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-xs">{member.group}</span>}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <WorkloadBar member={member} />
-                        </td>
-                        <td className="px-4 py-3 text-center font-medium text-sm">
-                          <span className="text-gray-700">{member.total || '-'}</span>
-                        </td>
-                        <td className="px-4 py-3 text-center font-medium text-sm text-blue-600">{member.inProgress || '-'}</td>
-                        <td className="px-4 py-3 text-center font-medium text-sm text-gray-500">{member.pending || '-'}</td>
-                        <td className="px-4 py-3 text-center font-medium text-sm text-green-600">{member.completed || '-'}</td>
-                        <td className="px-4 py-3 text-center">
-                          {member.overdue > 0 ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-xs font-bold">{member.overdue}</span>
-                          ) : (
-                            <span className="text-gray-300 text-sm">-</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* 展开行：按状态分组显示任务 */}
-                      {isExpanded && member.total > 0 && (() => {
-                        const overdueTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < now);
-                        const inProgressTasks = member.memberTasks.filter(t => t.status === '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
-                        const pendingTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.status !== '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
-                        const completedTasks = member.memberTasks.filter(t => t.status === '已完成');
-                        
-                        const TaskItem = ({ task, isOverdue }) => {
-                          const product = products.find(p => p.id === task.productId);
-                          
-                          // 时效计算
-                          let timeTag = null;
-                          const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-                          
-                          if (task.status === '已完成') {
-                            const doneDate = task.completedDate ? new Date(task.completedDate) : null;
-                            if (dueDate && doneDate) {
-                              const diffDays = Math.ceil((dueDate - doneDate) / (1000*60*60*24));
-                              if (diffDays >= 0) {
-                                timeTag = { text: diffDays === 0 ? '按时完成' : `提前${diffDays}天`, cls: 'bg-green-50 text-green-600 border border-green-200' };
-                              } else {
-                                timeTag = { text: `逾期${Math.abs(diffDays)}天完成`, cls: 'bg-orange-50 text-orange-600 border border-orange-200' };
-                              }
-                            } else if (!dueDate) {
-                              timeTag = { text: '未设期限', cls: 'bg-gray-50 text-gray-400' };
-                            }
+          {/* 成员卡片网格 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {displayMembers.map(member => {
+              const isExpanded = expandedMember === member.id;
+              return (
+                <div key={member.id} className={`card-flat overflow-hidden transition-all ${member.total === 0 ? 'opacity-50' : ''}`}>
+                  {/* 卡片头部 */}
+                  <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => member.total > 0 && setExpandedMember(isExpanded ? null : member.id)}>
+                    {member.avatarUrl ? (
+                      <img src={member.avatarUrl} className="w-10 h-10 rounded-full" alt="" />
+                    ) : (
+                      <span className={`w-10 h-10 ${member.color} rounded-full flex items-center justify-center text-white text-sm`}>
+                        {member.avatar}
+                      </span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-gray-800 cursor-pointer hover:text-blue-600"
+                          onClick={(e) => { e.stopPropagation(); if (member.total > 0) setDetailMember(member); }}
+                        >{member.name}</span>
+                        <span className="text-[10px] text-gray-400">{member.position}</span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px]">{member.department}</span>
+                        {member.group && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">{member.group}</span>}
+                      </div>
+                    </div>
+                    {member.total > 0 && (
+                      <span className="text-gray-400 text-xs">{isExpanded ? '▼' : '▶'}</span>
+                    )}
+                  </div>
+                  
+                  {/* 统计条 */}
+                  <div className="grid grid-cols-5 divide-x border-t border-b" style={{background:'var(--c-bg)'}}>
+                    <div className="py-2 text-center">
+                      <div className="text-sm font-bold text-gray-700">{member.total || '-'}</div>
+                      <div className="text-[10px] text-gray-400">全部</div>
+                    </div>
+                    <div className="py-2 text-center">
+                      <div className="text-sm font-bold text-blue-600">{member.inProgress || '-'}</div>
+                      <div className="text-[10px] text-gray-400">进行</div>
+                    </div>
+                    <div className="py-2 text-center">
+                      <div className="text-sm font-bold text-gray-500">{member.pending || '-'}</div>
+                      <div className="text-[10px] text-gray-400">待始</div>
+                    </div>
+                    <div className="py-2 text-center">
+                      <div className="text-sm font-bold text-green-600">{member.completed || '-'}</div>
+                      <div className="text-[10px] text-gray-400">完成</div>
+                    </div>
+                    <div className="py-2 text-center">
+                      {member.overdue > 0 ? (
+                        <div className="text-sm font-bold text-red-600">{member.overdue}</div>
+                      ) : (
+                        <div className="text-sm font-bold text-gray-300">-</div>
+                      )}
+                      <div className="text-[10px] text-gray-400">逾期</div>
+                    </div>
+                  </div>
+                  
+                  {/* 工作量条 */}
+                  <div className="px-4 py-2">
+                    <WorkloadBar member={member} />
+                  </div>
+                  
+                  {/* 展开任务详情 */}
+                  {isExpanded && member.total > 0 && (() => {
+                    const overdueTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < now);
+                    const inProgressTasks = member.memberTasks.filter(t => t.status === '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
+                    const pendingTasks = member.memberTasks.filter(t => t.status !== '已完成' && t.status !== '进行中' && !(t.dueDate && new Date(t.dueDate) < now));
+                    const completedTasks = member.memberTasks.filter(t => t.status === '已完成');
+                    
+                    const TaskItem = ({ task, isOverdue }) => {
+                      const product = products.find(p => p.id === task.productId);
+                      let timeTag = null;
+                      const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+                      
+                      if (task.status === '已完成') {
+                        const doneDate = task.completedDate ? new Date(task.completedDate) : null;
+                        if (dueDate && doneDate) {
+                          const diffDays = Math.ceil((dueDate - doneDate) / (1000*60*60*24));
+                          if (diffDays >= 0) {
+                            timeTag = { text: diffDays === 0 ? '按时' : `提前${diffDays}天`, cls: 'bg-green-50 text-green-600' };
                           } else {
-                            // 进行中 / 待开始
-                            if (dueDate) {
-                              const diffDays = Math.ceil((dueDate - now) / (1000*60*60*24));
-                              if (diffDays < 0) {
-                                timeTag = { text: `逾期${Math.abs(diffDays)}天`, cls: 'bg-red-100 text-red-600 font-medium' };
-                              } else if (diffDays <= 2) {
-                                timeTag = { text: diffDays === 0 ? '今天截止' : `剩${diffDays}天`, cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' };
-                              } else if (diffDays <= 7) {
-                                timeTag = { text: `剩${diffDays}天`, cls: 'bg-blue-50 text-blue-500' };
-                              } else {
-                                timeTag = { text: `剩${diffDays}天`, cls: 'bg-gray-50 text-gray-400' };
-                              }
-                            } else {
-                              timeTag = { text: '未设期限', cls: 'bg-gray-50 text-gray-400' };
-                            }
+                            timeTag = { text: `逾期${Math.abs(diffDays)}天`, cls: 'bg-orange-50 text-orange-600' };
                           }
-                          
-                          // 快捷操作 - 完善版
-                          // 查找任务对应的节点信息
-                          const taskProduct = products.find(p => p.id === task.productId);
-                          const taskNodes = taskProduct ? getNodesForProduct(taskProduct, nodes, templates) : [];
-                          const taskNode = taskNodes.find(n => n.name === task.stage);
-                          const productSkipped = taskProduct ? getSkippedNodes(taskProduct.id) : new Set();
-                          
-                          // 前置节点检查 - 与 NodeTaskModal 逻辑完全一致
-                          const checkPredecessor = () => {
-                            if (!taskNode || !taskNode.prevNode) return { canAccept: true };
-                            
-                            const prevNodeName = taskNode.prevNode;
-                            
-                            // 前置节点已被跳过 → 允许接受
-                            if (productSkipped.has(prevNodeName)) {
-                              return { canAccept: true };
-                            }
-                            
-                            const productTasks = tasks.filter(t => t.productId === task.productId);
-                            const prevNodeTasks = productTasks.filter(t => t.stage === prevNodeName);
-                            
-                            // 前置节点无任务 → 不能接受（关键修复！）
-                            if (prevNodeTasks.length === 0) {
-                              return { canAccept: false, message: `前置节点「${prevNodeName}」还没有创建任务` };
-                            }
-                            
-                            // 前置节点有未完成任务 → 不能接受
-                            const unfinished = prevNodeTasks.filter(t => t.status !== '已完成');
-                            if (unfinished.length > 0) {
-                              return { canAccept: false, message: `前置节点「${prevNodeName}」还有 ${unfinished.length} 个任务未完成` };
-                            }
-                            
-                            return { canAccept: true };
-                          };
-                          
-                          const predecessorStatus = checkPredecessor();
-                          
-                          const handleQuickAction = async (e, action) => {
-                            e.stopPropagation();
-                            
-                            if (action === 'accept') {
-                              if (!predecessorStatus.canAccept) {
-                                showToast?.(`⚠️ ${predecessorStatus.message}，请等待前置节点完成`, 'error');
-                                return;
-                              }
-                              const nodeDays = taskNode ? (parseInt(taskNode.days, 10) || 7) : 7;
-                              if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期：今天\n截止日期：${nodeDays}天后\n节点预计工时：${nodeDays}天`)) return;
-                              
-                              try {
-                                const today = new Date();
-                                const dueDate = new Date(today);
-                                dueDate.setDate(dueDate.getDate() + nodeDays);
-                                
-                                const res = await fetch(API_BASE + '/api/update-task', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    app_token: APP_TOKEN,
-                                    table_id: 'tblFwmxmjRJPzVmV',
-                                    record_id: task.id,
-                                    fields: {
-                                      status: '进行中',
-                                      startDate: today.toISOString().split('T')[0],
-                                      dueDate: dueDate.toISOString().split('T')[0]
-                                    }
-                                  })
-                                });
-                                const result = await res.json();
-                                if (result.success) {
-                                  showToast?.('已接受任务', 'success');
-                                  onRefresh?.();
-                                } else throw new Error(result.error);
-                              } catch (err) {
-                                showToast?.('操作失败: ' + err.message, 'error');
-                              }
-                            } else if (action === 'complete') {
-                              // 打开文件上传弹窗
-                              e.preventDefault();
-                              setCompleteTask(task);
-                              setOutputFile(null);
-                            }
-                          };
-                          
-                          const isMyTask = task.assignee === currentUser?.open_id || task.assigneeName === currentUser?.name;
-                          const priorityColors = { P0: 'bg-red-500 text-white', P1: 'bg-orange-100 text-orange-700', P2: 'bg-blue-50 text-blue-500', P3: 'bg-gray-100 text-gray-400' };
-                          const urgency = task.status !== '已完成' ? calcTaskUrgencyScore(task, products, objectives, keyResults) : null;
-                          
-                          return (
-                            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isOverdue ? 'bg-red-50 border border-red-200' : 'bg-white'}`}>
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                isOverdue ? 'bg-red-500' :
-                                task.status === '已完成' ? 'bg-green-500' :
-                                task.status === '进行中' ? 'bg-blue-500' :
-                                'bg-gray-300'
-                              }`} />
-                              {urgency && (
-                                <span className={`text-[10px] px-1 py-0.5 rounded font-bold flex-shrink-0 leading-none ${urgency.composite >= 70 ? 'bg-red-100 text-red-700' : urgency.composite >= 50 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
-                                  {urgency.composite}
-                                </span>
-                              )}
-                              {task.priority && (
-                                <span className={`text-[10px] px-1 py-0.5 rounded flex-shrink-0 leading-none ${priorityColors[task.priority] || 'bg-gray-100 text-gray-400'}`}>{task.priority}</span>
-                              )}
-                              <span className={`truncate flex-1 ${isOverdue ? 'text-red-700' : 'text-gray-700'}`}>{task.name}</span>
-                              {product && <span className="text-xs text-gray-400 flex-shrink-0">{product.name}</span>}
-                              {timeTag && (
-                                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${timeTag.cls}`}>{timeTag.text}</span>
-                              )}
-                              {isMyTask && task.status === '待开始' && predecessorStatus.canAccept && (
-                                <button onClick={e => handleQuickAction(e, 'accept')} className="text-[10px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600 flex-shrink-0">接受</button>
-                              )}
-                              {isMyTask && task.status === '待开始' && !predecessorStatus.canAccept && (
-                                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded flex-shrink-0 cursor-not-allowed" title={predecessorStatus.message}>🔒 等待前置</span>
-                              )}
-                              {isMyTask && task.status === '进行中' && (
-                                <button onClick={e => handleQuickAction(e, 'complete')} className="text-[10px] px-1.5 py-0.5 bg-green-500 text-white rounded hover:bg-green-600 flex-shrink-0">完成</button>
-                              )}
+                        }
+                      } else if (dueDate) {
+                        const diffDays = Math.ceil((dueDate - now) / (1000*60*60*24));
+                        if (diffDays < 0) timeTag = { text: `逾期${Math.abs(diffDays)}天`, cls: 'bg-red-100 text-red-600 font-medium' };
+                        else if (diffDays <= 2) timeTag = { text: diffDays === 0 ? '今天截止' : `剩${diffDays}天`, cls: 'bg-yellow-50 text-yellow-700' };
+                        else timeTag = { text: `剩${diffDays}天`, cls: 'bg-gray-50 text-gray-400' };
+                      }
+                      
+                      // 快捷操作
+                      const taskProduct = products.find(p => p.id === task.productId);
+                      const taskNodes = taskProduct ? getNodesForProduct(taskProduct, nodes, templates) : [];
+                      const taskNode = taskNodes.find(n => n.name === task.stage);
+                      const productSkipped = taskProduct ? getSkippedNodes(taskProduct.id) : new Set();
+                      
+                      const checkPredecessor = () => {
+                        if (!taskNode || !taskNode.prevNode) return { canAccept: true };
+                        const prevNodeName = taskNode.prevNode;
+                        if (productSkipped.has(prevNodeName)) return { canAccept: true };
+                        const productTasks = tasks.filter(t => t.productId === task.productId);
+                        const prevNodeTasks = productTasks.filter(t => t.stage === prevNodeName);
+                        if (prevNodeTasks.length === 0) return { canAccept: false, message: `前置节点「${prevNodeName}」还没有创建任务` };
+                        const unfinished = prevNodeTasks.filter(t => t.status !== '已完成');
+                        if (unfinished.length > 0) return { canAccept: false, message: `前置节点「${prevNodeName}」还有 ${unfinished.length} 个任务未完成` };
+                        return { canAccept: true };
+                      };
+                      
+                      const predecessorStatus = checkPredecessor();
+                      
+                      const handleQuickAction = async (e, action) => {
+                        e.stopPropagation();
+                        if (action === '进行中') {
+                          if (!predecessorStatus.canAccept) {
+                            showToast?.(predecessorStatus.message, 'error');
+                            return;
+                          }
+                        }
+                        if (action === '已完成') {
+                          setCompleteTask(task);
+                          return;
+                        }
+                        try {
+                          const res = await fetch(API_BASE + '/api/update-task', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              app_token: APP_TOKEN,
+                              table_id: 'tblFwmxmjRJPzVmV',
+                              record_id: task.id,
+                              fields: { status: action, ...(action === '进行中' ? { startDate: new Date().toISOString().split('T')[0] } : {}) }
+                            })
+                          });
+                          const result = await res.json();
+                          if (result.success) { onRefresh?.(); showToast?.('状态已更新'); }
+                          else throw new Error(result.error);
+                        } catch (err) { showToast?.('操作失败: ' + err.message, 'error'); }
+                      };
+                      
+                      return (
+                        <div className={`flex items-center gap-2 py-1.5 px-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${task.status === '已完成' ? 'bg-green-500' : task.status === '进行中' ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                          <span className="truncate flex-1 text-gray-700">{task.name}</span>
+                          {product && <span className="text-[10px] text-gray-400 truncate max-w-[60px]">{product.name}</span>}
+                          {timeTag && <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap ${timeTag.cls}`}>{timeTag.text}</span>}
+                          {/* 快捷操作按钮 */}
+                          {task.status === '待开始' && (
+                            <button onClick={(e) => handleQuickAction(e, '进行中')}
+                              className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${predecessorStatus.canAccept ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                              title={predecessorStatus.canAccept ? '开始任务' : predecessorStatus.message}
+                            >▶ 开始</button>
+                          )}
+                          {task.status === '进行中' && (
+                            <button onClick={(e) => handleQuickAction(e, '已完成')}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 hover:bg-green-100 whitespace-nowrap"
+                            >✓ 完成</button>
+                          )}
+                        </div>
+                      );
+                    };
+                    
+                    return (
+                      <div className="border-t px-3 py-2 space-y-2 max-h-64 overflow-y-auto" style={{background:'var(--c-bg)'}}>
+                        {overdueTasks.length > 0 && (
+                          <div>
+                            <div className="text-[10px] font-medium text-red-600 mb-1">🚨 逾期 ({overdueTasks.length})</div>
+                            {overdueTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={true} />)}
+                          </div>
+                        )}
+                        {inProgressTasks.length > 0 && (
+                          <div>
+                            <div className="text-[10px] font-medium text-blue-600 mb-1">🔵 进行中 ({inProgressTasks.length})</div>
+                            {inProgressTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
+                          </div>
+                        )}
+                        {pendingTasks.length > 0 && (
+                          <div>
+                            <div className="text-[10px] font-medium text-gray-500 mb-1">⏳ 待开始 ({pendingTasks.length})</div>
+                            {pendingTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
+                          </div>
+                        )}
+                        {completedTasks.length > 0 && (
+                          <details className="group">
+                            <summary className="text-[10px] font-medium text-green-600 mb-1 cursor-pointer list-none flex items-center gap-1">
+                              <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                              ✅ 已完成 ({completedTasks.length})
+                            </summary>
+                            <div className="mt-1">
+                              {completedTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
                             </div>
-                          );
-                        };
-                        
-                        return (
-                          <tr>
-                            <td colSpan="8" className="px-4 py-3 bg-gray-50">
-                              <div className="space-y-3">
-                                {overdueTasks.length > 0 && (
-                                  <div>
-                                    <div className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">⚠️ 逾期 ({overdueTasks.length})</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                      {overdueTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={true} />)}
-                                    </div>
-                                  </div>
-                                )}
-                                {inProgressTasks.length > 0 && (
-                                  <div>
-                                    <div className="text-xs font-medium text-blue-600 mb-1.5">🔵 进行中 ({inProgressTasks.length})</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                      {inProgressTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
-                                    </div>
-                                  </div>
-                                )}
-                                {pendingTasks.length > 0 && (
-                                  <div>
-                                    <div className="text-xs font-medium text-gray-500 mb-1.5">⏳ 待开始 ({pendingTasks.length})</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                      {pendingTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
-                                    </div>
-                                  </div>
-                                )}
-                                {completedTasks.length > 0 && (
-                                  <details className="group">
-                                    <summary className="text-xs font-medium text-green-600 mb-1.5 cursor-pointer list-none flex items-center gap-1">
-                                      <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                                      ✅ 已完成 ({completedTasks.length})
-                                    </summary>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
-                                      {completedTasks.map(t => <TaskItem key={t.id} task={t} isOverdue={false} />)}
-                                    </div>
-                                  </details>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })()}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-            {displayMembers.length === 0 && (
-              <div className="text-center text-gray-400 py-12">
-                {showAll ? '暂无成员数据' : '暂无有任务的成员，勾选「显示无任务成员」查看全部'}
-              </div>
-            )}
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })}
           </div>
+          {displayMembers.length === 0 && (
+            <div className="text-center text-gray-400 py-12">
+              {showAll ? '暂无成员数据' : '暂无有任务的成员，勾选「显示无任务成员」查看全部'}
+            </div>
+          )}
           
           {/* 完成任务弹窗 - 需要上传文件 */}
           {completeTask && (
