@@ -456,7 +456,9 @@
             plannedStartDate: r.fields['预计开始日期'] ? new Date(r.fields['预计开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
             completedDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
-            outputFile: r.fields['输出文件']?.[0] || null
+            outputFile: r.fields['输出文件']?.[0] || null,
+            outputUrl: (() => { const u = r.fields['输出链接']; if (!u) return ''; if (typeof u === 'string') return u; if (u.link) return u.link; if (u.text) return u.text; return ''; })(),
+            outputText: (() => { let t = r.fields['输出文字'] || ''; if (Array.isArray(t)) t = t.map(x => x.text || x).join(''); return t; })()
           };
         });
       }
@@ -659,12 +661,20 @@
     };
 
     // 自动计算项目状态
-    const calcProjectStatus = (product, tasks) => {
+    const calcProjectStatus = (product, tasks, allNodes, templates) => {
       const pTasks = tasks.filter(t => t.productId === product.id);
       if (pTasks.length === 0) return '未开始';
       const completed = pTasks.filter(t => t.status === '已完成').length;
       const inProgress = pTasks.filter(t => t.status === '进行中').length;
-      if (completed === pTasks.length) return '已完成';
+      // 所有任务已完成，还要检查是否所有节点都有任务（避免只完成部分节点就显示已完成）
+      if (completed === pTasks.length) {
+        // 如果有模板节点，检查项目进度是否真正100%
+        if (allNodes && templates) {
+          const progress = calcProjectProgress(product, allNodes, templates, tasks);
+          if (progress < 100) return '进行中'; // 还有节点没分配任务
+        }
+        return '已完成';
+      }
       if (inProgress > 0 || completed > 0) return '进行中';
       return '未开始';
     };
@@ -1315,12 +1325,18 @@
             }
           }
           
-          // 构建交付内容写入任务描述
-          const notesParts = [];
-          if (hasLink) notesParts.push(`📎 交付链接: ${outputLink.trim()}`);
-          if (hasText) notesParts.push(`📝 交付说明: ${outputText.trim()}`);
+          // 更新任务状态+交付内容（单次调用）
+          const updateFields = {
+            status: '已完成',
+            completeDate: new Date().toISOString().split('T')[0]
+          };
+          if (hasLink) {
+            updateFields.outputUrl = outputLink.trim();
+          }
+          if (hasText) {
+            updateFields.outputText = outputText.trim();
+          }
           
-          // 更新任务状态为已完成
           const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1328,31 +1344,11 @@
               app_token: APP_TOKEN,
               table_id: 'tblFwmxmjRJPzVmV',
               record_id: task.id,
-              fields: {
-                status: '已完成',
-                completeDate: new Date().toISOString().split('T')[0]
-              }
+              fields: updateFields
             })
           });
           
           const result = await res.json();
-          if (!result.success) throw new Error(result.error || '更新状态失败');
-          
-          // 如果有链接/文字交付内容，通过通用接口写入任务描述
-          if (notesParts.length > 0) {
-            try {
-              await fetch(API_BASE + '/api/update-record', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  app_token: APP_TOKEN,
-                  table_id: 'tblFwmxmjRJPzVmV',
-                  record_id: task.id,
-                  fields: { '任务描述': notesParts.join('\n') }
-                })
-              });
-            } catch (e) { console.warn('交付内容写入失败', e); }
-          }
           if (result.success) {
             if (onTaskCreated) onTaskCreated();
             setShowCompleteForm(null);
@@ -1779,7 +1775,7 @@
                               
                               {/* 已完成状态：显示交付物（文件/链接/文字） */}
                               {task.status === '已完成' && (
-                                <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
                                   {task.outputFile && (
                                     <a 
                                       href={`${API_BASE}/api/download-file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
@@ -1790,19 +1786,19 @@
                                       📎 {task.outputFile.name || '查看附件'}
                                     </a>
                                   )}
-                                  {task.description && task.description.includes('交付链接:') && (
+                                  {task.outputUrl && (
                                     <a 
-                                      href={task.description.match(/交付链接:\s*(\S+)/)?.[1] || '#'}
+                                      href={task.outputUrl}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-xs text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
                                     >
-                                      🔗 查看链接
+                                      🔗 {(() => { try { return new URL(task.outputUrl).hostname; } catch { return '查看链接'; } })()}
                                     </a>
                                   )}
-                                  {task.description && task.description.includes('交付说明:') && (
-                                    <span className="text-xs text-gray-500" title={task.description.match(/交付说明:\s*(.+)/)?.[1]}>
-                                      📝 有交付说明
+                                  {task.outputText && (
+                                    <span className="text-xs text-gray-500" title={task.outputText}>
+                                      📝 {task.outputText.length > 20 ? task.outputText.slice(0, 20) + '...' : task.outputText}
                                     </span>
                                   )}
                                 </div>
@@ -2540,7 +2536,7 @@
           // 计算每个项目的自动进度
           const projectProgresses = relatedProjects.map(p => {
             const autoProgress = calcProjectProgress(p, nodes, templates, tasks);
-            const pAutoStatus = calcProjectStatus(p, tasks);
+            const pAutoStatus = calcProjectStatus(p, tasks, nodes, templates);
             const pTasks = tasks.filter(t => t.productId === p.id);
             const hasProgress = pTasks.some(t => t.status === '进行中' || t.status === '已完成');
             return { ...p, autoProgress, hasProgress, autoStatus: pAutoStatus };
@@ -3440,7 +3436,7 @@
                                           {krProjects.map(project => {
                                             const pAutoProgress = calcProjectProgress(project, nodes, templates, tasks);
                                             const pAutoStage = calcCurrentStage(project, nodes, templates, tasks);
-                                            const pAutoStatus = calcProjectStatus(project, tasks);
+                                            const pAutoStatus = calcProjectStatus(project, tasks, nodes, templates);
                                             const isCompleted = pAutoStatus === '已完成';
                                             return (
                                               <div key={project.id} className={`bg-white rounded-lg p-3 border flex items-center gap-3 ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
@@ -3573,7 +3569,7 @@
 
       // 自动计算项目进度
       const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks);
-      const getAutoStatus = (product) => calcProjectStatus(product, tasks);
+      const getAutoStatus = (product) => calcProjectStatus(product, tasks, nodes, templates);
 
       // === 复合重要性评分 - 使用全局函数 ===
       const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
