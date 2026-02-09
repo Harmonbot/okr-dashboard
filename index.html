@@ -3749,6 +3749,7 @@
           
           // 平均日负荷
           workloadIndex = dailyLoads.length > 0 ? Math.round((dailyLoads.reduce((s,v) => s+v, 0) / dailyLoads.length) * 10) / 10 : 0;
+          peakLoad = Math.round(peakLoad * 10) / 10;
         }
         
         // 负荷等级
@@ -4394,15 +4395,153 @@
                       <div className="bg-gray-50 rounded-xl p-3 text-center"><div className={`text-2xl font-bold ${m.workloadColor}`}>{m.workloadIndex}</div><div className="text-xs text-gray-500">日均负荷</div></div>
                       <div className={`rounded-xl p-3 text-center ${m.overdue > 0 ? 'bg-red-50' : 'bg-gray-50'}`}><div className={`text-2xl font-bold ${m.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{m.overdue}</div><div className={`text-xs ${m.overdue > 0 ? 'text-red-500' : 'text-gray-500'}`}>逾期任务</div></div>
                     </div>
-                    {heatData.length > 0 && (<div className="mb-5"><h4 className="text-sm font-semibold text-gray-700 mb-3">🔥 负荷热力图 <span className="font-normal text-gray-400">（未来每日并行加权任务数）</span></h4><div className="bg-gray-50 rounded-xl p-4"><div className="flex items-end gap-[2px]" style={{height:'80px'}}>{heatData.slice(0, 42).map((load, i) => { const hPx = Math.max(3, Math.round((load / heatMax) * 72)); const dl = (() => { const d = new Date(today); d.setDate(d.getDate() + i); return `${d.getMonth()+1}/${d.getDate()}`; })(); const c = load <= 0 ? 'bg-gray-200' : load <= 2 ? 'bg-green-400' : load <= 4 ? 'bg-blue-400' : load <= 6 ? 'bg-orange-400' : 'bg-red-500'; return (<div key={i} className="flex-1 min-w-0 group relative flex flex-col justify-end items-center"><div className={`w-full rounded-t ${c} transition-all group-hover:opacity-80`} style={{ height: `${hPx}px` }} /><div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10">{dl}: {load}</div></div>); })}</div><div className="flex justify-between mt-1 text-[8px] text-gray-400">{heatData.slice(0,42).map((_, i) => (i % 7 === 0 || i === Math.min(heatData.length, 42) - 1) ? <span key={i}>{(() => { const d = new Date(today); d.setDate(d.getDate() + i); return `${d.getMonth()+1}/${d.getDate()}`; })()}</span> : <span key={i} />)}</div><div className="flex items-center justify-end gap-2 mt-2 text-[10px] text-gray-400"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400" />轻松≤2</span><span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-400" />正常≤4</span><span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-400" />较重≤6</span><span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" />超负荷&gt;6</span></div></div></div>)}
+                    {/* 任务时间轴 */}
+                    {(() => {
+                      const allTasks = [...overdueTasks, ...inProgressTasks, ...pendingTasks, ...doneTasks];
+                      if (allTasks.length === 0) return <div className="text-center text-gray-400 py-8">暂无任务</div>;
+                      
+                      // 计算时间范围
+                      const allDates = [];
+                      allTasks.forEach(t => {
+                        if (t.startDate) allDates.push(new Date(t.startDate));
+                        if (t.dueDate) allDates.push(new Date(t.dueDate));
+                      });
+                      allDates.push(new Date(today));
+                      const tlStart = new Date(Math.min(...allDates)); tlStart.setHours(0,0,0,0);
+                      let tlEnd = new Date(Math.max(...allDates)); tlEnd.setHours(0,0,0,0);
+                      // 至少显示14天
+                      const min14 = new Date(today); min14.setDate(min14.getDate() + 14);
+                      if (tlEnd < min14) tlEnd = min14;
+                      const totalDays = Math.max(1, Math.ceil((tlEnd - tlStart) / 86400000) + 1);
+                      
+                      const dayToPos = (d) => {
+                        const dt = new Date(d); dt.setHours(0,0,0,0);
+                        return Math.max(0, Math.min(100, ((dt - tlStart) / (tlEnd - tlStart)) * 100));
+                      };
+                      const todayPos = dayToPos(today);
+                      
+                      // 负荷热力条（顶部）
+                      const loadBars = heatData.slice(0, totalDays).map((load, i) => {
+                        const d = new Date(today); d.setDate(d.getDate() + i);
+                        const left = dayToPos(d);
+                        const w = Math.max(0.5, 100 / totalDays);
+                        const c = load <= 0 ? '#e5e7eb' : load <= 2 ? '#4ade80' : load <= 4 ? '#60a5fa' : load <= 6 ? '#fb923c' : '#ef4444';
+                        return { left, w, c, load, label: `${d.getMonth()+1}/${d.getDate()}` };
+                      });
+                      
+                      // 日期刻度
+                      const ticks = [];
+                      for (let i = 0; i <= totalDays; i += Math.max(1, Math.floor(totalDays / 8))) {
+                        const d = new Date(tlStart); d.setDate(d.getDate() + i);
+                        ticks.push({ pos: dayToPos(d), label: `${d.getMonth()+1}/${d.getDate()}` });
+                      }
+                      
+                      // 任务条颜色
+                      const barColor = (t) => {
+                        if (t.status === '已完成') return 'bg-green-400';
+                        const isOD = t.dueDate && new Date(t.dueDate) < today;
+                        if (isOD) return 'bg-red-400';
+                        if (t.status === '进行中') return 'bg-blue-400';
+                        return 'bg-gray-300';
+                      };
+                      const barBorder = (t) => {
+                        if (t.status === '已完成') return 'border-green-500';
+                        const isOD = t.dueDate && new Date(t.dueDate) < today;
+                        if (isOD) return 'border-red-500';
+                        if (t.status === '进行中') return 'border-blue-500';
+                        return 'border-gray-400';
+                      };
+                      
+                      return (
+                        <div className="mb-5">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-3">📅 任务时间轴</h4>
+                          <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
+                            {/* 负荷热力条 */}
+                            <div className="relative h-5 mb-1 rounded overflow-hidden bg-gray-100">
+                              {loadBars.map((b, i) => (
+                                <div key={i} className="absolute top-0 bottom-0 group" style={{ left: `${b.left}%`, width: `${b.w}%` }}>
+                                  <div className="w-full h-full" style={{ backgroundColor: b.c }} />
+                                  <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-20">{b.label}: {b.load}</div>
+                                </div>
+                              ))}
+                              <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-10" style={{ left: `${todayPos}%` }} />
+                              <div className="absolute text-[8px] text-red-500 font-medium z-10" style={{ left: `${todayPos}%`, top: '-12px', transform: 'translateX(-50%)' }}>今天</div>
+                            </div>
+                            
+                            {/* 任务甘特条 */}
+                            <div className="space-y-1 mt-2">
+                              {allTasks.map(t => {
+                                const tStart = t.startDate ? new Date(t.startDate) : new Date(today);
+                                const tEnd = t.dueDate ? new Date(t.dueDate) : new Date(tlEnd);
+                                let left = dayToPos(tStart);
+                                let right = dayToPos(tEnd);
+                                let width = Math.max(1.5, right - left);
+                                const isOD = t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < today;
+                                const dLeft = t.dueDate ? Math.ceil((new Date(t.dueDate) - today) / 86400000) : null;
+                                
+                                return (
+                                  <div key={t.id} className="flex items-center gap-2 group" style={{ minHeight: '28px' }}>
+                                    <div className="w-28 flex-shrink-0 flex items-center gap-1.5 pr-1">
+                                      <span className={`px-1 py-0 text-[9px] font-medium rounded ${t.priority === 'P0' ? 'bg-red-100 text-red-700' : t.priority === 'P1' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{t.priority || 'P2'}</span>
+                                      <span className="text-xs text-gray-700 truncate">{t.name}</span>
+                                    </div>
+                                    <div className="flex-1 relative h-6">
+                                      <div className={`absolute top-1 h-4 rounded-full ${barColor(t)} border ${barBorder(t)} opacity-80 hover:opacity-100 transition-all cursor-default group`} 
+                                        style={{ left: `${left}%`, width: `${width}%`, minWidth: '8px' }}>
+                                        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap z-20">
+                                          {t.name} · {t.productName || ''}<br/>
+                                          {t.startDate || '未设置'} ~ {t.dueDate || '未设置'}
+                                          {isOD && <span className="text-red-300"> · 逾期{Math.abs(dLeft)}天</span>}
+                                          {!isOD && dLeft !== null && dLeft >= 0 && <span className="text-green-300"> · 剩{dLeft}天</span>}
+                                        </div>
+                                      </div>
+                                      {/* 截止日标记 */}
+                                      {t.dueDate && (
+                                        <div className={`absolute top-0 h-6 w-[2px] ${isOD ? 'bg-red-500' : 'bg-gray-400'}`} style={{ left: `${dayToPos(t.dueDate)}%` }} />
+                                      )}
+                                    </div>
+                                    <div className="w-16 flex-shrink-0 text-right">
+                                      {t.dueDate ? (
+                                        <span className={`text-[10px] ${isOD ? 'text-red-600 font-medium' : dLeft !== null && dLeft <= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
+                                          {isOD ? `逾期${Math.abs(dLeft)}天` : dLeft === 0 ? '今天' : `剩${dLeft}天`}
+                                        </span>
+                                      ) : <span className="text-[10px] text-gray-300">无期限</span>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            
+                            {/* 日期刻度 */}
+                            <div className="relative h-4 mt-2 ml-[120px] mr-[64px]">
+                              {ticks.map((t, i) => (
+                                <div key={i} className="absolute text-[8px] text-gray-400" style={{ left: `${t.pos}%`, transform: 'translateX(-50%)' }}>{t.label}</div>
+                              ))}
+                            </div>
+                            
+                            {/* 图例 */}
+                            <div className="flex items-center justify-between mt-3 text-[10px] text-gray-400 ml-[120px]">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-400" />逾期</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-400" />进行中</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-gray-300" />待开始</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400" />已完成</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span>负荷:</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400" />≤2</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-400" />≤4</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-400" />≤6</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" />&gt;6</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    
+                    {/* 项目分布 */}
                     {Object.keys(projectDist).length > 0 && (<div className="mb-5"><h4 className="text-sm font-semibold text-gray-700 mb-3">📊 项目分布</h4><div className="bg-gray-50 rounded-xl p-4"><div className="flex h-3 rounded-full overflow-hidden mb-3">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className={`${projectColors[i % projectColors.length]} transition-all`} style={{ width: `${(data.total / m.total) * 100}%` }} title={`${name}: ${data.total}项`} />))}</div><div className="grid grid-cols-2 gap-2">{Object.entries(projectDist).map(([name, data], i) => (<div key={name} className="flex items-center gap-2 text-sm"><span className={`w-2.5 h-2.5 rounded-full ${projectColors[i % projectColors.length]} flex-shrink-0`} /><span className="text-gray-700 truncate flex-1">{name}</span><span className="text-gray-400 text-xs">{data.total}项</span>{data.overdue > 0 && <span className="text-red-500 text-[10px]">{data.overdue}逾期</span>}<span className="text-xs text-gray-300">{data.completed}/{data.total}</span></div>))}</div></div></div>)}
-                    <div><h4 className="text-sm font-semibold text-gray-700 mb-3">📋 任务明细</h4>
-                      {overdueTasks.length > 0 && (<div className="mb-3"><span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full mb-1.5 inline-block">🚨 逾期 ({overdueTasks.length})</span><div className="space-y-0.5 bg-red-50/50 rounded-lg p-1">{overdueTasks.map(t => <TaskRow key={t.id} task={t} />)}</div></div>)}
-                      {inProgressTasks.length > 0 && (<div className="mb-3"><span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mb-1.5 inline-block">🔵 进行中 ({inProgressTasks.length})</span><div className="space-y-0.5">{inProgressTasks.map(t => <TaskRow key={t.id} task={t} />)}</div></div>)}
-                      {pendingTasks.length > 0 && (<div className="mb-3"><span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full mb-1.5 inline-block">⏳ 待开始 ({pendingTasks.length})</span><div className="space-y-0.5">{pendingTasks.map(t => <TaskRow key={t.id} task={t} />)}</div></div>)}
-                      {doneTasks.length > 0 && (<div className="mb-3"><span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full mb-1.5 inline-block">✅ 已完成 ({doneTasks.length})</span><div className="space-y-0.5 opacity-60">{doneTasks.map(t => <TaskRow key={t.id} task={t} />)}</div></div>)}
-                      {mTasks.length === 0 && <div className="text-center text-gray-400 py-8">暂无任务</div>}
-                    </div>
                   </div>
                 </div>
               </div>
