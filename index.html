@@ -4553,7 +4553,8 @@
             const doneTasks = mTasks.filter(t => t.status === '已完成');
             const projectDist = {};
             mTasks.forEach(t => {
-              const pName = t.productName || '未分配';
+              const product = products.find(p => p.id === t.productId);
+              const pName = product ? product.name : '未分配';
               if (!projectDist[pName]) projectDist[pName] = { total:0, completed:0, inProgress:0, pending:0, overdue:0 };
               projectDist[pName].total++;
               if (t.status === '已完成') projectDist[pName].completed++;
