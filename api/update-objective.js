@@ -37,6 +37,7 @@ export default async function handler(req, res) {
     if (objective.name) fields['目标名称'] = objective.name;
     if (objective.cycle) fields['目标周期'] = objective.cycle;
     if (objective.level) fields['目标层级'] = objective.level;
+    if (objective.department !== undefined) fields['所属部门'] = objective.department || '';
     if (objective.status) fields['状态'] = objective.status;
     if (objective.progress !== undefined) fields['进度'] = objective.progress;
     
