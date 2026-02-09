@@ -695,6 +695,46 @@
       return 'pending';
     };
 
+    // === 全局: 项目重要性评分 ===
+    const LEVEL_SCORE = { '公司级': 100, '部门级': 60, '个人级': 30 };
+    const PRIORITY_SCORE = { 'P0': 100, 'P1': 70, 'P2': 40, 'P3': 10 };
+    
+    const calcProjectImportanceScore = (product, objectives, keyResults) => {
+      const kr = keyResults.find(k => k.id === product.krId);
+      const objective = kr ? objectives.find(o => o.id === kr.objectiveId) : null;
+      const maxW = Math.max(1, ...keyResults.map(k => k.weight || 1));
+      const levelScore = objective ? (LEVEL_SCORE[objective.level] || 30) : 0;
+      const krWeightScore = kr ? ((kr.weight || 1) / maxW) * 100 : 0;
+      const priorityScore = PRIORITY_SCORE[product.priority] || 10;
+      return levelScore * 0.35 + krWeightScore * 0.30 + priorityScore * 0.35;
+    };
+
+    // === 全局: 任务综合紧急度评分 ===
+    // 项目重要性(30%) + 任务优先级(30%) + 时间紧迫度(40%)
+    const calcTaskUrgencyScore = (task, products, objectives, keyResults) => {
+      // 1. 项目重要性分 (0~100)
+      const product = products.find(p => p.id === task.productId);
+      const projectScore = product ? calcProjectImportanceScore(product, objectives, keyResults) : 0;
+      
+      // 2. 任务优先级分 (0~100)
+      const taskPriorityScore = PRIORITY_SCORE[task.priority] || 40;
+      
+      // 3. 时间紧迫度分 (0~120, 逾期可超100)
+      let timeScore = 10; // 无截止日期
+      if (task.dueDate) {
+        const daysLeft = Math.ceil((new Date(task.dueDate) - new Date()) / 86400000);
+        if (daysLeft < 0) timeScore = Math.min(120, 100 + Math.abs(daysLeft) * 2); // 逾期
+        else if (daysLeft === 0) timeScore = 100; // 今天到期
+        else if (daysLeft <= 3) timeScore = 85;   // 3天内
+        else if (daysLeft <= 7) timeScore = 65;   // 一周内
+        else if (daysLeft <= 14) timeScore = 45;  // 两周内
+        else timeScore = 25;                       // 更远
+      }
+      
+      const composite = projectScore * 0.30 + taskPriorityScore * 0.30 + timeScore * 0.40;
+      return { composite: Math.round(composite * 10) / 10, projectScore: Math.round(projectScore), taskPriorityScore, timeScore };
+    };
+
     // 加载中组件
     const LoadingScreen = () => (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -3523,27 +3563,14 @@
       const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks);
       const getAutoStatus = (product) => calcProjectStatus(product, tasks);
 
-      // === 复合重要性评分算法 ===
-      // 目标层级分: 公司级=100, 部门级=60, 个人级=30
-      // KR权重分: 归一化到 0~100 (权重/最大权重 * 100)
-      // 项目优先级分: P0=100, P1=70, P2=40, P3=10
-      // 综合公式: 层级分 * 0.35 + KR权重分 * 0.30 + 优先级分 * 0.35
-      const levelScoreMap = { '公司级': 100, '部门级': 60, '个人级': 30 };
-      const priorityScoreMap = { 'P0': 100, 'P1': 70, 'P2': 40, 'P3': 10 };
+      // === 复合重要性评分 - 使用全局函数 ===
       const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
-      
-      const maxKRWeight = Math.max(1, ...keyResults.map(kr => kr.weight || 1));
 
       const getProjectImportance = (product) => {
         const kr = keyResults.find(k => k.id === product.krId);
         const objective = kr ? objectives.find(o => o.id === kr.objectiveId) : null;
-        
-        const levelScore = objective ? (levelScoreMap[objective.level] || 30) : 0;
-        const krWeightScore = kr ? ((kr.weight || 1) / maxKRWeight) * 100 : 0;
-        const priorityScore = priorityScoreMap[product.priority] || 10;
-        
-        const composite = levelScore * 0.35 + krWeightScore * 0.30 + priorityScore * 0.35;
-        return { composite, levelScore, krWeightScore, priorityScore, kr, objective };
+        const composite = calcProjectImportanceScore(product, objectives, keyResults);
+        return { composite, kr, objective };
       };
 
       // 筛选
@@ -3856,7 +3883,7 @@
     };
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
-    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, onRefresh }) => {
+    const TeamTaskOverview = ({ members, tasks, products, objectives = [], keyResults = [], groups, nodes = [], templates = {}, onRefresh }) => {
       const [filterDept, setFilterDept] = useState('all');
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
@@ -3982,15 +4009,16 @@
           workloadLevel = 'overload'; workloadColor = 'text-red-600'; workloadLabel = '超负荷';
         }
         
-        // 按状态排序：逾期 → 进行中 → 待开始 → 已完成
+        // 按综合紧急度排序：逾期优先，然后按紧急度评分降序，已完成排最后
         const sortedTasks = [...memberTasks].sort((a, b) => {
-          const statusOrder = (t) => {
-            if (t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < now) return 0;
-            if (t.status === '进行中') return 1;
-            if (t.status !== '已完成' && t.status !== '进行中') return 2;
-            return 3;
-          };
-          return statusOrder(a) - statusOrder(b);
+          // 已完成的永远排最后
+          if (a.status === '已完成' && b.status !== '已完成') return 1;
+          if (b.status === '已完成' && a.status !== '已完成') return -1;
+          if (a.status === '已完成' && b.status === '已完成') return 0;
+          // 未完成任务按综合紧急度评分
+          const urgA = calcTaskUrgencyScore(a, products, objectives, keyResults);
+          const urgB = calcTaskUrgencyScore(b, products, objectives, keyResults);
+          return urgB.composite - urgA.composite;
         });
         
         return { ...member, memberTasks: sortedTasks, total: memberTasks.length, completed, inProgress, pending, overdue, rate,
@@ -4329,6 +4357,7 @@
                           
                           const isMyTask = task.assignee === currentUser?.open_id || task.assigneeName === currentUser?.name;
                           const priorityColors = { P0: 'bg-red-500 text-white', P1: 'bg-orange-100 text-orange-700', P2: 'bg-blue-50 text-blue-500', P3: 'bg-gray-100 text-gray-400' };
+                          const urgency = task.status !== '已完成' ? calcTaskUrgencyScore(task, products, objectives, keyResults) : null;
                           
                           return (
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isOverdue ? 'bg-red-50 border border-red-200' : 'bg-white'}`}>
@@ -4338,6 +4367,11 @@
                                 task.status === '进行中' ? 'bg-blue-500' :
                                 'bg-gray-300'
                               }`} />
+                              {urgency && (
+                                <span className={`text-[10px] px-1 py-0.5 rounded font-bold flex-shrink-0 leading-none ${urgency.composite >= 70 ? 'bg-red-100 text-red-700' : urgency.composite >= 50 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {urgency.composite}
+                                </span>
+                              )}
                               {task.priority && (
                                 <span className={`text-[10px] px-1 py-0.5 rounded flex-shrink-0 leading-none ${priorityColors[task.priority] || 'bg-gray-100 text-gray-400'}`}>{task.priority}</span>
                               )}
@@ -4568,13 +4602,20 @@
             const TaskRow = ({ task }) => {
               const isOD = task.status !== '已完成' && task.dueDate && new Date(task.dueDate) < today;
               const dLeft = task.dueDate ? Math.ceil((new Date(task.dueDate) - today) / 86400000) : null;
+              const urgency = task.status !== '已完成' ? calcTaskUrgencyScore(task, products, objectives, keyResults) : null;
+              const taskProduct = products.find(p => p.id === task.productId);
               return (
-                <div className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isOD ? 'bg-red-50' : 'hover:bg-gray-50'} transition-colors`}>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${isOD ? 'bg-red-50' : 'hover:bg-gray-50'} transition-colors`}>
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${task.status === '已完成' ? 'bg-green-500' : task.status === '进行中' ? 'bg-blue-500' : 'bg-gray-300'}`} />
-                  <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${task.priority === 'P0' ? 'bg-red-100 text-red-700' : task.priority === 'P1' ? 'bg-orange-100 text-orange-700' : task.priority === 'P2' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{task.priority || 'P2'}</span>
+                  {urgency && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${urgency.composite >= 70 ? 'bg-red-100 text-red-700' : urgency.composite >= 50 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {urgency.composite}
+                    </span>
+                  )}
+                  <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded flex-shrink-0 ${task.priority === 'P0' ? 'bg-red-100 text-red-700' : task.priority === 'P1' ? 'bg-orange-100 text-orange-700' : task.priority === 'P2' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{task.priority || 'P2'}</span>
                   <span className="flex-1 text-gray-800 truncate">{task.name}</span>
-                  {task.productName && <span className="text-xs text-gray-400 truncate max-w-[100px]">{task.productName}</span>}
-                  {task.stage && <span className="text-xs text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded">{task.stage}</span>}
+                  {taskProduct && <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">{taskProduct.name}</span>}
+                  {task.stage && <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">{task.stage}</span>}
                   {task.dueDate && (<span className={`text-xs flex-shrink-0 ${isOD ? 'text-red-600 font-medium' : dLeft !== null && dLeft <= 3 ? 'text-orange-600' : 'text-gray-400'}`}>{isOD ? `逾期${Math.abs(dLeft)}天` : dLeft === 0 ? '今天截止' : dLeft !== null ? `剩${dLeft}天` : ''}</span>)}
                 </div>
               );
@@ -4669,20 +4710,16 @@
                         <div className="mb-5">
                           <h4 className="text-sm font-semibold text-gray-700 mb-3"><Icon name="calendar" size={13} /> 任务时间轴</h4>
                           <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
-                            {/* 负荷热力条 */}
-                            <div className="relative h-5 mb-1 rounded overflow-hidden bg-gray-100">
-                              {loadBars.map((b, i) => (
-                                <div key={i} className="absolute top-0 bottom-0 group" style={{ left: `${b.left}%`, width: `${b.w}%` }}>
-                                  <div className="w-full h-full" style={{ backgroundColor: b.c }} />
-                                  <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-20">{b.label}: {b.load}</div>
-                                </div>
+                            
+                            {/* 日期刻度（顶部） */}
+                            <div className="relative h-5 ml-[120px] mr-[64px] mb-1">
+                              {ticks.map((t, i) => (
+                                <div key={i} className="absolute text-[9px] text-gray-400 font-medium" style={{ left: `${t.pos}%`, transform: 'translateX(-50%)' }}>{t.label}</div>
                               ))}
-                              <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-10" style={{ left: `${todayPos}%` }} />
-                              <div className="absolute text-[8px] text-red-500 font-medium z-10" style={{ left: `${todayPos}%`, top: '-12px', transform: 'translateX(-50%)' }}>今天</div>
                             </div>
                             
-                            {/* 任务甘特条 */}
-                            <div className="space-y-1 mt-2">
+                            {/* 任务甘特条 - 带热力背景 */}
+                            <div className="space-y-1">
                               {allTasks.map(t => {
                                 const tStart = t.startDate ? new Date(t.startDate) : t.plannedStartDate ? new Date(t.plannedStartDate) : new Date(today);
                                 const tEnd = t.dueDate ? new Date(t.dueDate) : new Date(tlEnd);
@@ -4699,10 +4736,17 @@
                                       <span className="text-xs text-gray-700 truncate">{t.name}</span>
                                     </div>
                                     <div className="flex-1 relative h-6">
-                                      <div className={`absolute top-1 h-4 rounded-full ${barColor(t)} border ${barBorder(t)} ${!t.startDate && t.plannedStartDate ? 'opacity-50 border-dashed' : 'opacity-80'} hover:opacity-100 transition-all cursor-default group`} 
+                                      {/* 负荷热力背景列 */}
+                                      {loadBars.map((b, i) => (
+                                        <div key={i} className="absolute top-0 bottom-0" style={{ left: `${b.left}%`, width: `${b.w}%`, backgroundColor: b.c, opacity: 0.15 }} />
+                                      ))}
+                                      {/* 今天标记线 */}
+                                      <div className="absolute top-0 bottom-0 w-[1.5px] bg-red-400 z-10" style={{ left: `${todayPos}%` }} />
+                                      {/* 甘特条 */}
+                                      <div className={`absolute top-1 h-4 rounded-full ${barColor(t)} border ${barBorder(t)} ${!t.startDate && t.plannedStartDate ? 'opacity-50 border-dashed' : 'opacity-80'} hover:opacity-100 transition-all cursor-default group z-[5]`} 
                                         style={{ left: `${left}%`, width: `${width}%`, minWidth: '8px' }}>
                                         <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap z-20">
-                                          {t.name} · {t.productName || ''}<br/>
+                                          {t.name}<br/>
                                           {t.startDate || t.plannedStartDate || '未设置'} ~ {t.dueDate || '未设置'}
                                           {!t.startDate && t.plannedStartDate && <span className="text-yellow-300"> (预计)</span>}
                                           {isOD && <span className="text-red-300"> · 逾期{Math.abs(dLeft)}天</span>}
@@ -4711,7 +4755,7 @@
                                       </div>
                                       {/* 截止日标记 */}
                                       {t.dueDate && (
-                                        <div className={`absolute top-0 h-6 w-[2px] ${isOD ? 'bg-red-500' : 'bg-gray-400'}`} style={{ left: `${dayToPos(t.dueDate)}%` }} />
+                                        <div className={`absolute top-0 h-6 w-[1.5px] ${isOD ? 'bg-red-500' : 'bg-gray-300'}`} style={{ left: `${dayToPos(t.dueDate)}%` }} />
                                       )}
                                     </div>
                                     <div className="w-16 flex-shrink-0 text-right">
@@ -4726,13 +4770,6 @@
                               })}
                             </div>
                             
-                            {/* 日期刻度 */}
-                            <div className="relative h-4 mt-2 ml-[120px] mr-[64px]">
-                              {ticks.map((t, i) => (
-                                <div key={i} className="absolute text-[8px] text-gray-400" style={{ left: `${t.pos}%`, transform: 'translateX(-50%)' }}>{t.label}</div>
-                              ))}
-                            </div>
-                            
                             {/* 图例 */}
                             <div className="flex items-center justify-between mt-3 text-[10px] text-gray-400 ml-[120px]">
                               <div className="flex items-center gap-3">
@@ -4742,11 +4779,11 @@
                                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400" />已完成</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span>负荷:</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400" />≤2</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-400" />≤4</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-400" />≤6</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" />&gt;6</span>
+                                <span>背景负荷:</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded" style={{backgroundColor:'#4ade80',opacity:0.4}} />≤2</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded" style={{backgroundColor:'#60a5fa',opacity:0.4}} />≤4</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded" style={{backgroundColor:'#fb923c',opacity:0.4}} />≤6</span>
+                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded" style={{backgroundColor:'#ef4444',opacity:0.4}} />&gt;6</span>
                               </div>
                             </div>
                           </div>
@@ -5119,6 +5156,8 @@
                   members={data.members}
                   tasks={data.tasks}
                   products={data.products}
+                  objectives={data.objectives}
+                  keyResults={data.keyResults}
                   groups={data.groups}
                   nodes={data.processNodes}
                   templates={data.templates}
