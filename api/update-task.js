@@ -73,6 +73,11 @@ export default async function handler(req, res) {
       updateFields['输出文件'] = fields.outputFile;
     }
     
+    // 任务描述（交付链接/文字）
+    if (fields.description) {
+      updateFields['任务描述'] = fields.description;
+    }
+    
     // 调用飞书 API 更新记录
     const updateRes = await fetch(
       `https://open.feishu.cn/open-apis/bitable/v1/apps/${app_token}/tables/${table_id}/records/${record_id}`,
