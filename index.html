@@ -3505,7 +3505,7 @@
     };
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
-    const TeamTaskOverview = ({ members, tasks, products, groups }) => {
+    const TeamTaskOverview = ({ members, tasks, products, groups, nodes = [], templates = {}, onRefresh }) => {
       const [filterDept, setFilterDept] = useState('all');
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
@@ -3789,31 +3789,89 @@
                             }
                           }
                           
-                          // 快捷操作
+                          // 快捷操作 - 完善版
+                          // 查找任务对应的节点信息
+                          const taskProduct = products.find(p => p.id === task.productId);
+                          const taskNodes = taskProduct ? getNodesForProduct(taskProduct, nodes, templates) : [];
+                          const taskNode = taskNodes.find(n => n.name === task.stage);
+                          
+                          // 前置节点检查
+                          const checkPredecessor = () => {
+                            if (!taskNode || !taskNode.predecessors || taskNode.predecessors.length === 0) return { canAccept: true };
+                            const productTasks = tasks.filter(t => t.productId === task.productId);
+                            for (const predName of taskNode.predecessors) {
+                              const predTasks = productTasks.filter(t => t.stage === predName);
+                              if (predTasks.length === 0) continue; // 无前置任务，跳过
+                              const allDone = predTasks.every(t => t.status === '已完成');
+                              if (!allDone) return { canAccept: false, message: `前置节点「${predName}」尚未完成` };
+                            }
+                            return { canAccept: true };
+                          };
+                          
+                          const predecessorStatus = checkPredecessor();
+                          
                           const handleQuickAction = async (e, action) => {
                             e.stopPropagation();
-                            try {
-                              const fields = {};
-                              if (action === 'accept') {
-                                fields['状态'] = '进行中';
-                                fields['开始日期'] = Date.now();
-                              } else if (action === 'complete') {
-                                fields['状态'] = '已完成';
-                                fields['完成日期'] = Date.now();
+                            
+                            if (action === 'accept') {
+                              if (!predecessorStatus.canAccept) {
+                                showToast?.(`⚠️ ${predecessorStatus.message}，请等待前置节点完成`, 'error');
+                                return;
                               }
-                              const res = await fetch(API_BASE + '/api/update-task', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblFwmxmjRJPzVmV', record_id: task.id, fields })
-                              });
-                              const result = await res.json();
-                              if (result.success) {
-                                showToast?.(`任务已${action === 'accept' ? '接受' : '完成'}`, 'success');
-                              } else {
-                                throw new Error(result.error);
+                              const nodeDays = taskNode ? (parseInt(taskNode.days, 10) || 7) : 7;
+                              if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期：今天\n截止日期：${nodeDays}天后\n节点预计工时：${nodeDays}天`)) return;
+                              
+                              try {
+                                const today = new Date();
+                                const dueDate = new Date(today);
+                                dueDate.setDate(dueDate.getDate() + nodeDays);
+                                
+                                const res = await fetch(API_BASE + '/api/update-task', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    app_token: APP_TOKEN,
+                                    table_id: 'tblFwmxmjRJPzVmV',
+                                    record_id: task.id,
+                                    fields: {
+                                      status: '进行中',
+                                      startDate: today.toISOString().split('T')[0],
+                                      dueDate: dueDate.toISOString().split('T')[0]
+                                    }
+                                  })
+                                });
+                                const result = await res.json();
+                                if (result.success) {
+                                  showToast?.('已接受任务', 'success');
+                                  onRefresh?.();
+                                } else throw new Error(result.error);
+                              } catch (err) {
+                                showToast?.('操作失败: ' + err.message, 'error');
                               }
-                            } catch (err) {
-                              showToast?.('操作失败: ' + err.message, 'error');
+                            } else if (action === 'complete') {
+                              if (!confirm(`确认完成任务「${task.name}」？`)) return;
+                              try {
+                                const res = await fetch(API_BASE + '/api/update-task', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    app_token: APP_TOKEN,
+                                    table_id: 'tblFwmxmjRJPzVmV',
+                                    record_id: task.id,
+                                    fields: {
+                                      status: '已完成',
+                                      completeDate: new Date().toISOString().split('T')[0]
+                                    }
+                                  })
+                                });
+                                const result = await res.json();
+                                if (result.success) {
+                                  showToast?.('任务已完成', 'success');
+                                  onRefresh?.();
+                                } else throw new Error(result.error);
+                              } catch (err) {
+                                showToast?.('操作失败: ' + err.message, 'error');
+                              }
                             }
                           };
                           
@@ -3836,8 +3894,11 @@
                               {timeTag && (
                                 <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${timeTag.cls}`}>{timeTag.text}</span>
                               )}
-                              {isMyTask && task.status === '待开始' && (
+                              {isMyTask && task.status === '待开始' && predecessorStatus.canAccept && (
                                 <button onClick={e => handleQuickAction(e, 'accept')} className="text-[10px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600 flex-shrink-0">接受</button>
+                              )}
+                              {isMyTask && task.status === '待开始' && !predecessorStatus.canAccept && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded flex-shrink-0 cursor-not-allowed" title={predecessorStatus.message}>🔒 等待前置</span>
                               )}
                               {isMyTask && task.status === '进行中' && (
                                 <button onClick={e => handleQuickAction(e, 'complete')} className="text-[10px] px-1.5 py-0.5 bg-green-500 text-white rounded hover:bg-green-600 flex-shrink-0">完成</button>
@@ -4188,6 +4249,9 @@
                   tasks={data.tasks}
                   products={data.products}
                   groups={data.groups}
+                  nodes={data.processNodes}
+                  templates={data.templates}
+                  onRefresh={fetchData}
                 />
               )}
             </div>
