@@ -402,6 +402,7 @@
             collaborators: (r.fields['协作人'] || []).map(c => c.name || '').filter(Boolean),
             description: (() => { let d = r.fields['任务描述'] || ''; if (Array.isArray(d)) d = d.map(x => x.text || x).join(''); return d; })(),
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
+            plannedStartDate: r.fields['预计开始日期'] ? new Date(r.fields['预计开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
             completedDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
             outputFile: r.fields['输出文件']?.[0] || null
@@ -1024,8 +1025,9 @@
         name: '',
         priority: 'P2-中等',
         assignee: '',
-        collaborators: [], // 协作人（多选）
-        description: ''
+        collaborators: [],
+        description: '',
+        plannedStartDate: ''
       });
       
       if (!node) return null;
@@ -1095,10 +1097,11 @@
               task: {
                 name: formData.name,
                 priority: formData.priority,
-                status: '待开始', // 默认待开始
+                status: '待开始',
                 assignee: formData.assignee,
                 collaborators: formData.collaborators,
                 description: formData.description,
+                plannedStartDate: formData.plannedStartDate,
                 projectId: product?.id,
                 nodeId: nodeRecordId
               }
@@ -1115,7 +1118,8 @@
               priority: 'P2-中等',
               assignee: '',
               collaborators: [],
-              description: ''
+              description: '',
+              plannedStartDate: ''
             });
             showToast?.('任务创建成功', 'success');
           } else {
@@ -1367,6 +1371,18 @@
                         <option value="P2-中等">P2-中等</option>
                         <option value="P3-低优">P3-低优</option>
                       </select>
+                    </div>
+                    
+                    {/* 预计开始日期 */}
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">预计开始日期</label>
+                      <input
+                        type="date"
+                        value={formData.plannedStartDate}
+                        onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                      />
+                      <div className="text-[10px] text-gray-400 mt-0.5">用于负荷规划，接受任务后自动调整为实际开始日期</div>
                     </div>
                     
                     {/* 负责人 */}
@@ -3727,8 +3743,8 @@
             let dayLoad = 0;
             
             activeTasks.forEach(t => {
-              // 任务的时间范围：开始日（或今天）到截止日（或窗口末尾）
-              let startD = t.startDate ? new Date(t.startDate) : new Date(today);
+              // 任务的时间范围：开始日期 > 预计开始日期 > 今天
+              let startD = t.startDate ? new Date(t.startDate) : t.plannedStartDate ? new Date(t.plannedStartDate) : new Date(today);
               startD.setHours(0,0,0,0);
               if (startD < today) startD = new Date(today);
               
@@ -4471,7 +4487,7 @@
                             {/* 任务甘特条 */}
                             <div className="space-y-1 mt-2">
                               {allTasks.map(t => {
-                                const tStart = t.startDate ? new Date(t.startDate) : new Date(today);
+                                const tStart = t.startDate ? new Date(t.startDate) : t.plannedStartDate ? new Date(t.plannedStartDate) : new Date(today);
                                 const tEnd = t.dueDate ? new Date(t.dueDate) : new Date(tlEnd);
                                 let left = dayToPos(tStart);
                                 let right = dayToPos(tEnd);
@@ -4486,11 +4502,12 @@
                                       <span className="text-xs text-gray-700 truncate">{t.name}</span>
                                     </div>
                                     <div className="flex-1 relative h-6">
-                                      <div className={`absolute top-1 h-4 rounded-full ${barColor(t)} border ${barBorder(t)} opacity-80 hover:opacity-100 transition-all cursor-default group`} 
+                                      <div className={`absolute top-1 h-4 rounded-full ${barColor(t)} border ${barBorder(t)} ${!t.startDate && t.plannedStartDate ? 'opacity-50 border-dashed' : 'opacity-80'} hover:opacity-100 transition-all cursor-default group`} 
                                         style={{ left: `${left}%`, width: `${width}%`, minWidth: '8px' }}>
                                         <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap z-20">
                                           {t.name} · {t.productName || ''}<br/>
-                                          {t.startDate || '未设置'} ~ {t.dueDate || '未设置'}
+                                          {t.startDate || t.plannedStartDate || '未设置'} ~ {t.dueDate || '未设置'}
+                                          {!t.startDate && t.plannedStartDate && <span className="text-yellow-300"> (预计)</span>}
                                           {isOD && <span className="text-red-300"> · 逾期{Math.abs(dLeft)}天</span>}
                                           {!isOD && dLeft !== null && dLeft >= 0 && <span className="text-green-300"> · 剩{dLeft}天</span>}
                                         </div>
