@@ -90,6 +90,11 @@ export default async function handler(req, res) {
       fields['截止日期'] = new Date(task.dueDate).getTime();
     }
     
+    // 预计开始日期（时间戳，毫秒）
+    if (task.plannedStartDate) {
+      fields['预计开始日期'] = new Date(task.plannedStartDate).getTime();
+    }
+    
     // 任务描述
     if (task.description) {
       fields['任务描述'] = task.description;
