@@ -2966,18 +2966,24 @@
         
         // 工期指标型：取关联项目的实际工期
         if (kr.krType === 'metric_duration' && relatedProjects.length > 0) {
+          const allDone = relatedProjects.every(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成');
+          const anyStarted = relatedProjects.some(p => {
+            const pt = tasks.filter(t => t.productId === p.id);
+            return pt.some(t => t.status === '进行中' || t.status === '已完成');
+          });
+          const completedCount = relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成').length;
+          const inProgressCount = relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '进行中').length;
+          
           // 计算关联项目的实际工期（工作日）
           const durations = relatedProjects.map(p => {
             const pStatus = calcProjectStatus(p, tasks, nodes, templates, products);
             if (pStatus === '已完成' && p.startDate) {
-              // 已完成：用开始到完成日期的工作日数
               const completedTasks = tasks.filter(t => t.productId === p.id && t.status === '已完成' && t.completeDate);
               const lastComplete = completedTasks.length > 0 
                 ? new Date(Math.max(...completedTasks.map(t => new Date(t.completeDate).getTime())))
                 : new Date();
               return getWorkingDaysBetween(new Date(p.startDate), lastComplete);
             } else if (p.startDate) {
-              // 进行中：用开始到现在的工作日数
               return getWorkingDaysBetween(new Date(p.startDate), new Date());
             }
             return 0;
@@ -2985,28 +2991,31 @@
           
           const avgDuration = durations.length > 0 ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length) : 0;
           
-          // ≤ 型：越小越好，达标=100%
+          // 工期型进度：只有项目全部完成后才用工期判断达标
+          // 项目未完成时，用项目平均进度作为KR进度
           let progress = 0;
-          if (kr.operator === '≤' && kr.target > 0) {
-            // 如果当前值 ≤ 目标值，100%。否则按超出比例递减
-            progress = avgDuration <= kr.target ? 100 : Math.max(0, Math.round((1 - (avgDuration - kr.target) / kr.target) * 100));
+          if (allDone) {
+            // 全部完成：用实际工期 vs 目标判断
+            if (kr.operator === '≤' && kr.target > 0) {
+              progress = avgDuration <= kr.target ? 100 : Math.max(0, Math.round((1 - (avgDuration - kr.target) / kr.target) * 100));
+            } else {
+              progress = kr.target > 0 ? Math.min(100, Math.round((avgDuration / kr.target) * 100)) : 0;
+            }
           } else {
-            progress = kr.target > 0 ? Math.min(100, Math.round((avgDuration / kr.target) * 100)) : 0;
+            // 未完成：用项目平均进度
+            const projectProgresses = relatedProjects.map(p => calcProjectProgress(p, nodes, templates, tasks, products));
+            progress = projectProgresses.length > 0 
+              ? Math.round(projectProgresses.reduce((sum, p) => sum + p, 0) / projectProgresses.length)
+              : 0;
           }
-          
-          const allDone = relatedProjects.every(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成');
-          const anyStarted = relatedProjects.some(p => {
-            const pt = tasks.filter(t => t.productId === p.id);
-            return pt.some(t => t.status === '进行中' || t.status === '已完成');
-          });
           
           return {
             current: avgDuration,
             progress: progress,
             autoCalculated: true,
             totalProjects: relatedProjects.length,
-            completedProjects: relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成').length,
-            inProgressProjects: relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '进行中').length,
+            completedProjects: completedCount,
+            inProgressProjects: inProgressCount,
             autoStatus: allDone ? '已完成' : anyStarted ? '进行中' : '未开始'
           };
         }
