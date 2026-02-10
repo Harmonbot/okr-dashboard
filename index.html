@@ -664,6 +664,53 @@
     // 判断是否是父项目（纯容器，不挂流程）
     const isParentProject = (product) => product?.category === '父项目' || (product?.childIds?.length > 0);
 
+    // 工作日计算（跳过周六日）
+    const addWorkingDays = (startDate, workDays) => {
+      if (!startDate || !workDays || workDays <= 0) return startDate;
+      const d = new Date(startDate);
+      let added = 0;
+      while (added < workDays) {
+        d.setDate(d.getDate() + 1);
+        const day = d.getDay();
+        if (day !== 0 && day !== 6) added++;
+      }
+      return d;
+    };
+
+    // 计算两个日期之间的工作日数
+    const getWorkingDaysBetween = (start, end) => {
+      if (!start || !end) return 0;
+      const s = new Date(start); const e = new Date(end);
+      let count = 0;
+      const d = new Date(s);
+      while (d < e) {
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+      }
+      return count;
+    };
+
+    // 计算子项目的时间线：每个节点的预计开始/截止日期
+    // 起点 = 父项目的开始日期（产品立项完成即T=0）
+    const calcSubProjectTimeline = (child, parentStartDate, allNodes, templates) => {
+      if (!parentStartDate) return { nodes: [], totalDays: 0, deadline: null };
+      const cNodes = getNodesForProduct(child, allNodes, templates);
+      if (cNodes.length === 0) return { nodes: [], totalDays: 0, deadline: null };
+      
+      let currentStart = new Date(parentStartDate);
+      let totalWorkDays = 0;
+      const timeline = cNodes.map(nd => {
+        const workDays = nd.days || 1;
+        const nodeStart = new Date(currentStart);
+        const nodeEnd = addWorkingDays(nodeStart, workDays);
+        totalWorkDays += workDays;
+        currentStart = nodeEnd; // 下一个节点从这个节点结束日开始
+        return { ...nd, planStart: nodeStart, planEnd: nodeEnd, workDays };
+      });
+      
+      return { nodes: timeline, totalDays: totalWorkDays, deadline: timeline[timeline.length - 1]?.planEnd || null };
+    };
+
     // 根据项目模版类型获取对应模板的流程节点
     const getNodesForProduct = (product, allNodes, templates) => {
       if (!product || !templates) return allNodes;
@@ -1960,6 +2007,13 @@
       if (!product) return null;
       const productTasks = tasks.filter(t => t.productId === product.id);
 
+      // 计算子项目时间线（用于节点上标注预计日期）
+      const parentProduct = product.parentId ? products.find(p => p.id === product.parentId) : null;
+      const parentStart = parentProduct?.startDate ? new Date(parentProduct.startDate) : null;
+      const modalTimeline = calcSubProjectTimeline(product, parentStart, allNodes, templates);
+      const timelineMap = {};
+      modalTimeline.nodes.forEach(n => { timelineMap[n.name] = n; });
+
       // 检查当前用户是否是项目负责人
       const isProjectOwner = currentUser && (
         currentUser.open_id === product.ownerId ||
@@ -2486,6 +2540,64 @@
                 ) : null;
               })()}
 
+              {/* 工期时间线 */}
+              {product.parentId && (() => {
+                const parentProduct = products.find(p => p.id === product.parentId);
+                const parentStart = parentProduct?.startDate ? new Date(parentProduct.startDate) : null;
+                const tl = calcSubProjectTimeline(product, parentStart, allNodes, templates);
+                if (!parentStart || !tl.deadline || tl.totalDays === 0) return null;
+                
+                const now = new Date();
+                const elapsed = getWorkingDaysBetween(parentStart, now);
+                const timeProgress = Math.min(100, Math.round((elapsed / tl.totalDays) * 100));
+                const remaining = getWorkingDaysBetween(now, tl.deadline);
+                const isOverdue = now > tl.deadline;
+                const isUrgent = remaining <= 3 && !isOverdue;
+                
+                return (
+                  <div className={`mb-4 p-4 rounded-xl border ${
+                    isOverdue ? 'bg-red-50 border-red-200' :
+                    isUrgent ? 'bg-amber-50 border-amber-200' :
+                    'bg-blue-50 border-blue-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{isOverdue ? '🔴' : isUrgent ? '🟡' : '⏱'}</span>
+                        <span className={`text-sm font-semibold ${isOverdue ? 'text-red-700' : isUrgent ? 'text-amber-700' : 'text-blue-700'}`}>
+                          工期时间线
+                        </span>
+                      </div>
+                      <div className={`text-sm font-bold ${isOverdue ? 'text-red-600' : isUrgent ? 'text-amber-600' : 'text-blue-600'}`}>
+                        {isOverdue ? `已逾期 ${getWorkingDaysBetween(tl.deadline, now)} 个工作日` :
+                         remaining === 0 ? '今天截止！' :
+                         `剩余 ${remaining} 个工作日`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-[10px] text-gray-500 flex-shrink-0">{parentStart.getMonth()+1}/{parentStart.getDate()}</span>
+                      <div className="flex-1 h-2 rounded-full bg-white/80 overflow-hidden relative">
+                        {/* 时间流逝进度 */}
+                        <div className={`h-full rounded-full absolute left-0 top-0 ${
+                          isOverdue ? 'bg-red-400' : isUrgent ? 'bg-amber-400' : 'bg-blue-300'
+                        }`} style={{width: `${timeProgress}%`}} />
+                        {/* 工作完成进度 */}
+                        <div className="h-full rounded-full bg-green-500 absolute left-0 top-0 opacity-60" style={{width: `${autoProgress}%`}} />
+                      </div>
+                      <span className="text-[10px] text-gray-500 flex-shrink-0">{tl.deadline.getMonth()+1}/{tl.deadline.getDate()}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                      <span>🟦 时间消耗 {timeProgress}% · 🟩 完成进度 {autoProgress}%</span>
+                      <span>总工期 {tl.totalDays} 个工作日</span>
+                    </div>
+                    {timeProgress > autoProgress + 20 && autoStatus !== '已完成' && (
+                      <div className={`mt-2 text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                        ⚠️ 时间消耗超前于完成进度，需要加速推进！
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 流程进度</h3>
                 {nodes.length === 0 ? (
@@ -2526,6 +2638,29 @@
                                   }`}>
                                     {node.name}
                                   </div>
+                                  {/* 预计日期标注 */}
+                                  {timelineMap[node.name]?.planEnd && (
+                                    <div className={`text-[9px] mt-0.5 ${
+                                      (() => {
+                                        const pe = timelineMap[node.name].planEnd;
+                                        const ns = getNodeStatus(node.name);
+                                        if (ns === 'completed' || ns === 'skipped') return 'text-gray-300';
+                                        const now = new Date();
+                                        if (now > pe) return 'text-red-500 font-semibold';
+                                        const remaining = getWorkingDaysBetween(now, pe);
+                                        if (remaining <= 2) return 'text-amber-500 font-medium';
+                                        return 'text-gray-400';
+                                      })()
+                                    }`}>
+                                      {(() => {
+                                        const pe = timelineMap[node.name].planEnd;
+                                        return `${pe.getMonth()+1}/${pe.getDate()}`;
+                                      })()}
+                                      {timelineMap[node.name].workDays > 0 && (
+                                        <span className="text-gray-300"> · {timelineMap[node.name].workDays}天</span>
+                                      )}
+                                    </div>
+                                  )}
                                   {/* 任务数量和时间状态提示 */}
                                   {(() => {
                                     const nTasks = productTasks.filter(t => t.stage === node.name);
@@ -4159,6 +4294,42 @@
                     if (nt.some(t => t.status === '进行中')) { currentStage = nd.name; break; }
                     if (nt.length > 0 && !nt.every(t => t.status === '已完成')) { currentStage = nd.name; break; }
                   }
+                  
+                  // 时间线计算
+                  const parentStart = product.startDate ? new Date(product.startDate) : null;
+                  const tl = calcSubProjectTimeline(child, parentStart, nodes, templates);
+                  const now = new Date();
+                  const deadline = tl.deadline;
+                  const hasTimeline = parentStart && deadline;
+                  let timeStatus = 'pending'; // pending | on-track | warning | overdue | done
+                  let remainingWorkDays = 0;
+                  let timeText = '';
+                  
+                  if (cStatus === '已完成') {
+                    timeStatus = 'done';
+                    timeText = '✓ 已完成';
+                  } else if (hasTimeline) {
+                    remainingWorkDays = getWorkingDaysBetween(now, deadline);
+                    if (now > deadline) {
+                      timeStatus = 'overdue';
+                      const overdueDays = getWorkingDaysBetween(deadline, now);
+                      timeText = `逾期${overdueDays}天`;
+                    } else if (remainingWorkDays <= 2) {
+                      timeStatus = 'warning';
+                      timeText = remainingWorkDays <= 0 ? '今天截止' : `剩${remainingWorkDays}天`;
+                    } else {
+                      timeStatus = 'on-track';
+                      timeText = `剩${remainingWorkDays}天`;
+                    }
+                  }
+                  
+                  // 时间进度（已用工作日 / 总工作日）
+                  let timeProgress = 0;
+                  if (hasTimeline && tl.totalDays > 0) {
+                    const elapsed = getWorkingDaysBetween(parentStart, now);
+                    timeProgress = Math.min(100, Math.round((elapsed / tl.totalDays) * 100));
+                  }
+
                   const deptColors = {
                     '产品中心': { dot: 'bg-blue-500', bg: 'hover:bg-blue-50/50' },
                     '运营中心': { dot: 'bg-green-500', bg: 'hover:bg-green-50/50' },
@@ -4171,32 +4342,58 @@
 
                   return (
                     <div key={child.id}
-                      className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${dc.bg} ${ci < childProducts.length - 1 ? 'border-b' : ''}`}
+                      className={`px-4 py-2.5 cursor-pointer transition-colors ${dc.bg} ${ci < childProducts.length - 1 ? 'border-b' : ''} ${timeStatus === 'overdue' ? 'bg-red-50/50' : ''}`}
                       style={{borderColor: 'var(--c-border)'}}
                       onClick={() => setSelectedProduct(child)}
                     >
-                      {/* 部门色点 */}
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dc.dot}`} />
-                      {/* 子项目名 */}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-gray-700 truncate">{child.name}</div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {child.responsibleDept && (
-                            <span className="text-[10px] text-gray-400">{child.responsibleDept}</span>
+                      <div className="flex items-center gap-3">
+                        {/* 部门色点 */}
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dc.dot}`} />
+                        {/* 子项目名 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-700 truncate">{child.name}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {child.responsibleDept && (
+                              <span className="text-[10px] text-gray-400">{child.responsibleDept}</span>
+                            )}
+                            {currentStage && (
+                              <span className="text-[10px] text-blue-500">📍{currentStage}</span>
+                            )}
+                            <span className="text-[10px] text-gray-300">{cCompleted}/{cTasks.length} 任务</span>
+                          </div>
+                        </div>
+                        {/* 时间线 + 进度 */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {hasTimeline && timeStatus !== 'done' && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              timeStatus === 'overdue' ? 'bg-red-100 text-red-600' :
+                              timeStatus === 'warning' ? 'bg-amber-100 text-amber-600' :
+                              'text-gray-400'
+                            }`}>{timeText}</span>
                           )}
-                          {currentStage && (
-                            <span className="text-[10px] text-blue-500">📍{currentStage}</span>
+                          {timeStatus === 'done' && (
+                            <span className="text-[10px] font-medium text-green-500">{timeText}</span>
                           )}
-                          <span className="text-[10px] text-gray-300">{cCompleted}/{cTasks.length} 任务</span>
+                          <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                            <div className={`h-full rounded-full ${cProgress >= 100 ? 'bg-green-500' : cProgress > 0 ? 'bg-blue-500' : 'bg-gray-200'}`} style={{width: `${cProgress}%`}} />
+                          </div>
+                          <span className={`text-xs font-semibold w-8 text-right ${cProgress >= 100 ? 'text-green-600' : cProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{cProgress}%</span>
                         </div>
                       </div>
-                      {/* 状态+进度 */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div className={`h-full rounded-full ${cProgress >= 100 ? 'bg-green-500' : cProgress > 0 ? 'bg-blue-500' : 'bg-gray-200'}`} style={{width: `${cProgress}%`}} />
+                      {/* 时间进度条（已用时间/总工期）*/}
+                      {hasTimeline && timeStatus !== 'done' && tl.totalDays > 0 && (
+                        <div className="flex items-center gap-2 mt-1.5 ml-5">
+                          <div className="flex-1 h-1 rounded-full bg-gray-100 overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${
+                              timeStatus === 'overdue' ? 'bg-red-400' :
+                              timeStatus === 'warning' ? 'bg-amber-400' : 'bg-gray-300'
+                            }`} style={{width: `${timeProgress}%`}} />
+                          </div>
+                          <span className="text-[9px] text-gray-300 flex-shrink-0">
+                            ⏱ {tl.totalDays}天工期 → {deadline ? `${deadline.getMonth()+1}/${deadline.getDate()}` : ''}
+                          </span>
                         </div>
-                        <span className={`text-xs font-semibold w-8 text-right ${cProgress >= 100 ? 'text-green-600' : cProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{cProgress}%</span>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
