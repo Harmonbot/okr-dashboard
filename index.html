@@ -3727,7 +3727,7 @@
                                     type="text"
                                     value={krForm.productCode}
                                     onChange={e => {
-                                      const pc = e.target.value.toUpperCase();
+                                      const pc = e.target.value;
                                       const auto = `${pc}${krForm.metric ? ' ' + krForm.metric : ''}${krForm.target ? ' ' + krForm.operator + krForm.target : ''}`;
                                       setKRForm({ ...krForm, productCode: pc, name: auto.trim() });
                                     }}
