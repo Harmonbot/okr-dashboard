@@ -3930,16 +3930,144 @@
             按重要性排序: 目标层级(35%) + KR权重(30%) + 项目优先级(35%)
           </div>
 
-          {/* 项目卡片网格 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sortedProducts.map((product, idx) => (
-              <ProjectCard key={product.id} product={product} rank={idx + 1} />
-            ))}
-          </div>
-
-          {sortedProducts.length === 0 && (
-            <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
-          )}
+          {/* 项目卡片 - 按部门/组别分组 */}
+          {(() => {
+            // 建立 组别→大部门 映射
+            const groupToDeptMap = {};
+            members.forEach(m => {
+              if (m.group && m.department) groupToDeptMap[m.group] = m.department;
+              if (m.department) groupToDeptMap[m.department] = m.department;
+            });
+            
+            // 按项目关联的目标层级+部门分组
+            const companyProjects = [];
+            const deptMap = {};  // { 大部门: { 组别: [products] } }
+            const personalProjects = [];
+            const unlinkedProjects = [];
+            let globalRank = 0;
+            
+            sortedProducts.forEach(product => {
+              const imp = getProjectImportance(product);
+              const obj = imp.objective;
+              product._rank = ++globalRank;
+              
+              if (!obj) {
+                unlinkedProjects.push(product);
+              } else if (obj.level === '公司级') {
+                companyProjects.push(product);
+              } else if (obj.level === '个人级') {
+                personalProjects.push(product);
+              } else {
+                // 部门级
+                const objGroup = obj.department || '未分配';
+                const parentDept = groupToDeptMap[objGroup] || objGroup;
+                if (!deptMap[parentDept]) deptMap[parentDept] = {};
+                if (!deptMap[parentDept][objGroup]) deptMap[parentDept][objGroup] = [];
+                deptMap[parentDept][objGroup].push(product);
+              }
+            });
+            
+            const sections = [];
+            
+            // 公司级项目
+            if (companyProjects.length > 0) {
+              sections.push(
+                <div key="company" className="mb-5">
+                  <div className="flex items-center gap-2 mb-2.5 pb-2" style={{borderBottom:'2px solid var(--c-accent)'}}>
+                    <Icon name="target" size={14} color="var(--c-accent)" />
+                    <span className="text-sm font-semibold" style={{color:'var(--c-text-secondary)'}}>公司级项目</span>
+                    <span className="badge badge-gray">{companyProjects.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {companyProjects.map(p => <ProjectCard key={p.id} product={p} rank={p._rank} />)}
+                  </div>
+                </div>
+              );
+            }
+            
+            // 部门级项目 - 按大部门→组别
+            const deptKeys = Object.keys(deptMap).sort();
+            if (deptKeys.length > 0) {
+              sections.push(
+                <div key="dept" className="mb-5">
+                  <div className="flex items-center gap-2 mb-2.5 pb-2" style={{borderBottom:'2px solid var(--c-info)'}}>
+                    <Icon name="folder" size={14} color="var(--c-info)" />
+                    <span className="text-sm font-semibold" style={{color:'var(--c-text-secondary)'}}>部门级项目</span>
+                    <span className="badge badge-gray">{deptKeys.reduce((s, d) => s + Object.values(deptMap[d]).reduce((s2, arr) => s2 + arr.length, 0), 0)}</span>
+                  </div>
+                  {deptKeys.map(parentDept => {
+                    const subGroups = deptMap[parentDept];
+                    const subKeys = Object.keys(subGroups).sort();
+                    const totalInDept = subKeys.reduce((s, k) => s + subGroups[k].length, 0);
+                    const isSingleLevel = subKeys.length === 1 && subKeys[0] === parentDept;
+                    
+                    return (
+                      <div key={parentDept} className="mb-4">
+                        <div className="flex items-center gap-2 mb-2 ml-1">
+                          <span className="text-sm font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg">{parentDept}</span>
+                          <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{totalInDept} 个项目</span>
+                        </div>
+                        {isSingleLevel ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-1">
+                            {subGroups[subKeys[0]].map(p => <ProjectCard key={p.id} product={p} rank={p._rank} />)}
+                          </div>
+                        ) : (
+                          subKeys.map(groupName => (
+                            <div key={groupName} className="mb-3 ml-3">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                <span className="text-xs font-medium text-gray-600">{groupName}</span>
+                                <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{subGroups[groupName].length} 个项目</span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {subGroups[groupName].map(p => <ProjectCard key={p.id} product={p} rank={p._rank} />)}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+            
+            // 个人级项目
+            if (personalProjects.length > 0) {
+              sections.push(
+                <div key="personal" className="mb-5">
+                  <div className="flex items-center gap-2 mb-2.5 pb-2" style={{borderBottom:'2px solid var(--c-success)'}}>
+                    <Icon name="check" size={14} color="var(--c-success)" />
+                    <span className="text-sm font-semibold" style={{color:'var(--c-text-secondary)'}}>个人级项目</span>
+                    <span className="badge badge-gray">{personalProjects.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {personalProjects.map(p => <ProjectCard key={p.id} product={p} rank={p._rank} />)}
+                  </div>
+                </div>
+              );
+            }
+            
+            // 未关联项目
+            if (unlinkedProjects.length > 0) {
+              sections.push(
+                <div key="unlinked" className="mb-5">
+                  <div className="flex items-center gap-2 mb-2.5 pb-2" style={{borderBottom:'2px solid var(--c-border)'}}>
+                    <Icon name="info" size={14} color="var(--c-text-muted)" />
+                    <span className="text-sm font-semibold" style={{color:'var(--c-text-muted)'}}>未关联目标</span>
+                    <span className="badge badge-gray">{unlinkedProjects.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {unlinkedProjects.map(p => <ProjectCard key={p.id} product={p} rank={p._rank} />)}
+                  </div>
+                </div>
+              );
+            }
+            
+            return sections.length > 0 ? sections : (
+              <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
+            );
+          })()}
 
                     {selectedProduct && (
             <ProductDetailModal
