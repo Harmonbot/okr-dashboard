@@ -809,6 +809,7 @@
       const allDates = [];
       tasks.forEach(t => {
         if (t.startDate) allDates.push(new Date(t.startDate));
+        if (t.plannedStartDate) allDates.push(new Date(t.plannedStartDate));
         if (t.dueDate) allDates.push(new Date(t.dueDate));
       });
       if (allDates.length === 0) {
@@ -904,10 +905,16 @@
         <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{left:`${todayOffset}px`, opacity}} />
       );
       
+      // 计划上线日期线
+      const targetDateOffset = product.targetDate ? Math.max(0, (new Date(new Date(product.targetDate).setHours(0,0,0,0)) - minDate) / 86400000) * dayWidth : null;
+      const TargetLine = () => targetDateOffset !== null ? (
+        <div className="absolute top-0 bottom-0 z-10" style={{left:`${targetDateOffset}px`, width:'2px', background:'repeating-linear-gradient(to bottom, #7c3aed 0, #7c3aed 4px, transparent 4px, transparent 8px)'}} />
+      ) : null;
+      
       const renderTaskRow = (task, taskIdx) => {
         const assignee = members.find(m => m.id === task.assignee || m.name === task.assigneeName);
         
-        let taskStart = task.startDate ? new Date(task.startDate) : null;
+        let taskStart = task.startDate ? new Date(task.startDate) : (task.plannedStartDate ? new Date(task.plannedStartDate) : null);
         let taskEnd = task.dueDate ? new Date(task.dueDate) : null;
         if (!taskStart && taskEnd) taskStart = new Date(taskEnd.getTime() - 7 * 86400000);
         if (taskStart && !taskEnd) taskEnd = new Date(taskStart.getTime() + 7 * 86400000);
@@ -962,6 +969,7 @@
             <div className="flex-1 relative" style={{height:'34px'}}>
               <GridCols />
               <TodayLine />
+              <TargetLine />
               <div 
                 className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-md ${barBg} ${isOverdue ? 'ring-2 ring-red-300 ring-offset-1' : isDueToday ? 'ring-2 ring-orange-300' : ''} shadow-sm flex items-center overflow-hidden z-20 cursor-pointer group`}
                 style={{ left:`${startOffset}px`, width:`${Math.max(barWidth, 50)}px`, ...barStyle }}
@@ -1027,6 +1035,31 @@
             </div>
           </div>
           
+              {product.targetDate && (() => {
+                const td2 = new Date(product.targetDate);
+                const now2 = new Date(); now2.setHours(0,0,0,0);
+                const daysUntil = Math.ceil((td2 - now2) / 86400000);
+                const isLate = daysUntil < 0;
+                const isUrgent = daysUntil >= 0 && daysUntil <= 7;
+                return (
+                  <div className={`flex items-center gap-3 px-4 py-2 rounded-lg mb-3 ${isLate ? 'bg-red-50 border border-red-200' : isUrgent ? 'bg-orange-50 border border-orange-200' : 'bg-purple-50 border border-purple-100'}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLate ? 'bg-red-500' : isUrgent ? 'bg-orange-500' : 'bg-purple-500'}`}>
+                      <Icon name="target" size={16} color="#fff" />
+                    </div>
+                    <div>
+                      <div className={`text-sm font-bold ${isLate ? 'text-red-700' : isUrgent ? 'text-orange-700' : 'text-purple-700'}`}>
+                        计划上线: {product.targetDate}
+                      </div>
+                      <div className={`text-xs ${isLate ? 'text-red-500' : isUrgent ? 'text-orange-500' : 'text-purple-400'}`}>
+                        {isLate ? `已逾期 ${Math.abs(daysUntil)} 天` : daysUntil === 0 ? '今天上线！' : `剩余 ${daysUntil} 天`}
+                      </div>
+                    </div>
+                    {isLate && <span className="ml-auto text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full animate-pulse">⚠️ 逾期</span>}
+                    {isUrgent && !isLate && <span className="ml-auto text-xs font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">⏰ 紧急</span>}
+                  </div>
+                );
+              })()}
+          
           <div className="overflow-x-auto" ref={scrollContainerRef}>
             <div style={{ minWidth: `${totalDays * dayWidth + 224}px` }}>
               <div className="flex border-b bg-white sticky top-0 z-30">
@@ -1035,15 +1068,17 @@
                   <div className="flex">
                     {dateMarkers.map((date, idx) => {
                       const isTodayCol = date.getTime() === today.getTime();
+                      const isTargetDate = product.targetDate && date.getTime() === new Date(product.targetDate).setHours(0,0,0,0);
                       return (
-                        <div key={idx} className={`text-center border-r ${isWeekend(date) ? 'bg-gray-100' : isTodayCol ? 'bg-red-50' : 'bg-white'}`} style={{width:`${dayWidth}px`,minWidth:`${dayWidth}px`}}>
-                          <div className={`text-xs py-0.5 ${isTodayCol ? 'text-red-500 font-bold' : 'text-gray-400'}`}>{formatDate(date)}</div>
-                          <div className={`text-xs pb-0.5 ${isWeekend(date) ? 'text-red-400 font-medium' : isTodayCol ? 'text-red-500 font-bold' : 'text-gray-300'}`}>{getWeekday(date)}</div>
+                        <div key={idx} className={`text-center border-r ${isTargetDate ? 'bg-purple-100' : isWeekend(date) ? 'bg-gray-100' : isTodayCol ? 'bg-red-50' : 'bg-white'}`} style={{width:`${dayWidth}px`,minWidth:`${dayWidth}px`}}>
+                          <div className={`text-xs py-0.5 ${isTargetDate ? 'text-purple-600 font-bold' : isTodayCol ? 'text-red-500 font-bold' : 'text-gray-400'}`}>{formatDate(date)}{isTargetDate ? ' 🎯' : ''}</div>
+                          <div className={`text-xs pb-0.5 ${isTargetDate ? 'text-purple-500 font-bold' : isWeekend(date) ? 'text-red-400 font-medium' : isTodayCol ? 'text-red-500 font-bold' : 'text-gray-300'}`}>{getWeekday(date)}</div>
                         </div>
                       );
                     })}
                   </div>
                   <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10" style={{left:`${todayOffset}px`}} />
+                  <TargetLine />
                 </div>
               </div>
               
@@ -1067,6 +1102,7 @@
                       <div className="flex-1 relative" style={{height:'26px'}}>
                         <GridCols />
                         <TodayLine />
+              <TargetLine />
                       </div>
                     </div>
                     {!isCollapsed && stageTasks.map((task, idx) => renderTaskRow(task, idx))}
@@ -1077,24 +1113,6 @@
               {visibleStageOrder.length === 0 && statusFilter !== 'all' && (
                 <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
                   当前筛选条件下无任务
-                </div>
-              )}
-              
-              {product.targetDate && (
-                <div className="flex border-b bg-purple-50/50">
-                  <div className="w-56 flex-shrink-0 px-3 py-1 border-r flex items-center gap-2">
-                    <Icon name="target" size={13} color="var(--c-accent)" />
-                    <span className="text-sm font-medium text-purple-700">计划上线</span>
-                    <span className="text-xs text-purple-400 ml-auto">{product.targetDate}</span>
-                  </div>
-                  <div className="flex-1 relative" style={{height:'34px'}}>
-                    <GridCols />
-                    {(() => {
-                      const td2 = new Date(product.targetDate);
-                      const offset = Math.max(0, (td2 - minDate) / 86400000) * dayWidth;
-                      return <div className="absolute top-1/2 -translate-y-1/2 z-20" style={{left:`${offset}px`}}><div className="w-5 h-5 bg-purple-500 rotate-45 transform -translate-x-1/2 rounded-sm"></div></div>;
-                    })()}
-                  </div>
                 </div>
               )}
             </div>
