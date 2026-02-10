@@ -2819,13 +2819,18 @@
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
-        name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: ''
+        name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '',
+        // 模板化命名字段
+        productCode: '', actionGoal: ''
       });
       const [krForm, setKRForm] = useState({
-        name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
+        name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '',
+        // 模板化命名字段
+        productCode: '', metric: '', operator: '≥'
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', templateType: '', targetDate: '', owner: '', priority: ''
+        name: '', templateType: '', targetDate: '', owner: '', priority: '',
+        productCode: ''
       });
 
       // 创建新项目：选择父模板后自动创建父+子项目
@@ -2884,7 +2889,7 @@
           
           let created = 0;
           for (const [tplId, tpl] of childTpls) {
-            const childName = `${projectForm.name.replace(/新品上线|项目/g, '')}${tpl.name}`;
+            const childName = `${projectForm.productCode || projectForm.name.replace(/新品上线|项目/g, '')}-${tpl.name}`;
             const dept = deptMap[tpl.name] || '';
             const childFields = {
               '项目名称': childName,
@@ -2910,7 +2915,7 @@
 
           showToast?.(`✅ 项目创建完成: 1个父项目 + ${created}个子项目`, 'success');
           setShowAddProject(null);
-          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '' });
+          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '', productCode: '' });
           if (onRefresh) onRefresh();
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
@@ -3076,7 +3081,7 @@
           if (result.success) {
             showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '', productCode: '', actionGoal: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -3157,7 +3162,7 @@
           if (result.success) {
             showToast?.('关键结果创建成功', 'success');
             setShowAddKR(null);
-            setKRForm({ name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '' });
+            setKRForm({ name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '', productCode: '', metric: '', operator: '≥' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -3236,7 +3241,8 @@
           target: kr.target || 100,
           current: kr.current || 0,
           weight: kr.weight || 1,
-          status: kr.status || '未开始'
+          status: kr.status || '未开始',
+          productCode: '', metric: '', operator: '≥'
         });
       };
 
@@ -3296,22 +3302,55 @@
               </div>
               <form onSubmit={handleCreateObjective} className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">目标名称 *</label>
-                  <input
-                    type="text"
-                    value={objectiveForm.name}
-                    onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
-                    placeholder="例如：提升产品市场竞争力"
-                    required
-                  />
+                  <label className="block text-sm text-gray-600 mb-1">目标命名 *</label>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={objectiveForm.productCode}
+                      onChange={e => {
+                        const pc = e.target.value.toUpperCase();
+                        const auto = `${objectiveForm.cycle?.replace('-', '')} 完成${pc ? ' ' + pc : ''}${objectiveForm.actionGoal ? ' ' + objectiveForm.actionGoal : ''}`;
+                        setObjectiveForm({ ...objectiveForm, productCode: pc, name: auto.trim() });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none"
+                      placeholder="产品代号 如 HG04"
+                    />
+                    <input
+                      type="text"
+                      value={objectiveForm.actionGoal}
+                      onChange={e => {
+                        const ag = e.target.value;
+                        const auto = `${objectiveForm.cycle?.replace('-', '')} 完成${objectiveForm.productCode ? ' ' + objectiveForm.productCode : ''}${ag ? ' ' + ag : ''}`;
+                        setObjectiveForm({ ...objectiveForm, actionGoal: ag, name: auto.trim() });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none"
+                      placeholder="动作目标 如 上线开售"
+                      required
+                    />
+                  </div>
+                  {/* 预览 + 可编辑 */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={objectiveForm.name}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none bg-purple-50 font-medium"
+                      placeholder="自动生成的目标名称（可手动修改）"
+                      required
+                    />
+                    <span className="absolute right-3 top-2.5 text-[10px] text-purple-400">✨ 自动拼接</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-600 mb-1">目标周期 *</label>
                     <select
                       value={objectiveForm.cycle}
-                      onChange={e => setObjectiveForm({ ...objectiveForm, cycle: e.target.value })}
+                      onChange={e => {
+                        const cycle = e.target.value;
+                        const auto = `${cycle.replace('-', '')} 完成${objectiveForm.productCode ? ' ' + objectiveForm.productCode : ''}${objectiveForm.actionGoal ? ' ' + objectiveForm.actionGoal : ''}`;
+                        setObjectiveForm({ ...objectiveForm, cycle, name: auto.trim() });
+                      }}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
                       {(() => {
@@ -3663,15 +3702,58 @@
                           <div className="bg-blue-50 rounded-lg p-4 mb-4 border border-blue-200">
                             <form onSubmit={handleCreateKR} className="space-y-3">
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">关键结果描述 *</label>
-                                <input
-                                  type="text"
-                                  value={krForm.name}
-                                  onChange={e => setKRForm({ ...krForm, name: e.target.value })}
-                                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
-                                  placeholder="例如：新品上线数量达到 10 个"
-                                  required
-                                />
+                                <label className="block text-xs text-gray-600 mb-1">关键结果命名 *</label>
+                                <div className="grid grid-cols-3 gap-2 mb-2">
+                                  <input
+                                    type="text"
+                                    value={krForm.productCode}
+                                    onChange={e => {
+                                      const pc = e.target.value.toUpperCase();
+                                      const auto = `${pc}${krForm.metric ? ' ' + krForm.metric : ''}${krForm.target ? ' ' + krForm.operator + krForm.target : ''}`;
+                                      setKRForm({ ...krForm, productCode: pc, name: auto.trim() });
+                                    }}
+                                    className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                                    placeholder="产品代号"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={krForm.metric}
+                                    onChange={e => {
+                                      const m = e.target.value;
+                                      const auto = `${krForm.productCode}${m ? ' ' + m : ''}${krForm.target ? ' ' + krForm.operator + krForm.target : ''}`;
+                                      setKRForm({ ...krForm, metric: m, name: auto.trim() });
+                                    }}
+                                    className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                                    placeholder="指标 如 评论数"
+                                    required
+                                  />
+                                  <select
+                                    value={krForm.operator}
+                                    onChange={e => {
+                                      const op = e.target.value;
+                                      const auto = `${krForm.productCode}${krForm.metric ? ' ' + krForm.metric : ''}${krForm.target ? ' ' + op + krForm.target : ''}`;
+                                      setKRForm({ ...krForm, operator: op, name: auto.trim() });
+                                    }}
+                                    className="px-3 py-2 border rounded-lg text-sm"
+                                  >
+                                    <option value="≥">≥ 大于等于</option>
+                                    <option value="=">= 等于</option>
+                                    <option value="≤">≤ 小于等于</option>
+                                    <option value="达到">达到</option>
+                                    <option value="完成">完成</option>
+                                  </select>
+                                </div>
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={krForm.name}
+                                    onChange={e => setKRForm({ ...krForm, name: e.target.value })}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none bg-blue-50 font-medium"
+                                    placeholder="自动生成（可手动修改）"
+                                    required
+                                  />
+                                  <span className="absolute right-3 top-2.5 text-[10px] text-blue-400">✨ 自动拼接</span>
+                                </div>
                               </div>
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -3679,7 +3761,11 @@
                                   <input
                                     type="number"
                                     value={krForm.target}
-                                    onChange={e => setKRForm({ ...krForm, target: Number(e.target.value) })}
+                                    onChange={e => {
+                                      const t = Number(e.target.value);
+                                      const auto = `${krForm.productCode}${krForm.metric ? ' ' + krForm.metric : ''}${t ? ' ' + krForm.operator + t : ''}`;
+                                      setKRForm({ ...krForm, target: t, name: auto.trim() });
+                                    }}
                                     className="w-full px-3 py-2 border rounded-lg text-sm"
                                     placeholder="如: 5"
                                     required
@@ -3879,28 +3965,49 @@
                                       {showAddProject === kr.id && (
                                         <div className="bg-white rounded-lg border p-3 mb-3" onClick={e => e.stopPropagation()}>
                                           <div className="space-y-2">
-                                            <input
-                                              type="text"
-                                              value={projectForm.name}
-                                              onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
-                                              className={`w-full px-3 py-2 border rounded-lg text-sm ${!projectForm.name.trim() ? 'border-orange-300' : ''}`}
-                                              placeholder="项目名称 *"
-                                              required
-                                            />
                                             <div className="grid grid-cols-2 gap-2">
+                                              <input
+                                                type="text"
+                                                value={projectForm.productCode}
+                                                onChange={e => {
+                                                  const pc = e.target.value.toUpperCase();
+                                                  const tplLabel = projectForm.templateType ? projectForm.templateType.replace('新品开发', '新品上线') : '';
+                                                  const auto = pc + (tplLabel ? tplLabel : '');
+                                                  setProjectForm({ ...projectForm, productCode: pc, name: auto });
+                                                }}
+                                                className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                                                placeholder="产品代号 * 如 HG04"
+                                                required
+                                              />
                                               <select
                                                 value={projectForm.templateType}
-                                                onChange={e => setProjectForm({ ...projectForm, templateType: e.target.value })}
+                                                onChange={e => {
+                                                  const tt = e.target.value;
+                                                  const tplLabel = tt ? tt.replace('新品开发', '新品上线') : '';
+                                                  const auto = projectForm.productCode + (tplLabel ? tplLabel : '');
+                                                  setProjectForm({ ...projectForm, templateType: tt, name: auto });
+                                                }}
                                                 className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.templateType ? 'text-gray-400' : ''}`}
                                                 required
                                               >
                                                 <option value="">模版类型 *</option>
                                                 {(() => {
-                                                  // 只显示父模板
                                                   const parentTpls = Object.values(templates).filter(t => t.ownership === '父项目' && t.type);
                                                   return parentTpls.map(t => <option key={t.type} value={t.type}>{t.name}</option>);
                                                 })()}
                                               </select>
+                                            </div>
+                                            <div className="relative">
+                                              <input
+                                                type="text"
+                                                value={projectForm.name}
+                                                onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
+                                                className={`w-full px-3 py-2 border rounded-lg text-sm bg-green-50 font-medium ${!projectForm.name.trim() ? 'border-orange-300' : ''}`}
+                                                placeholder="自动生成（可手动修改）"
+                                                required
+                                              />
+                                              <span className="absolute right-3 top-2.5 text-[10px] text-green-400">✨ 自动拼接</span>
+                                            </div>
                                               <select
                                                 value={projectForm.priority}
                                                 onChange={e => setProjectForm({ ...projectForm, priority: e.target.value })}
