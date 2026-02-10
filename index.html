@@ -494,6 +494,7 @@
             group: r.fields['组别'] || '未分组',
             position: position,
             permRole: r.fields['权限设置'] || '组员', // 权限角色
+            linkedGroups: r.fields['关联组别'] || [], // 关联运营组别（产品部用）
             status: r.fields['状态'] || '',
             avatarUrl: larkUser.avatar_url || '', // 飞书头像URL
             avatar: memberAvatars[idx % memberAvatars.length],
@@ -5333,6 +5334,9 @@
         // 3. 确定可见的成员ID集合
         let visibleMembers;
         let roleName;
+        // 关联组别：产品部可额外看到关联运营组别的项目+任务
+        const myLinkedGroups = me?.linkedGroups || [];
+        
         if (isAdmin) {
           visibleMembers = new Set(data.members.map(m => m.id));
           roleName = '管理员';
@@ -5350,25 +5354,41 @@
           roleName = isGroupHead ? '组别管理' : '组员';
         }
         
-        // 4. 过滤数据
+        // 4. 关联组别的成员（用于项目+任务扩展可见性，但不扩展人员列表）
+        let linkedMemberIds = new Set();
+        if (myLinkedGroups.length > 0 && !isAdmin) {
+          data.members.forEach(m => {
+            if (myLinkedGroups.includes(m.group)) {
+              linkedMemberIds.add(m.id);
+            }
+          });
+        }
+        
+        // 5. 过滤数据
         if (isAdmin) {
           // 管理员看全部
-          return { ...data, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me };
+          return { ...data, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me, _linkedGroups: [] };
         }
         
         const filteredMembers = data.members.filter(m => visibleMembers.has(m.id));
         const filteredGroups = [...new Set(filteredMembers.map(m => m.group))].filter(Boolean);
         
-        // 过滤任务：负责人在可见范围内
+        // 项目+任务的扩展可见范围 = 本组可见 + 关联组别
+        const extendedVisibleIds = new Set([...visibleMembers, ...linkedMemberIds]);
+        const linkedMembers = myLinkedGroups.length > 0 
+          ? data.members.filter(m => myLinkedGroups.includes(m.group)) 
+          : [];
+        
+        // 过滤任务：负责人在扩展可见范围内（本组 + 关联组别）
         const filteredTasks = data.tasks.filter(t => 
-          visibleMembers.has(t.assignee) || 
-          filteredMembers.some(m => m.name === t.assigneeName)
+          extendedVisibleIds.has(t.assignee) || 
+          [...filteredMembers, ...linkedMembers].some(m => m.name === t.assigneeName)
         );
         
-        // 过滤项目：负责人在可见范围内
+        // 过滤项目：负责人在扩展可见范围内（本组 + 关联组别）
         const filteredProducts = data.products.filter(p =>
-          visibleMembers.has(p.ownerId) ||
-          filteredMembers.some(m => m.name === p.ownerName || m.id === p.ownerId)
+          extendedVisibleIds.has(p.ownerId) ||
+          [...filteredMembers, ...linkedMembers].some(m => m.name === p.ownerName || m.id === p.ownerId)
         );
         
         // 过滤OKR：公司级都能看，其他按权限
@@ -5401,7 +5421,8 @@
           _scope: isDeptHead ? myDept : myGroup,
           _isAdmin: false,
           _isDeptHead: isDeptHead,
-          _me: me
+          _me: me,
+          _linkedGroups: myLinkedGroups
         };
       })() : null;
 
@@ -5554,8 +5575,13 @@
                     : permissionData._role === '组别管理' 
                       ? ' (组别管理 - 可查看本组所有成员)' 
                       : ' (组员 - 仅查看本组数据)'}
+                  {permissionData._linkedGroups?.length > 0 && (
+                    <span className="ml-1">
+                      · 关联: <strong>{permissionData._linkedGroups.join('、')}</strong> 的项目与任务
+                    </span>
+                  )}
                 </span>
-                <span className="text-xs ml-auto opacity-60">
+                <span className="text-xs ml-auto opacity-60 whitespace-nowrap">
                   可见 {permissionData.members.length} 人 · {permissionData.products.length} 项目 · {permissionData.objectives.length} 目标
                 </span>
               </div>
