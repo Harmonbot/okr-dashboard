@@ -4008,6 +4008,7 @@
                                               />
                                               <span className="absolute right-3 top-2.5 text-[10px] text-green-400">✨ 自动拼接</span>
                                             </div>
+                                            <div className="grid grid-cols-3 gap-2">
                                               <select
                                                 value={projectForm.priority}
                                                 onChange={e => setProjectForm({ ...projectForm, priority: e.target.value })}
@@ -4020,8 +4021,6 @@
                                                 <option value="P2">🔵 P2 中</option>
                                                 <option value="P3">⚪ P3 低</option>
                                               </select>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
                                               <select
                                                 value={projectForm.owner}
                                                 onChange={e => setProjectForm({ ...projectForm, owner: e.target.value })}
