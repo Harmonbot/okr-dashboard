@@ -59,6 +59,8 @@
     .badge-yellow { background: #fff8e1; color: #ff9f0a; }
     .pulse { animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    @keyframes pulseSubtle { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); } 50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.1); } }
+    .animate-pulse-subtle { animation: pulseSubtle 2s ease-in-out infinite; }
     .loading-spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .toast-enter { animation: toastIn 0.3s ease-out; }
@@ -3753,7 +3755,7 @@
 
         return (
           <div
-            className="card cursor-pointer border-l-3 p-4"
+            className={`card cursor-pointer border-l-3 p-4 ${isOverdue ? 'ring-2 ring-red-300 animate-pulse-subtle' : ''}`}
             style={{ borderLeftWidth: '3px', borderLeftColor: status === '已完成' ? 'var(--c-success)' : isOverdue ? 'var(--c-danger)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
             onClick={() => setSelectedProduct(product)}
           >
@@ -4903,13 +4905,13 @@
       )
     };
 
-    const StatCard = ({ title, value, subtitle, color, iconKey, accent }) => {
+    const StatCard = ({ title, value, subtitle, color, iconKey, accent, onClick }) => {
       const iconColors = { purple: '#6c5ce7', blue: '#007aff', indigo: '#5856d6', green: '#34c759', red: '#ff3b30' };
       const iconBg = { purple: '#f0eeff', blue: '#e8f0fe', indigo: '#eeeeff', green: '#e5f8ed', red: '#ffeae8' };
       const ac = accent || 'purple';
       const iconFn = StatIcons[iconKey] || StatIcons.target;
       return (
-        <div className={`stat-card ${ac}`}>
+        <div className={`stat-card ${ac} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`} onClick={onClick}>
           <div className="flex items-center justify-between">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider" style={{color:'var(--c-text-muted)'}}>{title}</div>
@@ -4979,6 +4981,7 @@
       const [lastUpdate, setLastUpdate] = useState(null);
       const [currentUser, setCurrentUser] = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
+      const [showOverduePopup, setShowOverduePopup] = useState(false);
 
       // 处理登录状态
       useEffect(() => {
@@ -5138,8 +5141,67 @@
                 <StatCard title="KR 完成" value={`${stats.completedKRs}/${stats.totalKRs}`} subtitle={stats.totalKRs > 0 ? `${Math.round(stats.completedKRs/stats.totalKRs*100)}% 完成率` : '暂无'} color="text-blue-600" iconKey="key" accent="blue" />
                 <StatCard title="项目进度" value={`${stats.avgProgress}%`} subtitle={`${stats.totalProducts} 个项目`} color="text-indigo-600" iconKey="chart" accent="indigo" />
                 <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} subtitle={stats.totalTasks > 0 ? `${Math.round(stats.completedTasks/stats.totalTasks*100)}% 完成率` : '暂无任务'} color="text-green-600" iconKey="check" accent="green" />
-                <StatCard title="逾期预警" value={stats.overdueProjects} subtitle={stats.overdueProjects > 0 ? '需要关注' : '一切正常'} color={stats.overdueProjects > 0 ? 'text-red-600' : 'text-green-600'} iconKey={stats.overdueProjects > 0 ? 'alert' : 'shield'} accent={stats.overdueProjects > 0 ? 'red' : 'green'} />
+                <StatCard title="逾期预警" value={stats.overdueProjects} subtitle={stats.overdueProjects > 0 ? '需要关注' : '一切正常'} color={stats.overdueProjects > 0 ? 'text-red-600' : 'text-green-600'} iconKey={stats.overdueProjects > 0 ? 'alert' : 'shield'} accent={stats.overdueProjects > 0 ? 'red' : 'green'}
+                  onClick={stats.overdueProjects > 0 ? () => setShowOverduePopup(true) : undefined}
+                />
               </div>
+
+              {/* 逾期项目弹窗 */}
+              {showOverduePopup && (() => {
+                const now = new Date();
+                const overdueList = data.products.filter(p => {
+                  if (p.status === '已完成') return false;
+                  if (!p.targetDate) return false;
+                  return new Date(p.targetDate) < now;
+                }).map(p => {
+                  const overdueDays = Math.ceil((now - new Date(p.targetDate)) / 86400000);
+                  const pTasks = data.tasks.filter(t => t.productId === p.id);
+                  const completed = pTasks.filter(t => t.status === '已完成').length;
+                  const owner = data.members.find(m => m.id === p.ownerId || m.name === p.ownerName);
+                  return { ...p, overdueDays, taskCount: pTasks.length, completedTasks: completed, owner };
+                }).sort((a, b) => b.overdueDays - a.overdueDays);
+                
+                return (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowOverduePopup(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+                      <div className="bg-gradient-to-r from-red-500 to-orange-500 px-6 py-4 text-white flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-lg">逾期预警</div>
+                          <div className="text-white/80 text-sm">{overdueList.length} 个项目已逾期</div>
+                        </div>
+                        <button onClick={() => setShowOverduePopup(false)} className="text-white/80 hover:text-white text-xl">✕</button>
+                      </div>
+                      <div className="p-4 max-h-96 overflow-y-auto space-y-3">
+                        {overdueList.map(p => (
+                          <div key={p.id} className="border border-red-200 rounded-xl p-3 bg-red-50/50 hover:bg-red-50 cursor-pointer transition-colors"
+                            onClick={() => { setShowOverduePopup(false); setActiveTab('products'); setTimeout(() => setSelectedProduct?.(p), 200); }}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="font-semibold text-gray-800 text-sm">{p.name}</span>
+                              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                                逾期 {p.overdueDays} 天
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span>📅 计划: {p.targetDate}</span>
+                              <span>📋 {p.completedTasks}/{p.taskCount} 任务</span>
+                              {p.owner && (
+                                <span className="flex items-center gap-1">
+                                  {p.owner.avatarUrl ? <img src={p.owner.avatarUrl} className="w-4 h-4 rounded-full" alt="" /> : null}
+                                  {p.owner.name || p.ownerName}
+                                </span>
+                              )}
+                            </div>
+                            {/* 进度条 */}
+                            <div className="mt-2 h-1.5 bg-red-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-red-400 rounded-full" style={{ width: `${p.taskCount > 0 ? Math.round(p.completedTasks / p.taskCount * 100) : 0}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{background:'var(--c-border)'}}>
                 {[
