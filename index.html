@@ -387,6 +387,7 @@
             id: r.record_id,
             name: r.fields['项目名称'] || '',
             category: r.fields['项目类型'] || '',
+            templateType: r.fields['模版类型'] || '',
             image: projectEmojis[idx % projectEmojis.length],
             currentStage: r.fields['当前阶段'] || '',
             progress: progress,
@@ -663,11 +664,17 @@
       return data;
     };
 
-    // 根据项目类型获取对应模板的流程节点
+    // 判断是否是父项目（纯容器，不挂流程）
+    const isParentProject = (product) => product?.category === '父项目' || (product?.childIds?.length > 0);
+
+    // 根据项目模版类型获取对应模板的流程节点
     const getNodesForProduct = (product, allNodes, templates) => {
       if (!product || !templates) return allNodes;
+      // 父项目不匹配任何模板
+      if (isParentProject(product)) return [];
+      const matchType = product.templateType;
       const matchingTemplateId = Object.keys(templates).find(tplId => 
-        templates[tplId].type === product.category
+        templates[tplId].type === matchType
       );
       if (!matchingTemplateId) return [];
       return allNodes.filter(n => n.templateId === matchingTemplateId);
@@ -1904,9 +1911,10 @@
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
     const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct }) => {
-      // 根据项目类型匹配模板，筛选对应节点
-      const matchingTemplateId = Object.keys(templates).find(tplId => 
-        templates[tplId].type === product.category
+      // 根据模版类型匹配模板，筛选对应节点（父项目不匹配模板）
+      const matchType = product.templateType;
+      const matchingTemplateId = isParentProject(product) ? null : Object.keys(templates).find(tplId => 
+        templates[tplId].type === matchType
       );
       
       // 筛选属于该模板的节点
@@ -2184,7 +2192,7 @@
                   <div>
                     <h2 className="text-2xl font-bold">{product.name}</h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-white/80 text-sm">{product.category}</span>
+                      <span className="text-white/80 text-sm">{product.templateType || product.category}</span>
                       {product.childIds?.length > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white">📂 {product.childIds.length} 子项目</span>
                       )}
@@ -2486,7 +2494,7 @@
                 {nodes.length === 0 ? (
                   <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400">
                     <div className="mb-2"><Icon name="clipboard" size={28} color="var(--c-text-muted)" /></div>
-                    <div className="text-sm">该项目类型「{product.category}」暂无对应流程模板</div>
+                    <div className="text-sm">该项目模版类型「{product.templateType || product.category}」暂无对应流程模板</div>
                     <div className="text-xs mt-1">请在飞书多维表格中为此类型创建流程模板和节点</div>
                   </div>
                 ) : (
@@ -2680,7 +2688,7 @@
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', category: '', targetDate: '', owner: '', priority: ''
+        name: '', category: '父项目', templateType: '', targetDate: '', owner: '', priority: ''
       });
 
       // 创建新项目并关联到 KR
@@ -2688,7 +2696,7 @@
         // 所有字段必填校验
         const missingFields = [];
         if (!projectForm.name.trim()) missingFields.push('项目名称');
-        if (!projectForm.category) missingFields.push('项目类型');
+        if (!projectForm.templateType) missingFields.push('模版类型');
         if (!projectForm.owner) missingFields.push('负责人');
         if (!projectForm.priority) missingFields.push('重要程度');
         if (!projectForm.targetDate) missingFields.push('计划上线日期');
@@ -2701,6 +2709,7 @@
           const fields = {
             '项目名称': projectForm.name,
             '项目类型': projectForm.category,
+            '模版类型': projectForm.templateType,
             '项目状态': '未开始',
             '关联KR': [krId],
             '重要程度': projectForm.priority,
@@ -2721,7 +2730,7 @@
           if (result.success) {
             showToast?.('项目创建成功', 'success');
             setShowAddProject(null);
-            setProjectForm({ name: '', category: '', targetDate: '', owner: '', priority: '' });
+            setProjectForm({ name: '', category: '父项目', templateType: '', targetDate: '', owner: '', priority: '' });
             if (onRefresh) onRefresh();
           } else {
             throw new Error(result.error || '创建失败');
@@ -3703,17 +3712,15 @@
                                             />
                                             <div className="grid grid-cols-2 gap-2">
                                               <select
-                                                value={projectForm.category}
-                                                onChange={e => setProjectForm({ ...projectForm, category: e.target.value })}
-                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.category ? 'text-gray-400' : ''}`}
+                                                value={projectForm.templateType}
+                                                onChange={e => setProjectForm({ ...projectForm, templateType: e.target.value })}
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.templateType ? 'text-gray-400' : ''}`}
                                                 required
                                               >
-                                                <option value="">类型 *</option>
+                                                <option value="">模版类型 *</option>
                                                 {(() => {
-                                                  const types = [...new Set(products.map(p => p.category).filter(Boolean))];
-                                                  const defaults = ['新品开发', '营销推广', '供应链优化', '系统建设', '老品更新', '储评计划'];
-                                                  const all = [...new Set([...defaults, ...types])];
-                                                  return all.map(t => <option key={t} value={t}>{t}</option>);
+                                                  const tplTypes = Object.values(templates).map(t => t.type).filter(Boolean);
+                                                  return tplTypes.map(t => <option key={t} value={t}>{t}</option>);
                                                 })()}
                                               </select>
                                               <select
@@ -3791,7 +3798,7 @@
                                                     {project.childIds?.length > 0 ? (
                                                       <span className="text-violet-600">📂 {project.childIds.length} 子项目</span>
                                                     ) : (
-                                                      <span>{pAutoStage || project.category}</span>
+                                                      <span>{pAutoStage || project.templateType || project.category}</span>
                                                     )}
                                                     {project.ownerName && (() => {
                                                       const pOwner = members.find(m => m.id === project.ownerId || m.name === project.ownerName);
@@ -3980,7 +3987,7 @@
       const filteredProducts = (() => {
         let list = products;
         if (searchProject) {
-          list = list.filter(p => p.name?.includes(searchProject) || p.category?.includes(searchProject) || p.ownerName?.includes(searchProject));
+          list = list.filter(p => p.name?.includes(searchProject) || p.templateType?.includes(searchProject) || p.category?.includes(searchProject) || p.ownerName?.includes(searchProject));
         }
         if (filterPriority !== 'all') {
           list = list.filter(p => p.priority === filterPriority);
@@ -4078,7 +4085,7 @@
                   {product.parentId ? '↳ ' : ''}{product.name}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                  <span className="badge badge-gray">{product.category || '未分类'}</span>
+                  <span className="badge badge-gray">{product.templateType || product.category || '未分类'}</span>
                   <span className={`badge ${status === '已完成' ? 'badge-green' : status === '进行中' ? 'badge-blue' : 'badge-gray'}`}>{status}</span>
                   {product.priority && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{background: priColor.bg, color: priColor.text}}>
