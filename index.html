@@ -361,6 +361,28 @@
             }
           }
           
+          // 处理父项目关联
+          let parentId = null;
+          const parentField = r.fields['父项目'];
+          if (parentField) {
+            if (parentField.link_record_ids?.[0]) {
+              parentId = parentField.link_record_ids[0];
+            } else if (Array.isArray(parentField) && parentField[0]?.record_ids?.[0]) {
+              parentId = parentField[0].record_ids[0];
+            }
+          }
+          
+          // 处理子项目（反向关联）
+          let childIds = [];
+          const childField = r.fields['项目 Projects'];
+          if (childField) {
+            if (childField.link_record_ids) {
+              childIds = childField.link_record_ids;
+            } else if (Array.isArray(childField)) {
+              childIds = childField.flatMap(c => c.record_ids || []);
+            }
+          }
+          
           return {
             id: r.record_id,
             name: r.fields['项目名称'] || '',
@@ -374,7 +396,10 @@
             priority: r.fields['重要程度'] || '',
             krId: krId,
             ownerId: ownerId,
-            ownerName: ownerName
+            ownerName: ownerName,
+            parentId: parentId,
+            childIds: childIds,
+            responsibleDept: r.fields['负责部门'] || ''
           };
         });
       }
@@ -1861,7 +1886,7 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh }) => {
+    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct }) => {
       // 根据项目类型匹配模板，筛选对应节点
       const matchingTemplateId = Object.keys(templates).find(tplId => 
         templates[tplId].type === product.category
@@ -2135,6 +2160,15 @@
                     <h2 className="text-2xl font-bold">{product.name}</h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-white/80 text-sm">{product.category}</span>
+                      {product.childIds?.length > 0 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white">📂 {product.childIds.length} 子项目</span>
+                      )}
+                      {product.parentId && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white/80">↳ 子项目</span>
+                      )}
+                      {product.responsibleDept && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white/80">{product.responsibleDept}</span>
+                      )}
                       {product.priority && (
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                           product.priority === 'P0' ? 'bg-red-500 text-white' :
@@ -2279,6 +2313,71 @@
                       {urgentTasks.length > 0 && (
                         <div className="text-xs text-yellow-500 mt-1">3天内截止</div>
                       )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 父项目链接 */}
+              {product.parentId && (() => {
+                const parentProduct = products.find(p => p.id === product.parentId);
+                return parentProduct ? (
+                  <div className="mb-4 px-4 py-2.5 bg-violet-50 rounded-xl border border-violet-200 flex items-center gap-2 cursor-pointer hover:bg-violet-100 transition-colors"
+                    onClick={() => onSelectProduct?.(parentProduct)}>
+                    <span className="text-violet-500">📂</span>
+                    <span className="text-sm text-violet-700">父项目:</span>
+                    <span className="text-sm font-semibold text-violet-800">{parentProduct.name}</span>
+                    <span className="text-xs text-violet-400 ml-auto">点击查看 →</span>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* 子项目列表 */}
+              {product.childIds?.length > 0 && (() => {
+                const childProducts = products.filter(p => product.childIds.includes(p.id));
+                if (childProducts.length === 0) return null;
+                return (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3">📂 子项目</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {childProducts.map(child => {
+                        const childTasks = tasks.filter(t => t.productId === child.id);
+                        const childCompleted = childTasks.filter(t => t.status === '已完成').length;
+                        const childProgress = calcProjectProgress(child, allNodes, templates, tasks);
+                        const childStatus = child.status === '已完成' ? '已完成' : childProgress > 0 ? '进行中' : '未开始';
+                        const deptColors = {
+                          '产品中心': 'from-blue-500 to-cyan-500',
+                          '运营中心': 'from-green-500 to-emerald-500',
+                          '设计部': 'from-pink-500 to-rose-500',
+                          '中枢部': 'from-purple-500 to-violet-500',
+                          '营销推广部': 'from-orange-500 to-amber-500',
+                          '财务部': 'from-gray-500 to-slate-500'
+                        };
+                        return (
+                          <div key={child.id}
+                            className="bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md cursor-pointer transition-all hover:border-violet-300"
+                            onClick={() => onSelectProduct?.(child)}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${deptColors[child.responsibleDept] || 'from-gray-400 to-gray-500'}`} />
+                              <span className="text-sm font-semibold text-gray-800 truncate flex-1">{child.name}</span>
+                              <span className={`text-xs font-bold ${childProgress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{childProgress}%</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mb-2">
+                              {child.responsibleDept && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">{child.responsibleDept}</span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                childStatus === '已完成' ? 'bg-green-50 text-green-600' :
+                                childStatus === '进行中' ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-500'
+                              }`}>{childStatus}</span>
+                              <span className="text-[10px] text-gray-400">{childCompleted}/{childTasks.length} 任务</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${childProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{width: `${childProgress}%`}} />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -3757,9 +3856,28 @@
         });
       };
 
-      // 自动计算项目进度
-      const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks);
-      const getAutoStatus = (product) => calcProjectStatus(product, tasks, nodes, templates);
+      // 自动计算项目进度（父项目 = 子项目加权平均）
+      const getAutoProgress = (product) => {
+        if (product.childIds?.length > 0) {
+          const childProducts = products.filter(p => product.childIds.includes(p.id));
+          if (childProducts.length > 0) {
+            const total = childProducts.reduce((sum, c) => sum + calcProjectProgress(c, nodes, templates, tasks), 0);
+            return Math.round(total / childProducts.length);
+          }
+        }
+        return calcProjectProgress(product, nodes, templates, tasks);
+      };
+      const getAutoStatus = (product) => {
+        if (product.childIds?.length > 0) {
+          const childProducts = products.filter(p => product.childIds.includes(p.id));
+          if (childProducts.length > 0) {
+            const allDone = childProducts.every(c => calcProjectStatus(c, tasks, nodes, templates) === '已完成');
+            const anyProgress = childProducts.some(c => calcProjectStatus(c, tasks, nodes, templates) !== '未开始');
+            return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
+          }
+        }
+        return calcProjectStatus(product, tasks, nodes, templates);
+      };
 
       // === 复合重要性评分 - 使用全局函数 ===
       const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
@@ -3794,12 +3912,14 @@
         return list;
       })();
 
-      // 按重要性排序
-      const sortedProducts = [...filteredProducts].sort((a, b) => {
-        const impA = getProjectImportance(a);
-        const impB = getProjectImportance(b);
-        return impB.composite - impA.composite;
-      });
+      // 按重要性排序（子项目不在主列表显示，在父项目弹窗内展示）
+      const sortedProducts = [...filteredProducts]
+        .filter(p => !p.parentId) // 排除子项目
+        .sort((a, b) => {
+          const impA = getProjectImportance(a);
+          const impB = getProjectImportance(b);
+          return impB.composite - impA.composite;
+        });
 
       // 自动计算当前阶段
       const getProductAutoStage = (product) => {
@@ -3867,7 +3987,9 @@
             {/* 项目名称 + 标签行 */}
             <div className="flex items-center gap-2.5 mb-2.5">
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm text-gray-800 truncate">{product.name}</div>
+                <div className="font-semibold text-sm text-gray-800 truncate">
+                  {product.parentId ? '↳ ' : ''}{product.name}
+                </div>
                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="badge badge-gray">{product.category || '未分类'}</span>
                   <span className={`badge ${status === '已完成' ? 'badge-green' : status === '进行中' ? 'badge-blue' : 'badge-gray'}`}>{status}</span>
@@ -3879,6 +4001,16 @@
                   {importance.kr && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700">
                       权重{importance.kr.weight || 1}
+                    </span>
+                  )}
+                  {product.responsibleDept && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 text-indigo-600">
+                      {product.responsibleDept}
+                    </span>
+                  )}
+                  {product.childIds?.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-50 text-violet-600">
+                      📂 {product.childIds.length}子项目
                     </span>
                   )}
                 </div>
@@ -4112,6 +4244,7 @@
                     {selectedProduct && (
             <ProductDetailModal
               product={selectedProduct}
+              products={products}
               nodes={nodes}
               nodeLayers={nodeLayers}
               nodeMap={nodeMap}
@@ -4123,6 +4256,7 @@
               onSkippedNodesChange={(updater) => setSkippedNodes(selectedProduct?.id, updater)}
               onClose={() => setSelectedProduct(null)}
               onRefresh={onRefresh}
+              onSelectProduct={setSelectedProduct}
             />
           )}
         </div>
@@ -5379,17 +5513,44 @@
           ? data.members.filter(m => myLinkedGroups.includes(m.group)) 
           : [];
         
-        // 过滤任务：负责人在扩展可见范围内（本组 + 关联组别）
-        const filteredTasks = data.tasks.filter(t => 
-          extendedVisibleIds.has(t.assignee) || 
-          [...filteredMembers, ...linkedMembers].some(m => m.name === t.assigneeName)
-        );
+        // 过滤任务：负责人在扩展可见范围内 + 属于可见项目的任务 + 自己的任务永远可见
+        const filteredTasks = data.tasks.filter(t => {
+          // 自己的任务永远可见
+          if (me && (t.assignee === me.id || t.assigneeName === me.name || t.assigneeName === me.larkName)) return true;
+          // 属于可见项目的任务
+          if (t.productId && directVisibleProducts.has(t.productId)) return true;
+          // 负责人在可见范围内
+          return extendedVisibleIds.has(t.assignee) || 
+            [...filteredMembers, ...linkedMembers].some(m => m.name === t.assigneeName);
+        });
         
         // 过滤项目：负责人在扩展可见范围内（本组 + 关联组别）
-        const filteredProducts = data.products.filter(p =>
-          extendedVisibleIds.has(p.ownerId) ||
-          [...filteredMembers, ...linkedMembers].some(m => m.name === p.ownerName || m.id === p.ownerId)
-        );
+        // 同时支持父子项目：子项目按负责部门过滤，父项目在有可见子项目时显示
+        const directVisibleProducts = new Set();
+        data.products.forEach(p => {
+          const ownerVisible = extendedVisibleIds.has(p.ownerId) ||
+            [...filteredMembers, ...linkedMembers].some(m => m.name === p.ownerName || m.id === p.ownerId);
+          // 子项目按负责部门匹配
+          const deptVisible = p.responsibleDept && p.responsibleDept === myDept;
+          if (ownerVisible || deptVisible) directVisibleProducts.add(p.id);
+        });
+        
+        // 如果能看到子项目，也要能看到其父项目
+        data.products.forEach(p => {
+          if (directVisibleProducts.has(p.id) && p.parentId) {
+            directVisibleProducts.add(p.parentId);
+          }
+        });
+        // 如果能看到父项目（有子项目的），也要把属于自己部门的子项目加进来
+        data.products.forEach(p => {
+          if (p.parentId && directVisibleProducts.has(p.parentId)) {
+            if (p.responsibleDept === myDept || !p.responsibleDept) {
+              directVisibleProducts.add(p.id);
+            }
+          }
+        });
+        
+        const filteredProducts = data.products.filter(p => directVisibleProducts.has(p.id));
         
         // 过滤OKR：公司级都能看，其他按权限
         const filteredObjectives = data.objectives.filter(o => {
