@@ -674,7 +674,15 @@
     };
 
     // 根据任务计算项目进度（模板感知）
-    const calcProjectProgress = (product, allNodes, templates, tasks) => {
+    const calcProjectProgress = (product, allNodes, templates, tasks, allProducts) => {
+      // 父项目：聚合子项目进度
+      if (product.childIds?.length > 0 && allProducts) {
+        const children = allProducts.filter(p => product.childIds.includes(p.id));
+        if (children.length > 0) {
+          const total = children.reduce((sum, c) => sum + calcProjectProgress(c, allNodes, templates, tasks), 0);
+          return Math.round(total / children.length);
+        }
+      }
       const pTasks = tasks.filter(t => t.productId === product.id);
       const pNodes = getNodesForProduct(product, allNodes, templates);
       if (pNodes.length === 0) {
@@ -691,7 +699,16 @@
     };
 
     // 自动计算项目状态
-    const calcProjectStatus = (product, tasks, allNodes, templates) => {
+    const calcProjectStatus = (product, tasks, allNodes, templates, allProducts) => {
+      // 父项目：聚合子项目状态
+      if (product.childIds?.length > 0 && allProducts) {
+        const children = allProducts.filter(p => product.childIds.includes(p.id));
+        if (children.length > 0) {
+          const allDone = children.every(c => calcProjectStatus(c, tasks, allNodes, templates) === '已完成');
+          const anyProgress = children.some(c => calcProjectStatus(c, tasks, allNodes, templates) !== '未开始');
+          return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
+        }
+      }
       const pTasks = tasks.filter(t => t.productId === product.id);
       if (pTasks.length === 0) return '未开始';
       const completed = pTasks.filter(t => t.status === '已完成').length;
@@ -1966,6 +1983,14 @@
 
       // 自动计算项目进度
       const getAutoProgress = () => {
+        // 父项目：聚合子项目
+        if (product.childIds?.length > 0) {
+          const childProducts = products.filter(p => product.childIds.includes(p.id));
+          if (childProducts.length > 0) {
+            const total = childProducts.reduce((sum, c) => sum + calcProjectProgress(c, allNodes, templates, tasks), 0);
+            return Math.round(total / childProducts.length);
+          }
+        }
         if (nodes.length === 0) return product.progress;
         let totalNodeProgress = 0;
         for (const node of nodes) {
@@ -2206,6 +2231,130 @@
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+              
+              {/* === 父项目视图：只显示子项目概览 === */}
+              {product.childIds?.length > 0 ? (() => {
+                const childProducts = products.filter(p => product.childIds.includes(p.id));
+                const allChildTasks = tasks.filter(t => childProducts.some(c => c.id === t.productId));
+                const completedChildTasks = allChildTasks.filter(t => t.status === '已完成');
+                const inProgressChildTasks = allChildTasks.filter(t => t.status === '进行中');
+                const pendingChildTasks = allChildTasks.filter(t => t.status === '待开始' || t.status === '未开始');
+                
+                return (
+                  <>
+                    {/* 聚合统计 */}
+                    <div className="grid grid-cols-5 gap-4 mb-6">
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-blue-600">{autoProgress}%</div>
+                        <div className="text-sm text-gray-500">整体进度</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-violet-600">{childProducts.length}</div>
+                        <div className="text-sm text-gray-500">📂 子项目</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-green-600">{completedChildTasks.length}</div>
+                        <div className="text-sm text-gray-500">✅ 已完成</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-orange-600">{inProgressChildTasks.length}</div>
+                        <div className="text-sm text-gray-500">🔄 进行中</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-gray-500">{pendingChildTasks.length}</div>
+                        <div className="text-sm text-gray-500">⏳ 待开始</div>
+                      </div>
+                    </div>
+                    
+                    {/* 子项目列表 */}
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">📂 子项目进度</h3>
+                    <div className="space-y-3 mb-6">
+                      {childProducts.map(child => {
+                        const cTasks = tasks.filter(t => t.productId === child.id);
+                        const cCompleted = cTasks.filter(t => t.status === '已完成').length;
+                        const cInProgress = cTasks.filter(t => t.status === '进行中').length;
+                        const cProgress = calcProjectProgress(child, allNodes, templates, tasks);
+                        const cStatus = child.status === '已完成' ? '已完成' : cProgress > 0 ? '进行中' : '未开始';
+                        const deptColors = {
+                          '产品中心': { bg: 'bg-blue-50', border: 'border-blue-200', grad: 'from-blue-500 to-cyan-500', text: 'text-blue-700' },
+                          '运营中心': { bg: 'bg-green-50', border: 'border-green-200', grad: 'from-green-500 to-emerald-500', text: 'text-green-700' },
+                          '设计部': { bg: 'bg-pink-50', border: 'border-pink-200', grad: 'from-pink-500 to-rose-500', text: 'text-pink-700' },
+                          '中枢部': { bg: 'bg-purple-50', border: 'border-purple-200', grad: 'from-purple-500 to-violet-500', text: 'text-purple-700' },
+                          '营销推广部': { bg: 'bg-orange-50', border: 'border-orange-200', grad: 'from-orange-500 to-amber-500', text: 'text-orange-700' },
+                          '财务部': { bg: 'bg-gray-50', border: 'border-gray-200', grad: 'from-gray-500 to-slate-500', text: 'text-gray-700' }
+                        };
+                        const dc = deptColors[child.responsibleDept] || deptColors['财务部'];
+                        
+                        // 自动计算当前阶段
+                        const cNodes = getNodesForProduct(child, allNodes, templates);
+                        let currentStage = '';
+                        for (const nd of cNodes) {
+                          const nt = cTasks.filter(t => t.stage === nd.name);
+                          if (nt.some(t => t.status === '进行中')) { currentStage = nd.name; break; }
+                          if (nt.length > 0 && !nt.every(t => t.status === '已完成')) { currentStage = nd.name; break; }
+                        }
+                        
+                        return (
+                          <div key={child.id}
+                            className={`${dc.bg} border ${dc.border} rounded-xl p-4 hover:shadow-md cursor-pointer transition-all`}
+                            onClick={() => onSelectProduct?.(child)}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-3 h-8 rounded-full bg-gradient-to-b ${dc.grad}`} />
+                                <div>
+                                  <div className="font-semibold text-gray-800">{child.name}</div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    {child.responsibleDept && <span className={`text-xs ${dc.text}`}>{child.responsibleDept}</span>}
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                      cStatus === '已完成' ? 'bg-green-100 text-green-700' :
+                                      cStatus === '进行中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                                    }`}>{cStatus}</span>
+                                    {currentStage && <span className="text-xs text-gray-400">📍 {currentStage}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className={`text-2xl font-bold ${cProgress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{cProgress}%</div>
+                                <div className="text-xs text-gray-400">{cCompleted}/{cTasks.length} 任务</div>
+                              </div>
+                            </div>
+                            <div className="h-2 rounded-full bg-white/80 overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${cProgress >= 100 ? 'bg-green-500' : 'bg-gradient-to-r ' + dc.grad}`} style={{width: `${cProgress}%`}} />
+                            </div>
+                            {/* 任务mini预览 */}
+                            {cTasks.length > 0 && (
+                              <div className="flex gap-3 mt-2 text-xs text-gray-400">
+                                {cCompleted > 0 && <span className="text-green-600">✅ {cCompleted}</span>}
+                                {cInProgress > 0 && <span className="text-blue-600">🔄 {cInProgress}</span>}
+                                {cTasks.length - cCompleted - cInProgress > 0 && <span>⏳ {cTasks.length - cCompleted - cInProgress}</span>}
+                                <span className="ml-auto text-gray-300">点击查看详情 →</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* 目标日期信息 */}
+                    {product.targetDate && (
+                      <div className="mb-4 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3">
+                        <span className="text-lg">🎯</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-700">计划上线: {product.targetDate}</div>
+                          <div className="text-xs text-gray-400">
+                            {(() => {
+                              const days = Math.ceil((new Date(product.targetDate) - new Date()) / 86400000);
+                              return days > 0 ? `剩余 ${days} 天` : days === 0 ? '今天' : `已逾期 ${Math.abs(days)} 天`;
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })() : (
+              <>
+              {/* === 子项目 / 普通项目视图：显示流程+甘特 === */}
               <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-bold text-blue-600">{autoProgress}%</div>
@@ -2327,60 +2476,9 @@
                     <span className="text-violet-500">📂</span>
                     <span className="text-sm text-violet-700">父项目:</span>
                     <span className="text-sm font-semibold text-violet-800">{parentProduct.name}</span>
-                    <span className="text-xs text-violet-400 ml-auto">点击查看 →</span>
+                    <span className="text-xs text-violet-400 ml-auto">← 返回父项目</span>
                   </div>
                 ) : null;
-              })()}
-
-              {/* 子项目列表 */}
-              {product.childIds?.length > 0 && (() => {
-                const childProducts = products.filter(p => product.childIds.includes(p.id));
-                if (childProducts.length === 0) return null;
-                return (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-3">📂 子项目</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {childProducts.map(child => {
-                        const childTasks = tasks.filter(t => t.productId === child.id);
-                        const childCompleted = childTasks.filter(t => t.status === '已完成').length;
-                        const childProgress = calcProjectProgress(child, allNodes, templates, tasks);
-                        const childStatus = child.status === '已完成' ? '已完成' : childProgress > 0 ? '进行中' : '未开始';
-                        const deptColors = {
-                          '产品中心': 'from-blue-500 to-cyan-500',
-                          '运营中心': 'from-green-500 to-emerald-500',
-                          '设计部': 'from-pink-500 to-rose-500',
-                          '中枢部': 'from-purple-500 to-violet-500',
-                          '营销推广部': 'from-orange-500 to-amber-500',
-                          '财务部': 'from-gray-500 to-slate-500'
-                        };
-                        return (
-                          <div key={child.id}
-                            className="bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md cursor-pointer transition-all hover:border-violet-300"
-                            onClick={() => onSelectProduct?.(child)}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${deptColors[child.responsibleDept] || 'from-gray-400 to-gray-500'}`} />
-                              <span className="text-sm font-semibold text-gray-800 truncate flex-1">{child.name}</span>
-                              <span className={`text-xs font-bold ${childProgress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>{childProgress}%</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 mb-2">
-                              {child.responsibleDept && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">{child.responsibleDept}</span>
-                              )}
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                childStatus === '已完成' ? 'bg-green-50 text-green-600' :
-                                childStatus === '进行中' ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-500'
-                              }`}>{childStatus}</span>
-                              <span className="text-[10px] text-gray-400">{childCompleted}/{childTasks.length} 任务</span>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                              <div className={`h-full rounded-full transition-all ${childProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{width: `${childProgress}%`}} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
               })()}
 
               <div className="mb-6">
@@ -2536,6 +2634,8 @@
                   </div>
                 )}
               </div>
+              </>
+              )}
             </div>
           </div>
 
@@ -2669,9 +2769,11 @@
         if (relatedProjects.length > 0) {
           // 计算每个项目的自动进度
           const projectProgresses = relatedProjects.map(p => {
-            const autoProgress = calcProjectProgress(p, nodes, templates, tasks);
-            const pAutoStatus = calcProjectStatus(p, tasks, nodes, templates);
-            const pTasks = tasks.filter(t => t.productId === p.id);
+            const autoProgress = calcProjectProgress(p, nodes, templates, tasks, products);
+            const pAutoStatus = calcProjectStatus(p, tasks, nodes, templates, products);
+            const pTasks = p.childIds?.length > 0 
+              ? tasks.filter(t => products.filter(cp => p.childIds.includes(cp.id)).some(cp => cp.id === t.productId))
+              : tasks.filter(t => t.productId === p.id);
             const hasProgress = pTasks.some(t => t.status === '进行中' || t.status === '已完成');
             return { ...p, autoProgress, hasProgress, autoStatus: pAutoStatus };
           });
@@ -3677,16 +3779,20 @@
                                       ) : (
                                         <div className="grid grid-cols-2 gap-2">
                                           {krProjects.map(project => {
-                                            const pAutoProgress = calcProjectProgress(project, nodes, templates, tasks);
-                                            const pAutoStage = calcCurrentStage(project, nodes, templates, tasks);
-                                            const pAutoStatus = calcProjectStatus(project, tasks, nodes, templates);
+                                            const pAutoProgress = calcProjectProgress(project, nodes, templates, tasks, products);
+                                            const pAutoStage = project.childIds?.length > 0 ? '' : calcCurrentStage(project, nodes, templates, tasks);
+                                            const pAutoStatus = calcProjectStatus(project, tasks, nodes, templates, products);
                                             const isCompleted = pAutoStatus === '已完成';
                                             return (
                                               <div key={project.id} className={`bg-white rounded-lg p-3 border flex items-center gap-3 ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
                                                 <div className="flex-1 min-w-0">
                                                   <div className="font-medium text-sm text-gray-800 truncate">{project.name}</div>
                                                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                                                    <span>{pAutoStage || project.category}</span>
+                                                    {project.childIds?.length > 0 ? (
+                                                      <span className="text-violet-600">📂 {project.childIds.length} 子项目</span>
+                                                    ) : (
+                                                      <span>{pAutoStage || project.category}</span>
+                                                    )}
                                                     {project.ownerName && (() => {
                                                       const pOwner = members.find(m => m.id === project.ownerId || m.name === project.ownerName);
                                                       return (
@@ -3856,28 +3962,9 @@
         });
       };
 
-      // 自动计算项目进度（父项目 = 子项目加权平均）
-      const getAutoProgress = (product) => {
-        if (product.childIds?.length > 0) {
-          const childProducts = products.filter(p => product.childIds.includes(p.id));
-          if (childProducts.length > 0) {
-            const total = childProducts.reduce((sum, c) => sum + calcProjectProgress(c, nodes, templates, tasks), 0);
-            return Math.round(total / childProducts.length);
-          }
-        }
-        return calcProjectProgress(product, nodes, templates, tasks);
-      };
-      const getAutoStatus = (product) => {
-        if (product.childIds?.length > 0) {
-          const childProducts = products.filter(p => product.childIds.includes(p.id));
-          if (childProducts.length > 0) {
-            const allDone = childProducts.every(c => calcProjectStatus(c, tasks, nodes, templates) === '已完成');
-            const anyProgress = childProducts.some(c => calcProjectStatus(c, tasks, nodes, templates) !== '未开始');
-            return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
-          }
-        }
-        return calcProjectStatus(product, tasks, nodes, templates);
-      };
+      // 自动计算项目进度（全局函数已处理父项目聚合）
+      const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks, products);
+      const getAutoStatus = (product) => calcProjectStatus(product, tasks, nodes, templates, products);
 
       // === 复合重要性评分 - 使用全局函数 ===
       const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
@@ -5596,21 +5683,23 @@
         const totalKRs = permissionData.keyResults.length;
         const completedKRs = permissionData.keyResults.filter(kr => kr.status === '已完成').length;
         
-        // 项目平均进度（模板感知）
-        const avgProgress = permissionData.products.length > 0 
-          ? Math.round(permissionData.products.reduce((sum, p) => {
-              return sum + calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks);
-            }, 0) / permissionData.products.length) 
+        // 项目平均进度（只算顶级项目，父项目自动聚合子项目）
+        const topLevelProducts = permissionData.products.filter(p => !p.parentId);
+        const avgProgress = topLevelProducts.length > 0 
+          ? Math.round(topLevelProducts.reduce((sum, p) => {
+              return sum + calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
+            }, 0) / topLevelProducts.length) 
           : 0;
         
         // 任务完成
         const completedTasks = permissionData.tasks.filter(t => t.status === '已完成').length;
         const totalTasks = permissionData.tasks.length;
         
-        // 逾期预警：已过期且未完成的项目数
+        // 逾期预警：已过期且未完成的项目数（只看顶级）
         const now = new Date();
-        const overdueProjects = permissionData.products.filter(p => {
-          if (p.status === '已完成') return false;
+        const overdueProjects = topLevelProducts.filter(p => {
+          const pStatus = calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products);
+          if (pStatus === '已完成') return false;
           if (!p.targetDate) return false;
           return new Date(p.targetDate) < now;
         }).length;
@@ -5621,8 +5710,8 @@
           avgProgress,
           completedTasks, totalTasks,
           overdueProjects,
-          totalProducts: permissionData.products.length,
-          completedProducts: permissionData.products.filter(p => p.status === '已完成').length
+          totalProducts: topLevelProducts.length,
+          completedProducts: topLevelProducts.filter(p => calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products) === '已完成').length
         };
       })() : {};
 
@@ -5765,15 +5854,25 @@
               {showOverduePopup && (() => {
                 const now = new Date();
                 const overdueList = permissionData.products.filter(p => {
-                  if (p.status === '已完成') return false;
+                  if (p.parentId) return false; // 只看顶级项目
+                  const pStatus = calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products);
+                  if (pStatus === '已完成') return false;
                   if (!p.targetDate) return false;
                   return new Date(p.targetDate) < now;
                 }).map(p => {
                   const overdueDays = Math.ceil((now - new Date(p.targetDate)) / 86400000);
-                  const pTasks = permissionData.tasks.filter(t => t.productId === p.id);
+                  // 父项目聚合子项目任务
+                  let pTasks;
+                  if (p.childIds?.length > 0) {
+                    const childIds = permissionData.products.filter(cp => p.childIds.includes(cp.id)).map(cp => cp.id);
+                    pTasks = permissionData.tasks.filter(t => childIds.includes(t.productId));
+                  } else {
+                    pTasks = permissionData.tasks.filter(t => t.productId === p.id);
+                  }
                   const completed = pTasks.filter(t => t.status === '已完成').length;
                   const owner = permissionData.members.find(m => m.id === p.ownerId || m.name === p.ownerName);
-                  return { ...p, overdueDays, taskCount: pTasks.length, completedTasks: completed, owner };
+                  const progress = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
+                  return { ...p, overdueDays, taskCount: pTasks.length, completedTasks: completed, owner, progress };
                 }).sort((a, b) => b.overdueDays - a.overdueDays);
                 
                 return (
@@ -5808,7 +5907,7 @@
                             </div>
                             {/* 进度条 */}
                             <div className="mt-2 h-1.5 bg-red-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-red-400 rounded-full" style={{ width: `${p.taskCount > 0 ? Math.round(p.completedTasks / p.taskCount * 100) : 0}%` }} />
+                              <div className="h-full bg-red-400 rounded-full" style={{ width: `${p.progress}%` }} />
                             </div>
                           </div>
                         ))}
