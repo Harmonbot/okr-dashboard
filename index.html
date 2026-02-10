@@ -5308,29 +5308,128 @@
       // 数据加载中
       if (loading && !data) return <LoadingScreen />;
 
-      const stats = data ? (() => {
+      // ===== 权限系统 =====
+      // 根据当前用户的职位判断角色，过滤可见数据
+      const permissionData = data ? (() => {
+        // 1. 找到当前登录用户在成员表中的记录
+        const me = data.members.find(m => 
+          m.id === currentUser.open_id || 
+          m.name === currentUser.name || 
+          m.larkName === currentUser.name
+        );
+        
+        const myPosition = (me?.position || '').toLowerCase();
+        const myGroup = me?.group || '';
+        const myDept = me?.department || '';
+        
+        // 2. 判断角色层级
+        const adminKeywords = ['总经理', '副总', 'ceo', 'coo', 'cfo', 'cto', '总裁', '董事', '合伙人', '创始人'];
+        const deptHeadKeywords = ['主管', '经理', '总监', '负责人', '组长', '部长', 'manager', 'director', 'lead', 'head'];
+        
+        const isAdmin = adminKeywords.some(kw => myPosition.includes(kw));
+        const isDeptHead = !isAdmin && deptHeadKeywords.some(kw => myPosition.includes(kw));
+        const isRegular = !isAdmin && !isDeptHead;
+        
+        // 3. 确定可见的成员ID集合
+        let visibleMembers;
+        let roleName;
+        if (isAdmin) {
+          visibleMembers = new Set(data.members.map(m => m.id));
+          roleName = '管理员';
+        } else if (isDeptHead) {
+          // 部门负责人：能看本部门所有组别
+          visibleMembers = new Set(
+            data.members.filter(m => m.department === myDept).map(m => m.id)
+          );
+          roleName = '部门管理';
+        } else {
+          // 普通成员：只能看本组别
+          visibleMembers = new Set(
+            data.members.filter(m => m.group === myGroup).map(m => m.id)
+          );
+          roleName = '成员';
+        }
+        
+        // 4. 过滤数据
+        if (isAdmin) {
+          // 管理员看全部
+          return { ...data, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me };
+        }
+        
+        const filteredMembers = data.members.filter(m => visibleMembers.has(m.id));
+        const filteredGroups = [...new Set(filteredMembers.map(m => m.group))].filter(Boolean);
+        
+        // 过滤任务：负责人在可见范围内
+        const filteredTasks = data.tasks.filter(t => 
+          visibleMembers.has(t.assignee) || 
+          filteredMembers.some(m => m.name === t.assigneeName)
+        );
+        
+        // 过滤项目：负责人在可见范围内
+        const filteredProducts = data.products.filter(p =>
+          visibleMembers.has(p.ownerId) ||
+          filteredMembers.some(m => m.name === p.ownerName || m.id === p.ownerId)
+        );
+        
+        // 过滤OKR：部门级只看本部门/组别的，公司级都能看
+        const filteredObjectives = data.objectives.filter(o => {
+          if (o.level === '公司级') return true;
+          if (o.level === '个人级') {
+            return filteredMembers.some(m => m.name === o.ownerName || m.id === o.ownerId);
+          }
+          // 部门级：判断目标所属组别是否在可见范围
+          if (isDeptHead) {
+            // 部门负责人：看本部门下所有组别的目标
+            const deptGroups = data.members.filter(m => m.department === myDept).map(m => m.group);
+            return deptGroups.includes(o.department);
+          } else {
+            // 普通成员：只看本组别
+            return o.department === myGroup;
+          }
+        });
+        
+        const filteredObjIds = new Set(filteredObjectives.map(o => o.id));
+        const filteredKRs = data.keyResults.filter(kr => filteredObjIds.has(kr.objectiveId));
+        
+        return {
+          ...data,
+          members: filteredMembers,
+          groups: filteredGroups,
+          tasks: filteredTasks,
+          products: filteredProducts,
+          objectives: filteredObjectives,
+          keyResults: filteredKRs,
+          _role: roleName,
+          _scope: isDeptHead ? myDept : myGroup,
+          _isAdmin: false,
+          _isDeptHead: isDeptHead,
+          _me: me
+        };
+      })() : null;
+
+      const stats = permissionData ? (() => {
         // 目标达成
-        const totalObjectives = data.objectives.length;
-        const completedObjectives = data.objectives.filter(o => o.status === '已完成').length;
+        const totalObjectives = permissionData.objectives.length;
+        const completedObjectives = permissionData.objectives.filter(o => o.status === '已完成').length;
         
         // KR 完成
-        const totalKRs = data.keyResults.length;
-        const completedKRs = data.keyResults.filter(kr => kr.status === '已完成').length;
+        const totalKRs = permissionData.keyResults.length;
+        const completedKRs = permissionData.keyResults.filter(kr => kr.status === '已完成').length;
         
         // 项目平均进度（模板感知）
-        const avgProgress = data.products.length > 0 
-          ? Math.round(data.products.reduce((sum, p) => {
-              return sum + calcProjectProgress(p, data.processNodes, data.templates, data.tasks);
-            }, 0) / data.products.length) 
+        const avgProgress = permissionData.products.length > 0 
+          ? Math.round(permissionData.products.reduce((sum, p) => {
+              return sum + calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks);
+            }, 0) / permissionData.products.length) 
           : 0;
         
         // 任务完成
-        const completedTasks = data.tasks.filter(t => t.status === '已完成').length;
-        const totalTasks = data.tasks.length;
+        const completedTasks = permissionData.tasks.filter(t => t.status === '已完成').length;
+        const totalTasks = permissionData.tasks.length;
         
         // 逾期预警：已过期且未完成的项目数
         const now = new Date();
-        const overdueProjects = data.products.filter(p => {
+        const overdueProjects = permissionData.products.filter(p => {
           if (p.status === '已完成') return false;
           if (!p.targetDate) return false;
           return new Date(p.targetDate) < now;
@@ -5342,8 +5441,8 @@
           avgProgress,
           completedTasks, totalTasks,
           overdueProjects,
-          totalProducts: data.products.length,
-          completedProducts: data.products.filter(p => p.status === '已完成').length
+          totalProducts: permissionData.products.length,
+          completedProducts: permissionData.products.filter(p => p.status === '已完成').length
         };
       })() : {};
 
@@ -5403,14 +5502,30 @@
                     </div>
                   )}
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold leading-none">{currentUser.name}</span>
-                    <button 
-                      onClick={logout}
-                      className="text-[10px] text-white/40 hover:text-white/80 leading-none mt-0.5 text-left transition-colors"
-                      title="退出登录"
-                    >
-                      退出登录
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold leading-none">{currentUser.name}</span>
+                      {permissionData && (
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded-full leading-none font-medium ${
+                          permissionData._isAdmin ? 'bg-yellow-400/30 text-yellow-200' :
+                          permissionData._isDeptHead ? 'bg-blue-400/30 text-blue-200' :
+                          'bg-white/15 text-white/50'
+                        }`} title={`权限范围: ${permissionData._scope}`}>
+                          {permissionData._role}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {permissionData && !permissionData._isAdmin && (
+                        <span className="text-[9px] text-white/35 leading-none mt-0.5">{permissionData._scope}</span>
+                      )}
+                      <button 
+                        onClick={logout}
+                        className="text-[10px] text-white/40 hover:text-white/80 leading-none mt-0.5 text-left transition-colors"
+                        title="退出登录"
+                      >
+                        退出
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5425,7 +5540,27 @@
             </div>
           )}
 
-          {data && (
+          {/* 权限范围提示 */}
+          {permissionData && !permissionData._isAdmin && (
+            <div className="max-w-7xl mx-auto px-8 pt-3">
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm ${
+                permissionData._isDeptHead 
+                  ? 'bg-blue-50 border border-blue-200 text-blue-700' 
+                  : 'bg-gray-50 border border-gray-200 text-gray-600'
+              }`}>
+                <span>{permissionData._isDeptHead ? '🏢' : '👥'}</span>
+                <span>
+                  当前视图: <strong>{permissionData._scope}</strong>
+                  {permissionData._isDeptHead ? ' (部门管理权限 - 可查看部门内所有组别)' : ' (组别权限 - 仅查看本组数据)'}
+                </span>
+                <span className="text-xs ml-auto opacity-60">
+                  可见 {permissionData.members.length} 人 · {permissionData.products.length} 项目 · {permissionData.objectives.length} 目标
+                </span>
+              </div>
+            </div>
+          )}
+
+          {permissionData && (
             <div className="max-w-7xl mx-auto px-8 py-6">
               <div className="grid grid-cols-5 gap-4 mb-6">
                 <StatCard title="目标达成" value={`${stats.completedObjectives}/${stats.totalObjectives}`} subtitle={stats.completedObjectives > 0 ? `${Math.round(stats.completedObjectives/stats.totalObjectives*100)}% 达成率` : '推进中'} color="text-purple-600" iconKey="target" accent="purple" />
@@ -5440,15 +5575,15 @@
               {/* 逾期项目弹窗 */}
               {showOverduePopup && (() => {
                 const now = new Date();
-                const overdueList = data.products.filter(p => {
+                const overdueList = permissionData.products.filter(p => {
                   if (p.status === '已完成') return false;
                   if (!p.targetDate) return false;
                   return new Date(p.targetDate) < now;
                 }).map(p => {
                   const overdueDays = Math.ceil((now - new Date(p.targetDate)) / 86400000);
-                  const pTasks = data.tasks.filter(t => t.productId === p.id);
+                  const pTasks = permissionData.tasks.filter(t => t.productId === p.id);
                   const completed = pTasks.filter(t => t.status === '已完成').length;
-                  const owner = data.members.find(m => m.id === p.ownerId || m.name === p.ownerName);
+                  const owner = permissionData.members.find(m => m.id === p.ownerId || m.name === p.ownerName);
                   return { ...p, overdueDays, taskCount: pTasks.length, completedTasks: completed, owner };
                 }).sort((a, b) => b.overdueDays - a.overdueDays);
                 
@@ -5516,43 +5651,43 @@
 
               {activeTab === 'okr' && (
                 <OKROverview
-                  objectives={data.objectives}
-                  keyResults={data.keyResults}
-                  products={data.products}
-                  tasks={data.tasks}
-                  nodes={data.processNodes}
-                  templates={data.templates}
-                  members={data.members}
+                  objectives={permissionData.objectives}
+                  keyResults={permissionData.keyResults}
+                  products={permissionData.products}
+                  tasks={permissionData.tasks}
+                  nodes={permissionData.processNodes}
+                  templates={permissionData.templates}
+                  members={permissionData.members}
                   onRefresh={fetchData}
                 />
               )}
 
               {activeTab === 'products' && (
                 <ProductOverview
-                  objectives={data.objectives}
-                  keyResults={data.keyResults}
-                  products={data.products}
-                  nodes={data.processNodes}
-                  nodeLayers={data.processNodeLayers}
-                  nodeMap={data.nodeMap}
-                  nodeToLayer={data.nodeToLayer}
-                  templates={data.templates}
-                  members={data.members}
-                  tasks={data.tasks}
+                  objectives={permissionData.objectives}
+                  keyResults={permissionData.keyResults}
+                  products={permissionData.products}
+                  nodes={permissionData.processNodes}
+                  nodeLayers={permissionData.processNodeLayers}
+                  nodeMap={permissionData.nodeMap}
+                  nodeToLayer={permissionData.nodeToLayer}
+                  templates={permissionData.templates}
+                  members={permissionData.members}
+                  tasks={permissionData.tasks}
                   onRefresh={fetchData}
                 />
               )}
 
               {activeTab === 'team' && (
                 <TeamTaskOverview
-                  members={data.members}
-                  tasks={data.tasks}
-                  products={data.products}
-                  objectives={data.objectives}
-                  keyResults={data.keyResults}
-                  groups={data.groups}
-                  nodes={data.processNodes}
-                  templates={data.templates}
+                  members={permissionData.members}
+                  tasks={permissionData.tasks}
+                  products={permissionData.products}
+                  objectives={permissionData.objectives}
+                  keyResults={permissionData.keyResults}
+                  groups={permissionData.groups}
+                  nodes={permissionData.processNodes}
+                  templates={permissionData.templates}
                   onRefresh={fetchData}
                 />
               )}
