@@ -3217,13 +3217,25 @@
         
         setIsSubmitting(true);
         try {
-          const res = await fetch(API_BASE + '/api/create-kr', {
+          // 直接使用 create-record API，确保所有字段正确映射
+          const krFields = {
+            'KR描述': krForm.name,
+            '目标值': krForm.target,
+            '当前值': krForm.current || 0,
+            '权重': krForm.weight,
+            '状态': krForm.status || '未开始',
+            '所属目标': [showAddKR],
+            '负责人': [{ id: krForm.owner }],
+            '单位': krForm.unit || '个'
+          };
+          
+          const res = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               app_token: APP_TOKEN,
               table_id: 'tblW7yKqbgxH0bZV',
-              kr: { ...krForm, objectiveId: showAddKR }
+              fields: krFields
             })
           });
           const result = await res.json();
@@ -3256,14 +3268,24 @@
         }
         setIsSubmitting(true);
         try {
-          const res = await fetch(API_BASE + '/api/update-kr', {
+          const krFields = {
+            'KR描述': krForm.name,
+            '目标值': krForm.target,
+            '当前值': krForm.current || 0,
+            '权重': krForm.weight,
+            '状态': krForm.status || '未开始',
+            ...(krForm.owner ? { '负责人': [{ id: krForm.owner }] } : {}),
+            '单位': krForm.unit || '个'
+          };
+          
+          const res = await fetch(API_BASE + '/api/update-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               app_token: APP_TOKEN,
               table_id: 'tblW7yKqbgxH0bZV',
               record_id: editingKR.id,
-              kr: krForm
+              fields: krFields
             })
           });
           const result = await res.json();
