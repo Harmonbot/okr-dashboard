@@ -316,7 +316,12 @@
             status: r.fields['状态'] || '未开始',
             objectiveId: objectiveId,
             ownerId: krOwnerId,
-            ownerName: krOwnerName
+            ownerName: krOwnerName,
+            unit: r.fields['单位'] || '',
+            // 从名称推断运算符和KR类型
+            operator: krName.includes('≤') ? '≤' : krName.includes('≥') ? '≥' : krName.includes('达到') ? '达到' : krName.includes('完成') ? '完成' : '≥',
+            krType: (r.fields['单位'] === '天') ? 'metric_duration' : 
+                    (r.fields['单位'] === '%' || r.fields['单位'] === '万元') ? 'metric_value' : 'project_count'
           };
         });
       }
@@ -2826,7 +2831,8 @@
       const [krForm, setKRForm] = useState({
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '',
         // 模板化命名字段
-        productCode: '', metric: '', operator: '≥'
+        productCode: '', metric: '', operator: '≥',
+        krType: 'project_count' // project_count | metric_value
       });
       const [projectForm, setProjectForm] = useState({
         name: '', templateType: '', targetDate: '', owner: '', priority: '',
@@ -2957,8 +2963,74 @@
       const getKRAutoProgress = (kr) => {
         const relatedProjects = getProjectsForKR(kr.id);
         
+        // 工期指标型：取关联项目的实际工期
+        if (kr.krType === 'metric_duration' && relatedProjects.length > 0) {
+          // 计算关联项目的实际工期（工作日）
+          const durations = relatedProjects.map(p => {
+            const pStatus = calcProjectStatus(p, tasks, nodes, templates, products);
+            if (pStatus === '已完成' && p.startDate) {
+              // 已完成：用开始到完成日期的工作日数
+              const completedTasks = tasks.filter(t => t.productId === p.id && t.status === '已完成' && t.completeDate);
+              const lastComplete = completedTasks.length > 0 
+                ? new Date(Math.max(...completedTasks.map(t => new Date(t.completeDate).getTime())))
+                : new Date();
+              return getWorkingDaysBetween(new Date(p.startDate), lastComplete);
+            } else if (p.startDate) {
+              // 进行中：用开始到现在的工作日数
+              return getWorkingDaysBetween(new Date(p.startDate), new Date());
+            }
+            return 0;
+          }).filter(d => d > 0);
+          
+          const avgDuration = durations.length > 0 ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length) : 0;
+          
+          // ≤ 型：越小越好，达标=100%
+          let progress = 0;
+          if (kr.operator === '≤' && kr.target > 0) {
+            // 如果当前值 ≤ 目标值，100%。否则按超出比例递减
+            progress = avgDuration <= kr.target ? 100 : Math.max(0, Math.round((1 - (avgDuration - kr.target) / kr.target) * 100));
+          } else {
+            progress = kr.target > 0 ? Math.min(100, Math.round((avgDuration / kr.target) * 100)) : 0;
+          }
+          
+          const allDone = relatedProjects.every(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成');
+          const anyStarted = relatedProjects.some(p => {
+            const pt = tasks.filter(t => t.productId === p.id);
+            return pt.some(t => t.status === '进行中' || t.status === '已完成');
+          });
+          
+          return {
+            current: avgDuration,
+            progress: progress,
+            autoCalculated: true,
+            totalProjects: relatedProjects.length,
+            completedProjects: relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成').length,
+            inProgressProjects: relatedProjects.filter(p => calcProjectStatus(p, tasks, nodes, templates, products) === '进行中').length,
+            autoStatus: allDone ? '已完成' : anyStarted ? '进行中' : '未开始'
+          };
+        }
+        
+        // 数值指标型（%、万元等）：使用手动填写的当前值，支持运算符方向
+        if (kr.krType === 'metric_value') {
+          let progress = 0;
+          if (kr.operator === '≤' && kr.target > 0) {
+            progress = kr.current <= kr.target ? 100 : Math.max(0, Math.round((1 - (kr.current - kr.target) / kr.target) * 100));
+          } else {
+            progress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
+          }
+          return {
+            current: kr.current,
+            progress: progress,
+            autoCalculated: false,
+            totalProjects: relatedProjects.length,
+            completedProjects: 0,
+            inProgressProjects: 0,
+            autoStatus: progress >= 100 ? '已完成' : kr.current > 0 ? '进行中' : kr.status || '未开始'
+          };
+        }
+        
+        // 项目计数型（默认）：当前值 = 基于项目进度的等效值
         if (relatedProjects.length > 0) {
-          // 计算每个项目的自动进度
           const projectProgresses = relatedProjects.map(p => {
             const autoProgress = calcProjectProgress(p, nodes, templates, tasks, products);
             const pAutoStatus = calcProjectStatus(p, tasks, nodes, templates, products);
@@ -2975,17 +3047,14 @@
           const hasAnyProgress = projectProgresses.some(p => p.hasProgress);
           const inProgressCount = projectProgresses.filter(p => p.hasProgress && p.autoProgress < 100 && p.autoStatus !== '已完成').length;
           
-          // 用项目平均进度作为KR进度（而非仅统计完成数）
           const avgProgress = projectProgresses.length > 0 
             ? Math.round(projectProgresses.reduce((sum, p) => sum + p.autoProgress, 0) / projectProgresses.length)
             : 0;
           
-          // 等效当前值（用于显示，如 target=1 且平均50% → current=0.5）
           const equivCurrent = kr.target > 0 
             ? Math.round((avgProgress / 100) * kr.target * 10) / 10
             : completedCount;
           
-          // 自动计算状态
           let autoStatus = '未开始';
           if (completedCount >= kr.target || completedCount >= relatedProjects.length) {
             autoStatus = '已完成';
@@ -3003,7 +3072,6 @@
             autoStatus: autoStatus
           };
         } else {
-          // 无关联项目：使用手动填写的值和状态
           const progress = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
           return {
             current: kr.current,
@@ -3162,7 +3230,7 @@
           if (result.success) {
             showToast?.('关键结果创建成功', 'success');
             setShowAddKR(null);
-            setKRForm({ name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '', productCode: '', metric: '', operator: '≥' });
+            setKRForm({ name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '', productCode: '', metric: '', operator: '≥', krType: 'project_count', unit: '个' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -3242,7 +3310,9 @@
           current: kr.current || 0,
           weight: kr.weight || 1,
           status: kr.status || '未开始',
-          productCode: '', metric: '', operator: '≥'
+          productCode: '', metric: '', operator: kr.operator || '≥',
+          krType: kr.krType || 'project_count',
+          unit: kr.unit || '个'
         });
       };
 
@@ -3837,10 +3907,48 @@
                                   ))}
                                 </select>
                               </div>
-                              <div className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-                                💡 <strong>自动计算规则：</strong>
-                                <br />• 当前值 = 关联项目中已完成的数量
-                                <br />• 状态：无项目→未开始，有进行中→进行中，全部完成→已完成
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">单位</label>
+                                  <select
+                                    value={krForm.unit || '个'}
+                                    onChange={e => {
+                                      const unit = e.target.value;
+                                      const krType = unit === '天' ? 'metric_duration' : (unit === '%' || unit === '万元') ? 'metric_value' : 'project_count';
+                                      setKRForm({ ...krForm, unit, krType });
+                                    }}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  >
+                                    <option value="个">📦 个（项目计数）</option>
+                                    <option value="天">📅 天（工期）</option>
+                                    <option value="%">📊 %（百分比）</option>
+                                    <option value="万元">💰 万元（金额）</option>
+                                  </select>
+                                </div>
+                                <div className={`rounded-lg p-3 text-xs ${
+                                  (krForm.unit === '天') ? 'bg-purple-50 text-purple-600' :
+                                  (krForm.unit === '%' || krForm.unit === '万元') ? 'bg-amber-50 text-amber-600' :
+                                  'bg-blue-50 text-blue-600'
+                                }`}>
+                                  {krForm.unit === '天' ? (
+                                    <>
+                                      <strong>📅 工期自动追踪</strong>
+                                      <br />关联项目后，自动计算实际工期
+                                      <br />运算符「≤」= 越短越好
+                                    </>
+                                  ) : (krForm.unit === '%' || krForm.unit === '万元') ? (
+                                    <>
+                                      <strong>📊 手动更新当前值</strong>
+                                      <br />需在 KR 卡片上手动更新进度
+                                    </>
+                                  ) : (
+                                    <>
+                                      <strong>📦 项目计数</strong>
+                                      <br />当前值 = 关联已完成项目数
+                                      <br />自动计算进度和状态
+                                    </>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex gap-2">
                                 <button type="button" onClick={() => setShowAddKR(null)} className="flex-1 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -3923,9 +4031,10 @@
                                             )}
                                           </div>
                                           <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                                            <span>目标: {kr.target}</span>
+                                            <span>目标: {kr.target}{kr.unit || ''}</span>
                                             <span className={krAuto.autoCalculated ? 'text-green-600 font-medium' : ''}>
-                                              当前: {krCurrent}
+                                              当前: {krCurrent}{kr.unit || ''}
+                                              {krAuto.autoCalculated && ' ⚡'}
                                             </span>
                                             {kr.ownerName && (() => {
                                               const krOwnerMember = members.find(m => m.id === kr.ownerId || m.name === kr.ownerName);
