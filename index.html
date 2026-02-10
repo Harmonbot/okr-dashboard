@@ -2843,7 +2843,7 @@
       const handleCreateProject = async (krId) => {
         const missingFields = [];
         if (!projectForm.name.trim()) missingFields.push('项目名称');
-        if (!projectForm.templateType) missingFields.push('模版类型');
+        if (!projectForm.templateType) missingFields.push('项目类型');
         if (!projectForm.owner) missingFields.push('负责人');
         if (!projectForm.priority) missingFields.push('重要程度');
         if (!projectForm.targetDate) missingFields.push('计划上线日期');
@@ -2920,6 +2920,7 @@
           }
 
           showToast?.(`✅ 项目创建完成: 1个父项目 + ${created}个子项目`, 'success');
+          
           setShowAddProject(null);
           setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '', productCode: '' });
           if (onRefresh) onRefresh();
@@ -4118,19 +4119,6 @@
                                         <div className="bg-white rounded-lg border p-3 mb-3" onClick={e => e.stopPropagation()}>
                                           <div className="space-y-2">
                                             <div className="grid grid-cols-2 gap-2">
-                                              <input
-                                                type="text"
-                                                value={projectForm.productCode}
-                                                onChange={e => {
-                                                  const pc = e.target.value.toUpperCase();
-                                                  const tplLabel = projectForm.templateType ? projectForm.templateType.replace('新品开发', '新品上线') : '';
-                                                  const auto = pc + (tplLabel ? tplLabel : '');
-                                                  setProjectForm({ ...projectForm, productCode: pc, name: auto });
-                                                }}
-                                                className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
-                                                placeholder="产品代号 * 如 HG04"
-                                                required
-                                              />
                                               <select
                                                 value={projectForm.templateType}
                                                 onChange={e => {
@@ -4148,6 +4136,19 @@
                                                   return parentTpls.map(t => <option key={t.type} value={t.type}>{t.name}</option>);
                                                 })()}
                                               </select>
+                                              <input
+                                                type="text"
+                                                value={projectForm.productCode}
+                                                onChange={e => {
+                                                  const pc = e.target.value.toUpperCase();
+                                                  const tplLabel = projectForm.templateType ? projectForm.templateType.replace('新品开发', '新品上线') : '';
+                                                  const auto = pc + (tplLabel ? tplLabel : '');
+                                                  setProjectForm({ ...projectForm, productCode: pc, name: auto });
+                                                }}
+                                                className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                                                placeholder="产品代号 * 如 HG04"
+                                                required
+                                              />
                                             </div>
                                             <div className="relative">
                                               <input
