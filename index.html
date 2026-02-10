@@ -3600,10 +3600,29 @@
                 // 按层级分组渲染
                 return levelConfig.filter(lc => grouped[lc.key]?.length > 0).map(lc => {
                   const objs = grouped[lc.key];
-                  // 部门级目标再按部门细分
-                  const deptGroups = lc.key === '部门级' 
-                    ? [...new Set(objs.map(o => o.department || '未分配'))].sort()
-                    : null;
+                  // 部门级目标：按大部门→组别两级分组
+                  const deptGroups = lc.key === '部门级' ? (() => {
+                    // 从成员表建立 组别→大部门 映射
+                    const groupToDeptMap = {};
+                    members.forEach(m => {
+                      if (m.group && m.department) {
+                        groupToDeptMap[m.group] = m.department;
+                      }
+                      // 组别=部门名 → 部门负责人/部门本身
+                      if (m.department) groupToDeptMap[m.department] = m.department;
+                    });
+                    
+                    // 按大部门分组
+                    const deptMap = {};
+                    objs.forEach(o => {
+                      const objGroup = o.department || '未分配'; // 目标的"所属部门"实际存的是组别
+                      const parentDept = groupToDeptMap[objGroup] || objGroup;
+                      if (!deptMap[parentDept]) deptMap[parentDept] = {};
+                      if (!deptMap[parentDept][objGroup]) deptMap[parentDept][objGroup] = [];
+                      deptMap[parentDept][objGroup].push(o);
+                    });
+                    return deptMap;
+                  })() : null;
                   
                   return (
                     <div key={lc.key} className="mb-5">
@@ -3613,17 +3632,43 @@
                         <span className="badge badge-gray">{objs.length}</span>
                       </div>
                       {deptGroups ? (
-                        deptGroups.map(dept => {
-                          const deptObjs = objs.filter(o => (o.department || '未分配') === dept);
+                        Object.keys(deptGroups).sort().map(parentDept => {
+                          const subGroups = deptGroups[parentDept];
+                          const subKeys = Object.keys(subGroups).sort();
+                          const totalInDept = subKeys.reduce((s, k) => s + subGroups[k].length, 0);
+                          // 只有一个子组且子组名=大部门名 → 不需要二级
+                          const isSingleLevel = subKeys.length === 1 && subKeys[0] === parentDept;
+                          
                           return (
-                            <div key={dept} className="mb-3">
+                            <div key={parentDept} className="mb-4">
+                              {/* 大部门标题 */}
                               <div className="flex items-center gap-2 mb-2 ml-1">
-                                <span className="badge badge-blue">{dept}</span>
-                                <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{deptObjs.length} 个目标</span>
+                                <span className="text-sm font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg">{parentDept}</span>
+                                <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{totalInDept} 个目标</span>
                               </div>
-                              <div className="grid grid-cols-3 gap-3 ml-1">
-                                {deptObjs.map(o => renderObjectiveCard(o))}
-                              </div>
+                              
+                              {isSingleLevel ? (
+                                <div className="grid grid-cols-3 gap-3 ml-1">
+                                  {subGroups[subKeys[0]].map(o => renderObjectiveCard(o))}
+                                </div>
+                              ) : (
+                                subKeys.map(groupName => {
+                                  const groupObjs = subGroups[groupName];
+                                  return (
+                                    <div key={groupName} className="mb-3 ml-3">
+                                      {/* 组别标题 */}
+                                      <div className="flex items-center gap-2 mb-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                        <span className="text-xs font-medium text-gray-600">{groupName}</span>
+                                        <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{groupObjs.length} 个目标</span>
+                                      </div>
+                                      <div className="grid grid-cols-3 gap-3">
+                                        {groupObjs.map(o => renderObjectiveCard(o))}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
                           );
                         })
