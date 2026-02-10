@@ -2594,7 +2594,7 @@
                       <span>🟦 时间消耗 {timeProgress}% · 🟩 完成进度 {autoProgress}%</span>
                       <span>总工期 {tl.totalDays} 个工作日</span>
                     </div>
-                    {timeProgress > autoProgress + 20 && autoStatus !== '已完成' && (
+                    {timeProgress > autoProgress + 20 && calcProjectStatus(product, tasks, allNodes, templates, products) !== '已完成' && (
                       <div className={`mt-2 text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
                         ⚠️ 时间消耗超前于完成进度，需要加速推进！
                       </div>
