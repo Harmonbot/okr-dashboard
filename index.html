@@ -3974,12 +3974,10 @@
             const deptMap = {};  // { 大部门: { 组别: [products] } }
             const personalProjects = [];
             const unlinkedProjects = [];
-            let globalRank = 0;
             
             sortedProducts.forEach(product => {
               const imp = getProjectImportance(product);
               const obj = imp.objective;
-              product._rank = ++globalRank;
               
               if (!obj) {
                 unlinkedProjects.push(product);
@@ -3995,6 +3993,15 @@
                 if (!deptMap[parentDept][objGroup]) deptMap[parentDept][objGroup] = [];
                 deptMap[parentDept][objGroup].push(product);
               }
+            });
+            
+            // 每个分组内部独立编号
+            const assignGroupRank = (list) => list.forEach((p, i) => { p._rank = i + 1; });
+            assignGroupRank(companyProjects);
+            assignGroupRank(personalProjects);
+            assignGroupRank(unlinkedProjects);
+            Object.values(deptMap).forEach(subGroups => {
+              Object.values(subGroups).forEach(list => assignGroupRank(list));
             });
             
             const sections = [];
