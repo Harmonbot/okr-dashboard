@@ -4140,13 +4140,13 @@
                                                 type="text"
                                                 value={projectForm.productCode}
                                                 onChange={e => {
-                                                  const pc = e.target.value.toUpperCase();
+                                                  const pc = e.target.value;
                                                   const tplLabel = projectForm.templateType ? projectForm.templateType.replace('新品开发', '新品上线') : '';
                                                   const auto = pc + (tplLabel ? tplLabel : '');
                                                   setProjectForm({ ...projectForm, productCode: pc, name: auto });
                                                 }}
                                                 className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none"
-                                                placeholder="产品代号 * 如 HG04"
+                                                placeholder="项目主题 * 如 HG04/客户留存系统"
                                                 required
                                               />
                                             </div>
