@@ -535,9 +535,14 @@
         rawData['流程模板 Process Templates'].records.forEach(r => {
           let tplName = r.fields['模板名称'];
           if (Array.isArray(tplName)) tplName = tplName.map(n => n.text || n).join('');
+          let parentTpl = r.fields['父项目'];
+          if (Array.isArray(parentTpl)) parentTpl = parentTpl.map(n => n.text || n).join('');
           data.templates[r.record_id] = {
             name: tplName || '',
-            type: r.fields['模板类型'] || ''
+            type: r.fields['模板类型'] || '',
+            ownership: r.fields['模版归属'] || '', // 父项目 / 子项目
+            parentTemplate: parentTpl || '',
+            cycleDays: r.fields['预计周期(天)'] || 0
           };
         });
       }
@@ -2820,12 +2825,11 @@
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: ''
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', category: '父项目', templateType: '', targetDate: '', owner: '', priority: ''
+        name: '', templateType: '', targetDate: '', owner: '', priority: ''
       });
 
-      // 创建新项目并关联到 KR
+      // 创建新项目：选择父模板后自动创建父+子项目
       const handleCreateProject = async (krId) => {
-        // 所有字段必填校验
         const missingFields = [];
         if (!projectForm.name.trim()) missingFields.push('项目名称');
         if (!projectForm.templateType) missingFields.push('模版类型');
@@ -2838,35 +2842,76 @@
         }
         setIsSubmitting(true);
         try {
-          const fields = {
+          // 找到选中的父模板
+          const parentTplId = Object.keys(templates).find(id => templates[id].type === projectForm.templateType && templates[id].ownership === '父项目');
+          const parentTplName = parentTplId ? templates[parentTplId].name : '';
+          
+          // 找到关联的子模板
+          const childTpls = Object.entries(templates).filter(([id, t]) => 
+            t.ownership === '子项目' && t.parentTemplate === parentTplName
+          );
+
+          // 1. 创建父项目
+          const parentFields = {
             '项目名称': projectForm.name,
-            '项目类型': projectForm.category,
+            '项目类型': '父项目',
             '模版类型': projectForm.templateType,
             '项目状态': '未开始',
             '关联KR': [krId],
             '重要程度': projectForm.priority,
             '计划上线日期': new Date(projectForm.targetDate).getTime(),
+            '开始日期': new Date().getTime(),
             '项目负责人': [{ id: projectForm.owner }]
           };
           
-          const res = await fetch(API_BASE + '/api/create-record', {
+          const parentRes = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              app_token: APP_TOKEN,
-              table_id: 'tblYM02NyVj3rUkR',
-              fields: fields
-            })
+            body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: parentFields })
           });
-          const result = await res.json();
-          if (result.success) {
-            showToast?.('项目创建成功', 'success');
-            setShowAddProject(null);
-            setProjectForm({ name: '', category: '父项目', templateType: '', targetDate: '', owner: '', priority: '' });
-            if (onRefresh) onRefresh();
-          } else {
-            throw new Error(result.error || '创建失败');
+          const parentResult = await parentRes.json();
+          if (!parentResult.success) throw new Error(parentResult.error || '父项目创建失败');
+          
+          const parentRecordId = parentResult.data?.record?.record_id;
+          showToast?.(`父项目已创建，正在生成 ${childTpls.length} 个子项目...`, 'info');
+
+          // 2. 批量创建子项目
+          // 子模板 → 负责部门映射
+          const deptMap = {
+            '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部',
+            '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部'
+          };
+          
+          let created = 0;
+          for (const [tplId, tpl] of childTpls) {
+            const childName = `${projectForm.name.replace(/新品上线|项目/g, '')}${tpl.name}`;
+            const dept = deptMap[tpl.name] || '';
+            const childFields = {
+              '项目名称': childName,
+              '项目类型': '子项目',
+              '模版类型': tpl.type,
+              '项目状态': '未开始',
+              '负责部门': dept,
+              ...(parentRecordId ? { '父项目': [parentRecordId] } : {})
+            };
+            
+            try {
+              const childRes = await fetch(API_BASE + '/api/create-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: childFields })
+              });
+              const childResult = await childRes.json();
+              if (childResult.success) created++;
+            } catch (e) {
+              console.error(`子项目 ${tpl.name} 创建失败:`, e);
+            }
           }
+
+          showToast?.(`✅ 项目创建完成: 1个父项目 + ${created}个子项目`, 'success');
+          setShowAddProject(null);
+          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '' });
+          if (onRefresh) onRefresh();
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
         }
@@ -3851,8 +3896,9 @@
                                               >
                                                 <option value="">模版类型 *</option>
                                                 {(() => {
-                                                  const tplTypes = Object.values(templates).map(t => t.type).filter(Boolean);
-                                                  return tplTypes.map(t => <option key={t} value={t}>{t}</option>);
+                                                  // 只显示父模板
+                                                  const parentTpls = Object.values(templates).filter(t => t.ownership === '父项目' && t.type);
+                                                  return parentTpls.map(t => <option key={t.type} value={t.type}>{t.name}</option>);
                                                 })()}
                                               </select>
                                               <select
@@ -3892,6 +3938,32 @@
                                                 required
                                               />
                                             </div>
+                                            {/* 子模板预览 */}
+                                            {projectForm.templateType && (() => {
+                                              const parentTplId = Object.keys(templates).find(id => templates[id].type === projectForm.templateType && templates[id].ownership === '父项目');
+                                              const parentTplName = parentTplId ? templates[parentTplId].name : '';
+                                              const childTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
+                                              if (childTpls.length === 0) return null;
+                                              const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部' };
+                                              const deptDotColors = { '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '中枢部': 'bg-purple-500', '设计部': 'bg-pink-500', '营销推广部': 'bg-orange-500' };
+                                              return (
+                                                <div className="bg-violet-50 rounded-lg p-2.5 border border-violet-200">
+                                                  <div className="text-[10px] text-violet-600 font-medium mb-1.5">📂 将自动创建 {childTpls.length} 个子项目:</div>
+                                                  <div className="flex flex-wrap gap-1.5">
+                                                    {childTpls.map(t => {
+                                                      const dept = deptMap[t.name] || '';
+                                                      return (
+                                                        <span key={t.type} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded text-[10px] text-gray-600 border border-violet-100">
+                                                          <span className={`w-1.5 h-1.5 rounded-full ${deptDotColors[dept] || 'bg-gray-400'}`} />
+                                                          {t.name}
+                                                          {t.cycleDays > 0 && <span className="text-gray-300">{t.cycleDays}天</span>}
+                                                        </span>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })()}
                                             <div className="flex gap-2">
                                               <button 
                                                 onClick={() => setShowAddProject(null)} 
@@ -3902,9 +3974,14 @@
                                               <button 
                                                 onClick={() => handleCreateProject(kr.id)} 
                                                 disabled={isSubmitting}
-                                                className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50"
+                                                className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 flex-1"
                                               >
-                                                {isSubmitting ? '创建中...' : '创建项目'}
+                                                {isSubmitting ? '🔄 创建中...' : (() => {
+                                                  const parentTplId = Object.keys(templates).find(id => templates[id].type === projectForm.templateType && templates[id].ownership === '父项目');
+                                                  const parentTplName = parentTplId ? templates[parentTplId].name : '';
+                                                  const childCount = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName).length;
+                                                  return childCount > 0 ? `🚀 一键创建 (1+${childCount}项目)` : '创建项目';
+                                                })()}
                                               </button>
                                             </div>
                                           </div>
