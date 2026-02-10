@@ -3081,7 +3081,7 @@
           if (result.success) {
             showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '', productCode: '', actionGoal: '' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '', productCode: '', actionGoal: '', quantifier: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -3303,29 +3303,43 @@
               <form onSubmit={handleCreateObjective} className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">目标命名 *</label>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="grid grid-cols-3 gap-2 mb-2">
                     <input
                       type="text"
                       value={objectiveForm.productCode}
                       onChange={e => {
-                        const pc = e.target.value.toUpperCase();
-                        const auto = `${objectiveForm.cycle?.replace('-', '')} 完成${pc ? ' ' + pc : ''}${objectiveForm.actionGoal ? ' ' + objectiveForm.actionGoal : ''}`;
-                        setObjectiveForm({ ...objectiveForm, productCode: pc, name: auto.trim() });
+                        const pc = e.target.value;
+                        const dept = objectiveForm.department;
+                        const parts = [objectiveForm.cycle?.replace('-', ''), dept, pc, objectiveForm.actionGoal].filter(Boolean);
+                        setObjectiveForm({ ...objectiveForm, productCode: pc, name: parts.join(' ') });
                       }}
                       className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none"
-                      placeholder="产品代号 如 HG04"
+                      placeholder="主题 如 HG04/风控体系"
                     />
                     <input
                       type="text"
                       value={objectiveForm.actionGoal}
                       onChange={e => {
                         const ag = e.target.value;
-                        const auto = `${objectiveForm.cycle?.replace('-', '')} 完成${objectiveForm.productCode ? ' ' + objectiveForm.productCode : ''}${ag ? ' ' + ag : ''}`;
-                        setObjectiveForm({ ...objectiveForm, actionGoal: ag, name: auto.trim() });
+                        const dept = objectiveForm.department;
+                        const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, ag].filter(Boolean);
+                        setObjectiveForm({ ...objectiveForm, actionGoal: ag, name: parts.join(' ') });
                       }}
                       className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none"
-                      placeholder="动作目标 如 上线开售"
+                      placeholder="目标 如 上线开售"
                       required
+                    />
+                    <input
+                      type="text"
+                      value={objectiveForm.quantifier || ''}
+                      onChange={e => {
+                        const q = e.target.value;
+                        const dept = objectiveForm.department;
+                        const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, objectiveForm.actionGoal, q].filter(Boolean);
+                        setObjectiveForm({ ...objectiveForm, quantifier: q, name: parts.join(' ') });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none"
+                      placeholder="量化 如 7个/10K+"
                     />
                   </div>
                   {/* 预览 + 可编辑 */}
@@ -3340,6 +3354,7 @@
                     />
                     <span className="absolute right-3 top-2.5 text-[10px] text-purple-400">✨ 自动拼接</span>
                   </div>
+                  <div className="text-[10px] text-gray-400 mt-1">示例: 2026Q2 游戏组 HG04 上线开售 · 2026Q1 风控体系1.0落地 · 2026Q2 儿童组 完成7个产品上线</div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -3348,8 +3363,8 @@
                       value={objectiveForm.cycle}
                       onChange={e => {
                         const cycle = e.target.value;
-                        const auto = `${cycle.replace('-', '')} 完成${objectiveForm.productCode ? ' ' + objectiveForm.productCode : ''}${objectiveForm.actionGoal ? ' ' + objectiveForm.actionGoal : ''}`;
-                        setObjectiveForm({ ...objectiveForm, cycle, name: auto.trim() });
+                        const parts = [cycle.replace('-', ''), objectiveForm.department, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
+                        setObjectiveForm({ ...objectiveForm, cycle, name: parts.join(' ') });
                       }}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
@@ -3388,7 +3403,11 @@
                     <label className="block text-sm text-gray-600 mb-1">所属部门 *</label>
                     <select
                       value={objectiveForm.department}
-                      onChange={e => setObjectiveForm({ ...objectiveForm, department: e.target.value })}
+                      onChange={e => {
+                        const dept = e.target.value;
+                        const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
+                        setObjectiveForm({ ...objectiveForm, department: dept, name: parts.join(' ') });
+                      }}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
                       <option value="">请选择部门</option>
