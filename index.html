@@ -2130,10 +2130,22 @@
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold">{product.name}</h2>
-                    <div className="flex items-center gap-3 mt-1">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-white/80 text-sm">{product.category}</span>
-                      <span className="text-white/60 text-sm">|</span>
-                      <span className="text-white/80 text-sm">📍 {autoCurrentStage}</span>
+                      {product.priority && (
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                          product.priority === 'P0' ? 'bg-red-500 text-white' :
+                          product.priority === 'P1' ? 'bg-orange-500 text-white' :
+                          product.priority === 'P2' ? 'bg-yellow-400 text-gray-800' :
+                          'bg-white/20 text-white/80'
+                        }`}>{product.priority}</span>
+                      )}
+                      {autoCurrentStage && (
+                        <>
+                          <span className="text-white/40 text-sm">|</span>
+                          <span className="text-white/80 text-sm">📍 {autoCurrentStage}</span>
+                        </>
+                      )}
                       {product.ownerName && (
                         <>
                           <span className="text-white/60 text-sm">|</span>
