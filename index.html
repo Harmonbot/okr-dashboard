@@ -493,6 +493,8 @@
             department: r.fields['部门'] || '',
             group: r.fields['组别'] || '未分组',
             position: position,
+            permRole: r.fields['权限设置'] || '组员', // 权限角色
+            status: r.fields['状态'] || '',
             avatarUrl: larkUser.avatar_url || '', // 飞书头像URL
             avatar: memberAvatars[idx % memberAvatars.length],
             color: memberColors[idx % memberColors.length]
@@ -5309,7 +5311,7 @@
       if (loading && !data) return <LoadingScreen />;
 
       // ===== 权限系统 =====
-      // 根据当前用户的职位判断角色，过滤可见数据
+      // 根据「权限设置」字段判断角色，过滤可见数据
       const permissionData = data ? (() => {
         // 1. 找到当前登录用户在成员表中的记录
         const me = data.members.find(m => 
@@ -5318,17 +5320,15 @@
           m.larkName === currentUser.name
         );
         
-        const myPosition = (me?.position || '').toLowerCase();
+        const myPermRole = me?.permRole || '组员';
         const myGroup = me?.group || '';
         const myDept = me?.department || '';
         
-        // 2. 判断角色层级
-        const adminKeywords = ['总经理', '副总', 'ceo', 'coo', 'cfo', 'cto', '总裁', '董事', '合伙人', '创始人'];
-        const deptHeadKeywords = ['主管', '经理', '总监', '负责人', '组长', '部长', 'manager', 'director', 'lead', 'head'];
-        
-        const isAdmin = adminKeywords.some(kw => myPosition.includes(kw));
-        const isDeptHead = !isAdmin && deptHeadKeywords.some(kw => myPosition.includes(kw));
-        const isRegular = !isAdmin && !isDeptHead;
+        // 2. 判断角色层级（基于「权限设置」字段）
+        const isAdmin = myPermRole === '管理员' || myPermRole === '总经理';
+        const isDeptHead = myPermRole === '部门管理';
+        const isGroupHead = myPermRole === '组别管理';
+        const isRegular = myPermRole === '组员';
         
         // 3. 确定可见的成员ID集合
         let visibleMembers;
@@ -5337,17 +5337,17 @@
           visibleMembers = new Set(data.members.map(m => m.id));
           roleName = '管理员';
         } else if (isDeptHead) {
-          // 部门负责人：能看本部门所有组别
+          // 部门管理：能看本部门所有组别
           visibleMembers = new Set(
             data.members.filter(m => m.department === myDept).map(m => m.id)
           );
           roleName = '部门管理';
         } else {
-          // 普通成员：只能看本组别
+          // 组别管理 / 组员：只能看本组别
           visibleMembers = new Set(
             data.members.filter(m => m.group === myGroup).map(m => m.id)
           );
-          roleName = '成员';
+          roleName = isGroupHead ? '组别管理' : '组员';
         }
         
         // 4. 过滤数据
@@ -5371,19 +5371,17 @@
           filteredMembers.some(m => m.name === p.ownerName || m.id === p.ownerId)
         );
         
-        // 过滤OKR：部门级只看本部门/组别的，公司级都能看
+        // 过滤OKR：公司级都能看，其他按权限
         const filteredObjectives = data.objectives.filter(o => {
           if (o.level === '公司级') return true;
           if (o.level === '个人级') {
             return filteredMembers.some(m => m.name === o.ownerName || m.id === o.ownerId);
           }
-          // 部门级：判断目标所属组别是否在可见范围
+          // 部门级
           if (isDeptHead) {
-            // 部门负责人：看本部门下所有组别的目标
             const deptGroups = data.members.filter(m => m.department === myDept).map(m => m.group);
             return deptGroups.includes(o.department);
           } else {
-            // 普通成员：只看本组别
             return o.department === myGroup;
           }
         });
@@ -5551,7 +5549,11 @@
                 <span>{permissionData._isDeptHead ? '🏢' : '👥'}</span>
                 <span>
                   当前视图: <strong>{permissionData._scope}</strong>
-                  {permissionData._isDeptHead ? ' (部门管理权限 - 可查看部门内所有组别)' : ' (组别权限 - 仅查看本组数据)'}
+                  {permissionData._isDeptHead 
+                    ? ' (部门管理 - 可查看部门内所有组别)' 
+                    : permissionData._role === '组别管理' 
+                      ? ' (组别管理 - 可查看本组所有成员)' 
+                      : ' (组员 - 仅查看本组数据)'}
                 </span>
                 <span className="text-xs ml-auto opacity-60">
                   可见 {permissionData.members.length} 人 · {permissionData.products.length} 项目 · {permissionData.objectives.length} 目标
