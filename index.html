@@ -372,17 +372,6 @@
             }
           }
           
-          // 处理子项目（反向关联）
-          let childIds = [];
-          const childField = r.fields['项目 Projects'];
-          if (childField) {
-            if (childField.link_record_ids) {
-              childIds = childField.link_record_ids;
-            } else if (Array.isArray(childField)) {
-              childIds = childField.flatMap(c => c.record_ids || []);
-            }
-          }
-          
           return {
             id: r.record_id,
             name: r.fields['项目名称'] || '',
@@ -399,9 +388,17 @@
             ownerId: ownerId,
             ownerName: ownerName,
             parentId: parentId,
-            childIds: childIds,
+            childIds: [], // 后面从 parentId 反推
             responsibleDept: r.fields['负责部门'] || ''
           };
+        });
+
+        // 从 parentId 反推 childIds（飞书DuplexLink反向字段不在API返回中）
+        data.products.forEach(p => {
+          if (p.parentId) {
+            const parent = data.products.find(pp => pp.id === p.parentId);
+            if (parent) parent.childIds.push(p.id);
+          }
         });
       }
 
