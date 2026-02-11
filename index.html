@@ -2067,10 +2067,10 @@
       modalTimeline.nodes.forEach(n => { timelineMap[n.name] = n; });
 
       // 检查当前用户是否是项目负责人
-      const isProjectOwner = currentUser && (
-        currentUser.open_id === product.ownerId ||
-        currentUser.name === product.ownerName ||
-        currentUser.en_name === product.ownerName
+      const isProjectOwner = viewer && (
+        viewer.open_id === product.ownerId ||
+        viewer.name === product.ownerName ||
+        viewer.en_name === product.ownerName
       );
 
       // 自动计算当前阶段
@@ -4624,7 +4624,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh }) => {
+    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh, currentUser }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
@@ -6788,6 +6788,7 @@
                   members={permissionData.members}
                   tasks={permissionData.tasks}
                   onRefresh={fetchData}
+                  currentUser={currentUser}
                 />
               )}
 
