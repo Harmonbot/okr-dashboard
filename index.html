@@ -1993,7 +1993,20 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct }) => {
+    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, currentUser }) => {
+      // 部门权限：当前用户是否可查看该子项目详情
+      const canViewDetails = (() => {
+        if (!product.responsibleDept) return true; // 无负责部门的项目对所有人开放
+        if (isParentProject(product)) return true; // 父项目对所有人开放
+        if (!currentUser) return true;
+        // 项目负责人/目标负责人可查看
+        if (currentUser.open_id === product.ownerId) return true;
+        // 管理员/总监可查看所有
+        if (currentUser.permRole === '管理员' || currentUser.permRole === '总监') return true;
+        // 本部门可查看
+        if (currentUser.department === product.responsibleDept) return true;
+        return false;
+      })();
       // 根据模版类型匹配模板，筛选对应节点（父项目不匹配模板）
       const matchType = product.templateType;
       const matchingTemplateId = isParentProject(product) ? null : Object.keys(templates).find(tplId => 
@@ -2345,13 +2358,20 @@
                 
                 return (
                   <>
-                    {childProducts.length === 0 && childTpls.length > 0 && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-medium text-amber-800">⚠️ 该父项目暂无子项目</div>
-                            <div className="text-sm text-amber-600 mt-1">可一键生成，或在飞书多维表手动添加子项目并关联「父项目」字段，刷新后自动同步</div>
-                          </div>
+                    {/* 检测缺失的子线 */}
+                    {(() => {
+                      // 已有子项目的模板类型
+                      const existingTypes = new Set(childProducts.map(c => c.templateType));
+                      const missingTpls = childTpls.filter(t => !existingTypes.has(t.type));
+                      
+                      if (childProducts.length === 0 && childTpls.length > 0) {
+                        return (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-amber-800">⚠️ 该父项目暂无子项目</div>
+                                <div className="text-sm text-amber-600 mt-1">可一键生成，或在飞书多维表手动添加子项目并关联「父项目」字段，刷新后自动同步</div>
+                              </div>
                           <button
                             onClick={async () => {
                               const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
@@ -2392,13 +2412,72 @@
                           </button>
                         </div>
                       </div>
-                    )}
-                    {childProducts.length === 0 && childTpls.length === 0 && (
-                      <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400 mb-6">
-                        <div className="text-sm">该项目模版类型「{product.templateType}」暂无对应子模板</div>
-                        <div className="text-xs mt-1">请在飞书「流程模板」表中为此类型创建子模板</div>
-                      </div>
-                    )}
+                        );
+                      }
+                      
+                      if (childProducts.length === 0 && childTpls.length === 0) {
+                        return (
+                          <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400 mb-6">
+                            <div className="text-sm">该项目模版类型「{product.templateType}」暂无对应子模板</div>
+                            <div className="text-xs mt-1">请在飞书「流程模板」表中为此类型创建子模板</div>
+                          </div>
+                        );
+                      }
+                      
+                      if (missingTpls.length > 0) {
+                        return (
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium text-blue-800">📋 检测到 {missingTpls.length} 条新增子线未同步</div>
+                                <div className="text-sm text-blue-600 mt-1 flex flex-wrap gap-1">
+                                  {missingTpls.map(t => <span key={t.type} className="px-2 py-0.5 bg-blue-100 rounded text-xs">{t.name}</span>)}
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
+                                  const startDate = product.startDate ? new Date(product.startDate) : new Date();
+                                  let created = 0;
+                                  for (const tpl of missingTpls) {
+                                    const childName = `${product.name.replace(/新品上线|建设|SOP|项目/g, '')}-${tpl.name}`;
+                                    const dept = deptMap[tpl.name] || '';
+                                    const cycleDays = tpl.cycleDays || 0;
+                                    let endDate = null;
+                                    if (cycleDays > 0) {
+                                      endDate = new Date(startDate);
+                                      let rem = cycleDays;
+                                      while (rem > 0) { endDate.setDate(endDate.getDate() + 1); const d = endDate.getDay(); if (d !== 0 && d !== 6) rem--; }
+                                    }
+                                    try {
+                                      const res = await fetch(API_BASE + '/api/create-record', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: {
+                                          '项目名称': childName, '项目类型': '子项目', '模版类型': tpl.type, '项目状态': '未开始', '负责部门': dept,
+                                          '开始日期': startDate.getTime(),
+                                          ...(endDate ? { '计划上线日期': endDate.getTime() } : {}),
+                                          '父项目': [product.id]
+                                        }})
+                                      });
+                                      const result = await res.json();
+                                      if (result.success) created++;
+                                    } catch (e) { console.error(e); }
+                                  }
+                                  showToast?.(`✅ 已补建 ${created} 个子项目`, 'success');
+                                  if (onRefresh) onRefresh();
+                                  onClose();
+                                }}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 whitespace-nowrap"
+                              >
+                                ➕ 补建 {missingTpls.length} 个子项目
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {childProducts.length > 0 && (
                     <>
                     {/* 聚合统计 */}
@@ -2516,6 +2595,7 @@
               })() : (
               <>
               {/* === 子项目 / 普通项目视图：显示流程+甘特 === */}
+              {canViewDetails ? (
               <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-bold text-blue-600">{autoProgress}%</div>
@@ -2540,9 +2620,27 @@
                   <div className="text-sm text-gray-500">待开始</div>
                 </div>
               </div>
+              ) : (
+              <div className="mb-6">
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div className="bg-gray-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-blue-600">{autoProgress}%</div>
+                    <div className="text-sm text-gray-500">整体进度</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4 text-center">
+                    <div className="text-3xl font-bold text-gray-400">{productTasks.length}</div>
+                    <div className="text-sm text-gray-500">总任务数</div>
+                  </div>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-amber-600">🔒</span>
+                  <span className="text-sm text-amber-700">任务详情仅 <span className="font-semibold">{product.responsibleDept}</span> 成员可查看，当前显示概览信息</span>
+                </div>
+              </div>
+              )}
 
               {/* 时间维度统计 */}
-              {(() => {
+              {canViewDetails && (() => {
                 const now = new Date();
                 now.setHours(0,0,0,0);
                 const completedTasks = productTasks.filter(t => t.status === '已完成');
@@ -2721,8 +2819,8 @@
                             <div className="w-24 flex flex-col items-center">
                               {node ? (
                                 <div 
-                                  className="flex flex-col items-center cursor-pointer group relative"
-                                  onClick={() => setSelectedNode(node)}
+                                  className={`flex flex-col items-center group relative ${canViewDetails ? 'cursor-pointer' : 'cursor-default'}`}
+                                  onClick={() => canViewDetails && setSelectedNode(node)}
                                 >
                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all group-hover:scale-110 group-hover:shadow-lg ${
                                     getNodeStatus(node.name) === 'skipped' ? 'bg-yellow-100 text-yellow-600 border-2 border-dashed border-yellow-400' :
@@ -2860,12 +2958,15 @@
                       <span className="w-3 h-3 rounded-full bg-yellow-100 border border-dashed border-yellow-400"></span> 已跳过
                     </span>
                   </div>
-                  <span className="text-purple-500">💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</span>
+                  <span className="text-purple-500">{canViewDetails 
+                    ? <>💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</>
+                    : '🔒 任务详情仅本部门可见'}</span>
                 </div>
                 </>
               )}
               </div>
 
+              {canViewDetails ? (
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4"><Icon name="calendar" size={14} /> 项目甘特图</h3>
                 {productTasks.length > 0 ? (
@@ -2876,13 +2977,19 @@
                   </div>
                 )}
               </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl p-6 text-center mb-4">
+                <div className="text-gray-400 mb-2"><Icon name="lock" size={24} color="var(--c-text-muted)" /></div>
+                <div className="text-sm text-gray-500">🔒 甘特图和任务详情仅 <span className="font-semibold text-gray-700">{product.responsibleDept}</span> 成员可查看</div>
+              </div>
+              )}
               </>
               )}
             </div>
           </div>
 
           {/* 节点任务详情弹窗 */}
-          {selectedNode && (
+          {selectedNode && canViewDetails && (
             <NodeTaskModal
               node={selectedNode}
               tasks={productTasks}
@@ -5061,6 +5168,7 @@
               onClose={() => setSelectedProduct(null)}
               onRefresh={onRefresh}
               onSelectProduct={setSelectedProduct}
+              currentUser={currentUser}
             />
           )}
         </div>
