@@ -2171,16 +2171,14 @@
       const timelineMap = {};
       modalTimeline.nodes.forEach(n => { timelineMap[n.name] = n; });
 
-      // 检查当前用户是否是项目负责人（含父项目负责人、管理员）
+      // 检查当前用户是否是项目负责人（含父项目负责人）
       const isProjectOwner = !!(enrichedViewer && (
         (product.ownerId && enrichedViewer.open_id === product.ownerId) ||
         (product.ownerName && enrichedViewer.name === product.ownerName) ||
         (product.ownerName && enrichedViewer.en_name === product.ownerName) ||
         (parentProduct?.ownerId && enrichedViewer.open_id === parentProduct.ownerId) ||
         (parentProduct?.ownerName && enrichedViewer.name === parentProduct.ownerName) ||
-        (parentProduct?.ownerName && enrichedViewer.en_name === parentProduct.ownerName) ||
-        enrichedViewer.permRole === '管理员' ||
-        enrichedViewer.permRole === '总经理'
+        (parentProduct?.ownerName && enrichedViewer.en_name === parentProduct.ownerName)
       ));
 
       // 自动计算当前阶段
@@ -2620,55 +2618,8 @@
                       </div>
                     </div>
                     
-                    {/* 子项目列表 */}
-                    <div className="mb-6">
-                      <h3 className="text-sm font-semibold text-gray-700 mb-3">📋 子项目列表</h3>
-                      <div className="space-y-2">
-                        {childProducts.map(cp => {
-                          const cpProgress = calcProjectProgress(cp, allNodes, templates, tasks, products);
-                          const cpStatus = calcProjectStatus(cp, tasks, allNodes, templates, products);
-                          const statusColors = { '进行中': 'text-orange-600 bg-orange-50', '已完成': 'text-green-600 bg-green-50', '未开始': 'text-gray-500 bg-gray-50' };
-                          const dept = cp.responsibleDept || '';
-                          const deptColorMap = {
-                            '产品中心': 'border-l-blue-500', '运营中心': 'border-l-green-500', '设计部': 'border-l-pink-500',
-                            '中枢部': 'border-l-purple-500', '营销推广部': 'border-l-orange-500'
-                          };
-                          return (
-                            <div key={cp.id} 
-                              className={`border-l-4 ${deptColorMap[dept] || 'border-l-gray-300'} bg-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow border border-gray-100`}
-                              onClick={() => onSelectProduct?.(cp)}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="font-medium text-sm text-gray-800 truncate">{cp.name}</span>
-                                  {dept && <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded whitespace-nowrap">{dept}</span>}
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className={`text-xs px-1.5 py-0.5 rounded ${statusColors[cpStatus] || 'text-gray-500 bg-gray-50'}`}>{cpStatus}</span>
-                                  <span className={`text-sm font-bold ${cpProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{cpProgress}%</span>
-                                </div>
-                              </div>
-                              <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full bg-blue-500 transition-all" style={{width: `${cpProgress}%`}} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
                     {/* === 项目流水线流程图 === */}
                     {(() => {
-                      console.log('[DEBUG pipeline]', {
-                        productName: product.name,
-                        templateType: product.templateType,
-                        parentTplId,
-                        parentTplName,
-                        childTplsCount: childTpls.length,
-                        childTpls: childTpls.map(t => ({name: t.name, type: t.type, ownership: t.ownership, parentTemplate: t.parentTemplate})),
-                        allTemplates: Object.entries(templates).map(([id, t]) => ({id, name: t.name, type: t.type, ownership: t.ownership, parentTemplate: t.parentTemplate})),
-                        childProductsCount: childProducts.length
-                      });
                       if (childProducts.length === 0) return null;
                       
                       // 构建 name → prerequisite names 映射（直接从模板数据读取）
