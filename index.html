@@ -397,7 +397,19 @@
             childIds: [], // 后面从 parentId 反推
             responsibleDept: r.fields['负责部门'] || '',
             initiatorGroup: r.fields['发起组'] || '', // 发起组别
-            skippedNodes: (() => { try { const v = r.fields['跳过节点']; return v ? JSON.parse(v) : []; } catch(e) { return []; } })() // 跳过的节点名称列表
+            skippedNodes: (() => {
+              try {
+                const v = r.fields['跳过节点'];
+                if (!v) return [];
+                if (Array.isArray(v)) {
+                  // 富文本格式: [{ text: '...', type: 'text' }]
+                  const txt = v.map(item => item.text || '').join('');
+                  return txt ? JSON.parse(txt) : [];
+                }
+                if (typeof v === 'string') return JSON.parse(v);
+                return [];
+              } catch(e) { return []; }
+            })() // 跳过的节点名称列表
           };
         });
 
@@ -6641,8 +6653,6 @@
             const transformed = transformData(json.data);
             setData(transformed);
             setLastUpdate(new Date().toLocaleTimeString());
-            // 缓存到 sessionStorage（约2MB，足够）
-            try { sessionStorage.setItem('okr_cache', JSON.stringify({ data: json.data, ts: Date.now() })); } catch(e) {}
           } else {
             throw new Error(json.error || '数据加载失败');
           }
@@ -6654,25 +6664,6 @@
 
       useEffect(() => {
         if (currentUser) {
-          // 先从缓存加载（秒开），然后后台刷新
-          try {
-            const cached = sessionStorage.getItem('okr_cache');
-            if (cached) {
-              const { data: cachedData, ts } = JSON.parse(cached);
-              const age = Date.now() - ts;
-              if (age < 10 * 60 * 1000) { // 10分钟内有效
-                const transformed = transformData(cachedData);
-                setData(transformed);
-                setLoading(false);
-                setLastUpdate(`缓存 ${Math.round(age/1000)}s前`);
-                // 后台静默刷新
-                fetchData(true);
-                const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
-                return () => clearInterval(interval);
-              }
-            }
-          } catch(e) {}
-          // 无缓存，正常加载
           fetchData();
           const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
           return () => clearInterval(interval);
