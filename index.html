@@ -1281,7 +1281,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       const [showAddForm, setShowAddForm] = useState(false);
@@ -1305,6 +1305,11 @@
 
       // 检查前置节点任务是否全部完成
       const checkPredecessorCompleted = () => {
+        // 先检查子线前置：前置子线未完成则整条线都锁定
+        if (pipelineBlocked) {
+          return { canAccept: false, blockedBy: '前置子线', reason: 'pipeline', message: pipelineBlocked.message };
+        }
+        
         if (!node.prevNode || !nodes) return { canAccept: true, blockedBy: null };
         
         // 找到前置节点
@@ -2757,26 +2762,18 @@
                                           </div>
                                           {/* 底部信息 */}
                                           <div className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-500">
-                                              {line.status === 'done' ? '✅ 已完成' : `⏱ ${line.tpl.cycleDays || '?'}天工期`}
+                                            <span className="text-gray-500 flex-shrink-0">
+                                              {line.status === 'done' ? '✅ 完成' : `⏱ ${line.tpl.cycleDays || '?'}天`}
                                             </span>
-                                            <div className="flex gap-0.5 flex-wrap justify-end">
+                                            <div className="flex gap-0.5 flex-wrap justify-end ml-1">
                                               {(() => {
                                                 const roles = line.tpl.participantRoles || [];
                                                 if (roles.length === 0) {
                                                   const dept = line.child?.responsibleDept || '未分配';
                                                   const dc2 = deptColors[dept] || defaultDc;
-                                                  return <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${dc2.bg} ${dc2.text}`}>{dept}</span>;
+                                                  return <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${dc2.bg} ${dc2.text}`}>{dept}</span>;
                                                 }
-                                                // 将角色标签映射为部门显示名
-                                                const roleToDepts = {
-                                                  '发起组': '发起组',
-                                                  '对应产品组': '产品中心',
-                                                  '中枢部': '中枢部',
-                                                  '营销推广部': '营销推广部',
-                                                  '设计部': '设计部',
-                                                  '财务部': '财务部'
-                                                };
+                                                const roleShort = { '发起组': '发起', '对应产品组': '产品', '中枢部': '中枢', '营销推广部': '营销', '设计部': '设计', '财务部': '财务' };
                                                 const roleDeptColors = {
                                                   '发起组': deptColors['运营中心'] || defaultDc,
                                                   '对应产品组': deptColors['产品中心'] || defaultDc,
@@ -2787,8 +2784,7 @@
                                                 };
                                                 return roles.map((role, ri) => {
                                                   const dc2 = roleDeptColors[role] || defaultDc;
-                                                  const label = roleToDepts[role] || role;
-                                                  return <span key={ri} className={`px-1 py-0.5 rounded text-[10px] font-medium ${dc2.bg} ${dc2.text}`}>{label}</span>;
+                                                  return <span key={ri} className={`px-1 py-0.5 rounded text-[9px] font-medium ${dc2.bg} ${dc2.text}`}>{roleShort[role] || role}</span>;
                                                 });
                                               })()}
                                             </div>
@@ -3218,7 +3214,31 @@
           </div>
 
           {/* 节点任务详情弹窗 */}
-          {selectedNode && canViewDetails && (
+          {selectedNode && canViewDetails && (() => {
+            // 子线前置检查：该子项目的前置子线是否全部完成
+            let pipelineBlocked = null;
+            if (product.parentId && product.templateType) {
+              const matchTpl = Object.values(templates).find(t => t.type === product.templateType);
+              const prereqNames = matchTpl?.prerequisiteNames || [];
+              if (prereqNames.length > 0) {
+                const parentProduct = products.find(p => p.childIds?.includes(product.id));
+                if (parentProduct) {
+                  const siblingProducts = products.filter(p => parentProduct.childIds?.includes(p.id) && p.id !== product.id);
+                  const unfinishedPrereqs = prereqNames.filter(preName => {
+                    const preTpl = Object.values(templates).find(t => t.name === preName);
+                    if (!preTpl) return false;
+                    const preChild = siblingProducts.find(s => s.templateType === preTpl.type);
+                    if (!preChild) return true; // 前置子线未创建
+                    const preProgress = calcProjectProgress(preChild, allNodes, templates, tasks);
+                    return preChild.status !== '已完成' && preProgress < 100;
+                  });
+                  if (unfinishedPrereqs.length > 0) {
+                    pipelineBlocked = { message: `前置子线「${unfinishedPrereqs.join('、')}」尚未完成`, prereqs: unfinishedPrereqs };
+                  }
+                }
+              }
+            }
+            return (
             <NodeTaskModal
               node={selectedNode}
               tasks={productTasks}
@@ -3227,10 +3247,12 @@
               nodeRecordId={selectedNode.id}
               nodes={nodes}
               skippedNodes={skippedNodes}
+              pipelineBlocked={pipelineBlocked}
               onClose={() => setSelectedNode(null)}
               onTaskCreated={onRefresh}
             />
-          )}
+            );
+          })()}
         </div>
       );
     };
