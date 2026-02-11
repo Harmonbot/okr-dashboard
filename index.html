@@ -38,7 +38,8 @@
     .card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); transition: box-shadow 0.25s cubic-bezier(.4,0,.2,1), transform 0.25s cubic-bezier(.4,0,.2,1); }
     .card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
     .card-flat { background: var(--c-surface); border-radius: var(--radius); border: 1px solid var(--c-border); }
-    .stat-card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); padding: 18px 20px; position: relative; overflow: hidden; }
+    .stat-card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); padding: 12px 10px; position: relative; overflow: hidden; }
+    @media (min-width: 640px) { .stat-card { padding: 18px 20px; } }
     .stat-card::after { content:''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
     .stat-card.purple::after { background: var(--c-accent); }
     .stat-card.blue::after { background: var(--c-info); }
@@ -4906,7 +4907,7 @@
                               </div>
                               
                               {isSingleLevel ? (
-                                <div className="grid grid-cols-3 gap-3 ml-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 ml-1">
                                   {subGroups[subKeys[0]].map(o => renderObjectiveCard(o))}
                                 </div>
                               ) : (
@@ -4920,7 +4921,7 @@
                                         <span className="text-xs font-medium text-gray-600">{groupName}</span>
                                         <span className="text-[10px]" style={{color:'var(--c-text-muted)'}}>{groupObjs.length} 个目标</span>
                                       </div>
-                                      <div className="grid grid-cols-3 gap-3">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
                                         {groupObjs.map(o => renderObjectiveCard(o))}
                                       </div>
                                     </div>
@@ -4931,7 +4932,7 @@
                           );
                         })
                       ) : (
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
                           {objs.map(o => renderObjectiveCard(o))}
                         </div>
                       )}
@@ -5781,7 +5782,7 @@
       return (
         <div>
           {/* 筛选栏 */}
-          <div className="card-flat flex items-center gap-2 px-5 py-3 mb-4 flex-wrap">
+          <div className="card-flat flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 mb-4 flex-wrap">
             <select value={filterDept} onChange={e => handleDeptChange(e.target.value)}
               className="px-2.5 py-1 rounded-lg text-xs outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}>
               <option value="all">全部部门</option>
@@ -5812,31 +5813,31 @@
           </div>
 
           {/* 汇总条 - 6格 */}
-          <div className="grid grid-cols-6 gap-3 mb-4">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3 mb-4">
             <div className="stat-card purple text-center">
-              <div className="text-xl font-bold text-gray-800">{totalActive}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>活跃成员</div>
-              <div className="text-[10px]" style={{color:'var(--c-text-muted)'}}>人均 {avgTasks.toFixed(1)}</div>
+              <div className="text-lg sm:text-xl font-bold text-gray-800">{totalActive}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>活跃成员</div>
+              <div className="text-[9px] sm:text-[10px]" style={{color:'var(--c-text-muted)'}}>人均 {avgTasks.toFixed(1)}</div>
             </div>
             <div className="stat-card blue text-center">
-              <div className="text-xl font-bold text-gray-800">{totalTasks}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>总任务</div>
+              <div className="text-lg sm:text-xl font-bold text-gray-800">{totalTasks}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>总任务</div>
             </div>
             <div className="stat-card indigo text-center">
-              <div className="text-xl font-bold text-blue-600">{totalInProgress}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>进行中</div>
+              <div className="text-lg sm:text-xl font-bold text-blue-600">{totalInProgress}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>进行中</div>
             </div>
             <div className="stat-card blue text-center">
-              <div className="text-xl font-bold text-gray-500">{totalPending}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>待开始</div>
+              <div className="text-lg sm:text-xl font-bold text-gray-500">{totalPending}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>待开始</div>
             </div>
             <div className="stat-card green text-center">
-              <div className="text-xl font-bold text-green-600">{totalCompleted}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>已完成</div>
+              <div className="text-lg sm:text-xl font-bold text-green-600">{totalCompleted}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>已完成</div>
             </div>
             <div className={`stat-card ${totalOverdue > 0 ? 'red' : 'green'} text-center`}>
-              <div className={`text-xl font-bold ${totalOverdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{totalOverdue}</div>
-              <div className="text-[11px]" style={{color:'var(--c-text-muted)'}}>逾期任务</div>
+              <div className={`text-lg sm:text-xl font-bold ${totalOverdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{totalOverdue}</div>
+              <div className="text-[10px] sm:text-[11px]" style={{color:'var(--c-text-muted)'}}>逾期任务</div>
             </div>
           </div>
 
