@@ -2355,16 +2355,16 @@
       };
 
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={onClose}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl max-w-6xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Icon name="folder" size={28} color="white" />
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                  <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Icon name="folder" size={20} color="white" />
                   </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">{product.name}</h2>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg sm:text-2xl font-bold truncate">{product.name}</h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-white/80 text-sm">{product.templateType || product.category}</span>
                       {product.childIds?.length > 0 && (
@@ -2412,7 +2412,7 @@
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+            <div className="p-4 sm:p-6 overflow-y-auto max-h-[calc(95vh-200px)] sm:max-h-[calc(90vh-200px)]">
               
               {/* === 父项目视图：显示子项目概览 + 补建子项目入口 === */}
               {isParentProject(product) ? (() => {
@@ -2647,29 +2647,29 @@
                       return (
                         <div className="mb-6">
                           {/* 计划上线醒目展示 */}
-                          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-5 mb-5 text-white">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center text-3xl">🎯</div>
+                          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-4 sm:p-5 mb-5 text-white">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-xl bg-white/20 flex items-center justify-center text-2xl sm:text-3xl">🎯</div>
                                 <div>
-                                  <div className="text-xs opacity-70 uppercase tracking-wide">计划上线日期</div>
-                                  <div className="text-3xl font-bold tracking-tight">
+                                  <div className="text-[10px] sm:text-xs opacity-70 uppercase tracking-wide">计划上线日期</div>
+                                  <div className="text-xl sm:text-3xl font-bold tracking-tight">
                                     {targetDate ? `${targetDate.getMonth()+1}月${targetDate.getDate()}日` : '未设定'}
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex gap-6">
+                              <div className="flex gap-4 sm:gap-6">
                                 <div className="text-center">
-                                  <div className="text-xs opacity-70">总工期</div>
-                                  <div className="text-2xl font-bold">{totalProjectDays}<span className="text-sm font-normal ml-0.5">天</span></div>
+                                  <div className="text-[10px] sm:text-xs opacity-70">总工期</div>
+                                  <div className="text-lg sm:text-2xl font-bold">{totalProjectDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-xs opacity-70">已用</div>
-                                  <div className="text-2xl font-bold">{elapsedDays}<span className="text-sm font-normal ml-0.5">天</span></div>
+                                  <div className="text-[10px] sm:text-xs opacity-70">已用</div>
+                                  <div className="text-lg sm:text-2xl font-bold">{elapsedDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-xs opacity-70">剩余</div>
-                                  <div className={`text-2xl font-bold ${remainingDays <= 10 ? 'text-red-300' : ''}`}>{remainingDays}<span className="text-sm font-normal ml-0.5">天</span></div>
+                                  <div className="text-[10px] sm:text-xs opacity-70">剩余</div>
+                                  <div className={`text-lg sm:text-2xl font-bold ${remainingDays <= 10 ? 'text-red-300' : ''}`}>{remainingDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
                                 </div>
                               </div>
                             </div>
@@ -2726,11 +2726,11 @@
                                   </div>
                                   
                                   {/* 子线流程节点 */}
-                                  <div className={`ml-4 ${si < stages.length - 1 ? 'border-l-2 border-dashed border-gray-200 pb-2' : ''} pl-6`}>
-                                    <div className={`flex gap-3 flex-wrap ${lineInfos.length === 1 ? 'max-w-sm' : ''}`}>
+                                  <div className={`ml-2 sm:ml-4 ${si < stages.length - 1 ? 'border-l-2 border-dashed border-gray-200 pb-2' : ''} pl-3 sm:pl-6`}>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                                       {lineInfos.map((line, li) => (
                                         <div key={li} 
-                                          className={`flex-1 min-w-[180px] max-w-[280px] border-2 rounded-xl p-3.5 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+                                          className={`border-2 rounded-xl p-3 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
                                             line.status === 'done' ? 'border-green-400 bg-green-50' : 
                                             line.status === 'active' ? `${line.dc.border} ${line.dc.bg} ring-2 ${line.dc.ring}` : 
                                             'border-gray-200 bg-white'
