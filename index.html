@@ -5041,7 +5041,7 @@
                   for (let si = 0; si < stages.length; si++) {
                     const allDone = stages[si].every(tpl => {
                       const c = getChild(tpl.name);
-                      return c?.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100;
+                      return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
                     });
                     if (allDone) activeStageIdx = si + 1;
                   }
@@ -5054,7 +5054,7 @@
                         {stages.map((stg, si) => {
                           const allDone = stg.every(tpl => {
                             const c = getChild(tpl.name);
-                            return c?.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100;
+                            return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
                           });
                           const isActive = si === activeStageIdx;
                           return (
