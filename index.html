@@ -844,8 +844,11 @@
       }
       const pTasks = tasks.filter(t => t.productId === product.id);
       if (pTasks.length === 0) {
-        // 无任务但有跳过节点 → 基于进度判断
+        // 无任务 → 基于进度判断
+        const pNodes = getNodesForProduct(product, allNodes, templates);
+        const skipped = new Set(product.skippedNodes || []);
         const progress = calcProjectProgress(product, allNodes, templates, tasks);
+        console.log('[StatusDebug]', product.name, 'pTasks:0, pNodes:', pNodes.length, 'skipped:', [...skipped], 'progress:', progress, 'templateType:', product.templateType);
         if (progress > 0) return progress >= 100 ? '已完成' : '进行中';
         return '未开始';
       }
