@@ -1320,9 +1320,13 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks: propTasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
+      const [localTasks, setLocalTasks] = useState(propTasks);
+      // 当 props 更新时同步（后台刷新完成后）
+      React.useEffect(() => { setLocalTasks(propTasks); }, [propTasks]);
+      const tasks = localTasks;
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
@@ -1425,10 +1429,10 @@
           
           const result = await res.json();
           if (result.success) {
-            // 乐观更新：立即在本地添加新任务显示
+            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
             const newTaskId = result.data?.record?.record_id || ('temp_' + Date.now());
             const assigneeMember = members.find(m => m.id === formData.assignee);
-            tasks.push({
+            setLocalTasks(prev => [...prev, {
               id: newTaskId,
               name: formData.name,
               stage: node.name,
@@ -1442,7 +1446,7 @@
               startDate: formData.plannedStartDate || '',
               dueDate: '',
               completeDate: ''
-            });
+            }]);
             setShowAddForm(false);
             setFormData({
               name: '',
@@ -1500,10 +1504,12 @@
           
           const result = await res.json();
           if (result.success) {
-            // 乐观更新：立即更新本地任务状态
-            task.status = '进行中';
-            task.startDate = today.toISOString().split('T')[0];
-            task.dueDate = dueDate.toISOString().split('T')[0];
+            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
+            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+              ...t, status: '进行中',
+              startDate: today.toISOString().split('T')[0],
+              dueDate: dueDate.toISOString().split('T')[0]
+            } : t));
             showToast?.('已接受任务', 'success');
             setActionTaskId(null);
             // 后台静默刷新数据
@@ -1586,9 +1592,11 @@
           
           const result = await res.json();
           if (result.success) {
-            // 乐观更新：立即更新本地任务状态
-            task.status = '已完成';
-            task.completeDate = new Date().toISOString().split('T')[0];
+            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
+            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+              ...t, status: '已完成',
+              completeDate: new Date().toISOString().split('T')[0]
+            } : t));
             setShowCompleteForm(null);
             setOutputFile(null);
             setOutputLink('');
