@@ -708,7 +708,7 @@
     };
 
     // 判断是否是父项目（纯容器，不挂流程）
-    const isParentProject = (product) => product?.category === '父项目' || (product?.childIds?.length > 0);
+    const isParentProject = (product) => product?.category === '父项目' || (product?.childIds?.length > 0 && !product?.parentId);
 
     // 工作日计算（跳过周六日）
     const addWorkingDays = (startDate, workDays) => {
@@ -801,8 +801,8 @@
 
     // 根据任务计算项目进度（模板感知）
     const calcProjectProgress = (product, allNodes, templates, tasks, allProducts) => {
-      // 父项目：聚合子项目进度
-      if (product.childIds?.length > 0 && allProducts) {
+      // 父项目：聚合子项目进度（有parentId的是子项目，不走此分支）
+      if (product.childIds?.length > 0 && !product.parentId && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
         if (children.length > 0) {
           const total = children.reduce((sum, c) => sum + calcProjectProgress(c, allNodes, templates, tasks), 0);
@@ -831,12 +831,11 @@
 
     // 自动计算项目状态
     const calcProjectStatus = (product, tasks, allNodes, templates, allProducts) => {
-      // 父项目：聚合子项目状态
-      if (product.childIds?.length > 0 && allProducts) {
+      // 父项目：聚合子项目状态（有parentId的是子项目，不走此分支）
+      if (product.childIds?.length > 0 && !product.parentId && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
         if (children.length > 0) {
           const childStatuses = children.map(c => ({ name: c.name, status: calcProjectStatus(c, tasks, allNodes, templates, allProducts) }));
-          console.log('[ParentStatus]', product.name, 'children:', childStatuses);
           const allDone = childStatuses.every(c => c.status === '已完成');
           const anyProgress = childStatuses.some(c => c.status !== '未开始');
           return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
@@ -845,10 +844,7 @@
       const pTasks = tasks.filter(t => t.productId === product.id);
       if (pTasks.length === 0) {
         // 无任务 → 基于进度判断
-        const pNodes = getNodesForProduct(product, allNodes, templates);
-        const skipped = new Set(product.skippedNodes || []);
         const progress = calcProjectProgress(product, allNodes, templates, tasks);
-        console.log('[StatusDebug]', product.name, 'pTasks:0, pNodes:', pNodes.length, 'skipped:', [...skipped], 'progress:', progress, 'templateType:', product.templateType);
         if (progress > 0) return progress >= 100 ? '已完成' : '进行中';
         return '未开始';
       }
