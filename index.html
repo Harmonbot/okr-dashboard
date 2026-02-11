@@ -1482,8 +1482,15 @@
           
           const result = await res.json();
           if (result.success) {
-            if (onTaskCreated) onTaskCreated(); // 立即刷新
+            // 乐观更新：立即更新本地任务状态
+            task.status = '进行中';
+            task.startDate = today.toISOString().split('T')[0];
+            task.dueDate = dueDate.toISOString().split('T')[0];
             showToast?.('已接受任务', 'success');
+            setActionTaskId(null);
+            // 后台静默刷新数据
+            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
+            return;
           } else {
             throw new Error(result.error || '操作失败');
           }
@@ -1561,13 +1568,17 @@
           
           const result = await res.json();
           if (result.success) {
-            if (onTaskCreated) onTaskCreated();
+            // 乐观更新：立即更新本地任务状态
+            task.status = '已完成';
+            task.completeDate = new Date().toISOString().split('T')[0];
             setShowCompleteForm(null);
             setOutputFile(null);
             setOutputLink('');
             setOutputText('');
             setCompleteMode('link');
             showToast?.('任务已完成', 'success');
+            // 后台静默刷新数据
+            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
           } else {
             throw new Error(result.error || '操作失败');
           }
@@ -3507,6 +3518,8 @@
         if (kr.krType === 'metric_duration' && relatedProjects.length > 0) {
           const allDone = relatedProjects.every(p => calcProjectStatus(p, tasks, nodes, templates, products) === '已完成');
           const anyStarted = relatedProjects.some(p => {
+            const pStatus = calcProjectStatus(p, tasks, nodes, templates, products);
+            if (pStatus === '进行中' || pStatus === '已完成') return true;
             const pt = tasks.filter(t => t.productId === p.id);
             return pt.some(t => t.status === '进行中' || t.status === '已完成');
           });
