@@ -2149,12 +2149,19 @@
       const timelineMap = {};
       modalTimeline.nodes.forEach(n => { timelineMap[n.name] = n; });
 
-      // 检查当前用户是否是项目负责人
-      const isProjectOwner = viewer && (
-        viewer.open_id === product.ownerId ||
-        viewer.name === product.ownerName ||
-        viewer.en_name === product.ownerName
-      );
+      // 检查当前用户是否是项目负责人（含父项目负责人、管理员）
+      const isProjectOwner = !!(enrichedViewer && (
+        enrichedViewer.open_id === product.ownerId ||
+        enrichedViewer.name === product.ownerName ||
+        enrichedViewer.en_name === product.ownerName ||
+        (parentProduct && (
+          enrichedViewer.open_id === parentProduct.ownerId ||
+          enrichedViewer.name === parentProduct.ownerName ||
+          enrichedViewer.en_name === parentProduct.ownerName
+        )) ||
+        enrichedViewer.permRole === '管理员' ||
+        enrichedViewer.permRole === '总经理'
+      ));
 
       // 自动计算当前阶段
       const getAutoCurrentStage = () => {
