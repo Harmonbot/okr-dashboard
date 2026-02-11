@@ -835,10 +835,14 @@
       if (product.childIds?.length > 0 && !product.parentId && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
         if (children.length > 0) {
-          const childStatuses = children.map(c => ({ name: c.name, status: calcProjectStatus(c, tasks, allNodes, templates, allProducts) }));
-          const allDone = childStatuses.every(c => c.status === '已完成');
-          const anyProgress = childStatuses.some(c => c.status !== '未开始');
-          return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
+          const childStatuses = children.map(c => calcProjectStatus(c, tasks, allNodes, templates, allProducts));
+          const allDone = childStatuses.every(s => s === '已完成');
+          const anyProgress = childStatuses.some(s => s !== '未开始');
+          if (allDone) return '已完成';
+          if (anyProgress) return '进行中';
+          // 兜底：直接检查父项目总进度
+          const parentProgress = calcProjectProgress(product, allNodes, templates, tasks, allProducts);
+          return parentProgress > 0 ? '进行中' : '未开始';
         }
       }
       const pTasks = tasks.filter(t => t.productId === product.id);
