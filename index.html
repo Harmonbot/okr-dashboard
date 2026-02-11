@@ -1425,8 +1425,24 @@
           
           const result = await res.json();
           if (result.success) {
-            // 先刷新数据，再重置表单
-            if (onTaskCreated) onTaskCreated();
+            // 乐观更新：立即在本地添加新任务显示
+            const newTaskId = result.data?.record?.record_id || ('temp_' + Date.now());
+            const assigneeMember = members.find(m => m.id === formData.assignee);
+            tasks.push({
+              id: newTaskId,
+              name: formData.name,
+              stage: node.name,
+              priority: formData.priority,
+              status: '待开始',
+              productId: product?.id,
+              assignee: formData.assignee,
+              assigneeName: assigneeMember?.name || '',
+              collaborators: formData.collaborators.map(id => { const m = members.find(mm => mm.id === id); return m?.name || ''; }).filter(Boolean),
+              description: formData.description,
+              startDate: formData.plannedStartDate || '',
+              dueDate: '',
+              completeDate: ''
+            });
             setShowAddForm(false);
             setFormData({
               name: '',
@@ -1437,6 +1453,8 @@
               plannedStartDate: ''
             });
             showToast?.('任务创建成功', 'success');
+            // 后台静默刷新获取真实数据
+            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
           } else {
             throw new Error(result.error || '创建失败');
           }
