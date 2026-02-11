@@ -703,18 +703,47 @@
     // 计算子项目的时间线：每个节点的预计开始/截止日期
     // 起点 = 父项目的开始日期（产品立项完成即T=0）
     const calcSubProjectTimeline = (child, parentStartDate, allNodes, templates) => {
-      if (!parentStartDate) return { nodes: [], totalDays: 0, deadline: null };
       const cNodes = getNodesForProduct(child, allNodes, templates);
+      
+      // 优先使用子项目自身的开始/结束日期
+      const projectStart = child.startDate ? new Date(child.startDate) : parentStartDate ? new Date(parentStartDate) : null;
+      const projectEnd = child.targetDate ? new Date(child.targetDate) : null;
+      
+      if (!projectStart) return { nodes: [], totalDays: 0, deadline: null };
+      
+      if (projectEnd && cNodes.length > 0) {
+        // 有项目日期和节点：按项目总工期等比分配节点时间
+        const totalProjectWorkDays = getWorkingDaysBetween(projectStart, projectEnd);
+        const totalNodeDays = cNodes.reduce((s, nd) => s + (nd.days || 1), 0);
+        let currentStart = new Date(projectStart);
+        const timeline = cNodes.map(nd => {
+          const ratio = (nd.days || 1) / totalNodeDays;
+          const workDays = Math.max(1, Math.round(totalProjectWorkDays * ratio));
+          const nodeStart = new Date(currentStart);
+          const nodeEnd = addWorkingDays(nodeStart, workDays);
+          currentStart = nodeEnd;
+          return { ...nd, planStart: nodeStart, planEnd: nodeEnd, workDays };
+        });
+        return { nodes: timeline, totalDays: totalProjectWorkDays, deadline: projectEnd };
+      }
+      
+      if (projectEnd) {
+        // 有日期但无节点
+        const totalDays = getWorkingDaysBetween(projectStart, projectEnd);
+        return { nodes: [], totalDays, deadline: projectEnd };
+      }
+      
       if (cNodes.length === 0) return { nodes: [], totalDays: 0, deadline: null };
       
-      let currentStart = new Date(parentStartDate);
+      // fallback: 无项目结束日期，用节点累加
+      let currentStart = new Date(projectStart);
       let totalWorkDays = 0;
       const timeline = cNodes.map(nd => {
         const workDays = nd.days || 1;
         const nodeStart = new Date(currentStart);
         const nodeEnd = addWorkingDays(nodeStart, workDays);
         totalWorkDays += workDays;
-        currentStart = nodeEnd; // 下一个节点从这个节点结束日开始
+        currentStart = nodeEnd;
         return { ...nd, planStart: nodeStart, planEnd: nodeEnd, workDays };
       });
       
