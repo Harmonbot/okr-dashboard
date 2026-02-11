@@ -6623,9 +6623,11 @@
         initAuth();
       }, []);
 
-      const fetchData = async () => {
-        setLoading(true);
-        setError(null);
+      const fetchData = async (background = false) => {
+        if (!background) {
+          setLoading(true);
+          setError(null);
+        }
         try {
           const res = await fetch(API_BASE + '/api/lark?app_token=' + APP_TOKEN);
           const json = await res.json();
@@ -6634,19 +6636,40 @@
             const transformed = transformData(json.data);
             setData(transformed);
             setLastUpdate(new Date().toLocaleTimeString());
+            // 缓存到 sessionStorage（约2MB，足够）
+            try { sessionStorage.setItem('okr_cache', JSON.stringify({ data: json.data, ts: Date.now() })); } catch(e) {}
           } else {
             throw new Error(json.error || '数据加载失败');
           }
         } catch (err) {
-          setError(err.message);
+          if (!background) setError(err.message);
         }
-        setLoading(false);
+        if (!background) setLoading(false);
       };
 
       useEffect(() => {
         if (currentUser) {
+          // 先从缓存加载（秒开），然后后台刷新
+          try {
+            const cached = sessionStorage.getItem('okr_cache');
+            if (cached) {
+              const { data: cachedData, ts } = JSON.parse(cached);
+              const age = Date.now() - ts;
+              if (age < 10 * 60 * 1000) { // 10分钟内有效
+                const transformed = transformData(cachedData);
+                setData(transformed);
+                setLoading(false);
+                setLastUpdate(`缓存 ${Math.round(age/1000)}s前`);
+                // 后台静默刷新
+                fetchData(true);
+                const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
+                return () => clearInterval(interval);
+              }
+            }
+          } catch(e) {}
+          // 无缓存，正常加载
           fetchData();
-          const interval = setInterval(fetchData, 5 * 60 * 1000);
+          const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
           return () => clearInterval(interval);
         }
       }, [currentUser]);
