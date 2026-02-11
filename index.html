@@ -2301,16 +2301,67 @@
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
               
-              {/* === 父项目视图：只显示子项目概览 === */}
-              {product.childIds?.length > 0 ? (() => {
-                const childProducts = products.filter(p => product.childIds.includes(p.id));
+              {/* === 父项目视图：显示子项目概览 + 补建子项目入口 === */}
+              {isParentProject(product) ? (() => {
+                const childProducts = (product.childIds?.length > 0) ? products.filter(p => product.childIds.includes(p.id)) : [];
                 const allChildTasks = tasks.filter(t => childProducts.some(c => c.id === t.productId));
                 const completedChildTasks = allChildTasks.filter(t => t.status === '已完成');
                 const inProgressChildTasks = allChildTasks.filter(t => t.status === '进行中');
                 const pendingChildTasks = allChildTasks.filter(t => t.status === '待开始' || t.status === '未开始');
                 
+                // 查找对应的子模板
+                const parentTplId = Object.keys(templates).find(id => templates[id].type === product.templateType && templates[id].ownership === '父项目');
+                const parentTplName = parentTplId ? templates[parentTplId].name : '';
+                const childTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
+                
                 return (
                   <>
+                    {childProducts.length === 0 && childTpls.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-amber-800">⚠️ 该父项目暂无子项目</div>
+                            <div className="text-sm text-amber-600 mt-1">可一键生成，或在飞书多维表手动添加子项目并关联「父项目」字段，刷新后自动同步</div>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
+                              let created = 0;
+                              for (const tpl of childTpls) {
+                                const childName = `${product.name.replace(/建设|SOP|项目/g, '')}-${tpl.name}`;
+                                const dept = deptMap[tpl.name] || '';
+                                try {
+                                  const res = await fetch(API_BASE + '/api/create-record', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: {
+                                      '项目名称': childName, '项目类型': '子项目', '模版类型': tpl.type, '项目状态': '未开始', '负责部门': dept,
+                                      '父项目': [product.id]
+                                    }})
+                                  });
+                                  const result = await res.json();
+                                  if (result.success) created++;
+                                } catch (e) { console.error(e); }
+                              }
+                              showToast?.(`✅ 已生成 ${created} 个子项目`, 'success');
+                              if (onRefresh) onRefresh();
+                              onClose();
+                            }}
+                            className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 whitespace-nowrap"
+                          >
+                            🚀 生成 {childTpls.length} 个子项目
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {childProducts.length === 0 && childTpls.length === 0 && (
+                      <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400 mb-6">
+                        <div className="text-sm">该项目模版类型「{product.templateType}」暂无对应子模板</div>
+                        <div className="text-xs mt-1">请在飞书「流程模板」表中为此类型创建子模板</div>
+                      </div>
+                    )}
+                    {childProducts.length > 0 && (
+                    <>
                     {/* 聚合统计 */}
                     <div className="grid grid-cols-5 gap-4 mb-6">
                       <div className="bg-gray-50 rounded-xl p-4 text-center">
@@ -2418,6 +2469,8 @@
                           </div>
                         </div>
                       </div>
+                    )}
+                    </> 
                     )}
                   </>
                 );
