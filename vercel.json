@@ -1,10 +1,19 @@
 {
+  "regions": ["hkg1"],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" }
   ],
   "functions": {
+    "api/lark.js": {
+      "maxDuration": 30,
+      "region": "hkg1"
+    },
     "api/file.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "region": "hkg1"
+    },
+    "api/*.js": {
+      "region": "hkg1"
     }
   },
   "crons": [
