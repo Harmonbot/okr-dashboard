@@ -543,23 +543,21 @@
           let parentTpl = r.fields['父项目'];
           if (Array.isArray(parentTpl)) parentTpl = parentTpl.map(n => n.text || n).join('');
           const prereqRaw = r.fields['前置子线'];
-          let prereqIds = [];
+          let prereqNames = [];
           if (Array.isArray(prereqRaw)) {
-            // 直接数组格式: ["recXXX"] 或 [{"record_id":"recXXX"}]
-            prereqIds = prereqRaw.map(x => typeof x === 'string' ? x : (x?.record_id || x?.id || x?.text || '')).filter(Boolean);
-          } else if (prereqRaw && typeof prereqRaw === 'object') {
-            // 对象格式: {link_record_ids: [...]} 或 {record_ids: [...]}
-            prereqIds = prereqRaw.link_record_ids || prereqRaw.record_ids || [];
-            if (prereqIds === null) prereqIds = [];
+            // DuplexLink数组: [{record_ids:[...], text:"产品立项线", ...}]
+            prereqRaw.forEach(item => {
+              if (item?.text) prereqNames.push(item.text);
+              else if (typeof item === 'string') prereqNames.push(item);
+            });
           }
-          console.log('[TPL]', tplName, 'prereqRaw:', JSON.stringify(prereqRaw), '→', prereqIds);
           data.templates[r.record_id] = {
             name: tplName || '',
             type: r.fields['模板类型'] || '',
-            ownership: r.fields['模版归属'] || '', // 父项目 / 子项目
+            ownership: r.fields['模版归属'] || '',
             parentTemplate: parentTpl || '',
             cycleDays: r.fields['预计周期(天)'] || 0,
-            prerequisiteIds: prereqIds
+            prerequisiteNames: prereqNames.filter(Boolean) // 直接存前置子线名称
           };
         });
       }
@@ -2528,18 +2526,10 @@
                     {(() => {
                       if (childProducts.length === 0) return null;
                       
-                      // 从模板数据动态构建依赖图
-                      const tplById = {};
-                      Object.entries(templates).forEach(([id, t]) => { tplById[id] = t; });
-                      
-                      // 构建 name → prerequisite names 映射
+                      // 构建 name → prerequisite names 映射（直接从模板数据读取）
                       const prereqMap = {};
                       childTpls.forEach(t => {
-                        const prereqNames = (t.prerequisiteIds || [])
-                          .map(pid => tplById[pid]?.name)
-                          .filter(Boolean);
-                        prereqMap[t.name] = prereqNames;
-                        console.log('[PIPELINE DEBUG]', t.name, 'prereqIds:', t.prerequisiteIds, 'prereqNames:', prereqNames);
+                        prereqMap[t.name] = t.prerequisiteNames || [];
                       });
                       
                       // 拓扑排序分层
@@ -3245,7 +3235,7 @@
           // 构建 name → prerequisite names
           const prereqMap = {};
           for (const [tplId, tpl] of childTpls) {
-            prereqMap[tpl.name] = (tpl.prerequisiteIds || []).map(pid => tplById[pid]?.name || templates[pid]?.name).filter(Boolean);
+            prereqMap[tpl.name] = tpl.prerequisiteNames || [];
           }
           
           // 拓扑排序分层
