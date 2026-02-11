@@ -2053,6 +2053,7 @@
       
       const hasMatchingTemplate = matchingTemplateId || allNodes.length === 0;
       const [selectedNode, setSelectedNode] = useState(null);
+      const [isCreatingChildren, setIsCreatingChildren] = useState(false);
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       
@@ -2373,8 +2374,11 @@
                                 <div className="text-sm text-amber-600 mt-1">可一键生成，或在飞书多维表手动添加子项目并关联「父项目」字段，刷新后自动同步</div>
                               </div>
                           <button
+                            disabled={isCreatingChildren}
                             onClick={async () => {
-                              const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
+                              if (isCreatingChildren) return;
+                              setIsCreatingChildren(true);
+                              const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
                               let created = 0;
                               const startDate = product.startDate ? new Date(product.startDate) : new Date();
                               for (const tpl of childTpls) {
@@ -2406,9 +2410,9 @@
                               if (onRefresh) onRefresh();
                               onClose();
                             }}
-                            className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 whitespace-nowrap"
+                            className={`px-4 py-2 text-white rounded-lg text-sm whitespace-nowrap ${isCreatingChildren ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600'}`}
                           >
-                            🚀 生成 {childTpls.length} 个子项目
+                            {isCreatingChildren ? '⏳ 生成中...' : `🚀 生成 ${childTpls.length} 个子项目`}
                           </button>
                         </div>
                       </div>
@@ -2435,7 +2439,10 @@
                                 </div>
                               </div>
                               <button
+                                disabled={isCreatingChildren}
                                 onClick={async () => {
+                                  if (isCreatingChildren) return;
+                                  setIsCreatingChildren(true);
                                   const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
                                   const startDate = product.startDate ? new Date(product.startDate) : new Date();
                                   let created = 0;
@@ -2468,9 +2475,9 @@
                                   if (onRefresh) onRefresh();
                                   onClose();
                                 }}
-                                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 whitespace-nowrap"
+                                className={`px-4 py-2 text-white rounded-lg text-sm whitespace-nowrap ${isCreatingChildren ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}`}
                               >
-                                ➕ 补建 {missingTpls.length} 个子项目
+                                {isCreatingChildren ? '⏳ 补建中...' : `➕ 补建 ${missingTpls.length} 个子项目`}
                               </button>
                             </div>
                           </div>
