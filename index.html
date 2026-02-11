@@ -1410,71 +1410,71 @@
           return;
         }
         
-        setIsSubmitting(true);
-        try {
-          const res = await fetch(API_BASE + '/api/create-task', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              app_token: APP_TOKEN,
-              table_id: 'tblFwmxmjRJPzVmV',
-              task: {
-                name: formData.name,
-                priority: formData.priority,
-                status: '待开始',
-                assignee: formData.assignee,
-                collaborators: formData.collaborators,
-                description: formData.description,
-                plannedStartDate: formData.plannedStartDate,
-                projectId: product?.id,
-                nodeId: nodeRecordId
-              }
-            })
-          });
-          
-          const result = await res.json();
-          if (result.success) {
-            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
-            const newTaskId = result.data?.record?.record_id || ('temp_' + Date.now());
-            const assigneeMember = members.find(m => m.id === formData.assignee);
-            setLocalTasks(prev => [...prev, {
-              id: newTaskId,
-              name: formData.name,
-              stage: node.name,
-              priority: formData.priority,
+        // 先乐观更新 UI（秒响应）
+        const tempId = 'temp_' + Date.now();
+        const assigneeMember = members.find(m => m.id === formData.assignee);
+        const savedFormData = { ...formData };
+        setLocalTasks(prev => [...prev, {
+          id: tempId,
+          name: savedFormData.name,
+          stage: node.name,
+          priority: savedFormData.priority,
+          status: '待开始',
+          productId: product?.id,
+          assignee: savedFormData.assignee,
+          assigneeName: assigneeMember?.name || '',
+          collaborators: savedFormData.collaborators.map(id => { const m = members.find(mm => mm.id === id); return m?.name || ''; }).filter(Boolean),
+          description: savedFormData.description,
+          startDate: savedFormData.plannedStartDate || '',
+          dueDate: '',
+          completeDate: ''
+        }]);
+        optimisticLockRef.current = true;
+        setShowAddForm(false);
+        setFormData({
+          name: '',
+          priority: 'P2-中等',
+          assignee: '',
+          collaborators: [],
+          description: '',
+          plannedStartDate: ''
+        });
+        showToast?.('任务创建成功', 'success');
+        
+        // 后台异步发 API
+        fetch(API_BASE + '/api/create-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_token: APP_TOKEN,
+            table_id: 'tblFwmxmjRJPzVmV',
+            task: {
+              name: savedFormData.name,
+              priority: savedFormData.priority,
               status: '待开始',
-              productId: product?.id,
-              assignee: formData.assignee,
-              assigneeName: assigneeMember?.name || '',
-              collaborators: formData.collaborators.map(id => { const m = members.find(mm => mm.id === id); return m?.name || ''; }).filter(Boolean),
-              description: formData.description,
-              startDate: formData.plannedStartDate || '',
-              dueDate: '',
-              completeDate: ''
-            }]);
-            setShowAddForm(false);
-            setFormData({
-              name: '',
-              priority: 'P2-中等',
-              assignee: '',
-              collaborators: [],
-              description: '',
-              plannedStartDate: ''
-            });
-            showToast?.('任务创建成功', 'success');
-            optimisticLockRef.current = true;
-            // 后台静默刷新获取真实数据，刷新完解锁
-            setTimeout(() => { 
-              optimisticLockRef.current = false;
-              if (onTaskCreated) onTaskCreated(); 
-            }, 1500);
-          } else {
-            throw new Error(result.error || '创建失败');
+              assignee: savedFormData.assignee,
+              collaborators: savedFormData.collaborators,
+              description: savedFormData.description,
+              plannedStartDate: savedFormData.plannedStartDate,
+              projectId: product?.id,
+              nodeId: nodeRecordId
+            }
+          })
+        }).then(r => r.json()).then(result => {
+          if (!result.success) {
+            // API 失败：移除临时任务
+            setLocalTasks(prev => prev.filter(t => t.id !== tempId));
+            showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
           }
-        } catch (err) {
+          setTimeout(() => { 
+            optimisticLockRef.current = false;
+            if (onTaskCreated) onTaskCreated(); 
+          }, 2000);
+        }).catch(err => {
+          setLocalTasks(prev => prev.filter(t => t.id !== tempId));
           showToast?.('创建失败: ' + err.message, 'error');
-        }
-        setIsSubmitting(false);
+          optimisticLockRef.current = false;
+        });
       };
 
       // 接受任务：设置开始日期为今天，截止日期根据节点预计工时计算，状态改为进行中
@@ -1491,49 +1491,54 @@
         }
         
         setActionTaskId(task.id);
-        try {
-          const today = new Date();
-          const dueDate = new Date(today);
-          dueDate.setDate(dueDate.getDate() + nodeDays); // 使用已转换的数字
-          
-          const res = await fetch(API_BASE + '/api/update-task', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              app_token: APP_TOKEN,
-              table_id: 'tblFwmxmjRJPzVmV',
-              record_id: task.id,
-              fields: {
-                status: '进行中',
-                startDate: today.toISOString().split('T')[0],
-                dueDate: dueDate.toISOString().split('T')[0]
-              }
-            })
-          });
-          
-          const result = await res.json();
-          if (result.success) {
-            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
-            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-              ...t, status: '进行中',
+        const today = new Date();
+        const dueDate = new Date(today);
+        dueDate.setDate(dueDate.getDate() + nodeDays);
+        
+        // 先乐观更新 UI（秒响应）
+        setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+          ...t, status: '进行中',
+          startDate: today.toISOString().split('T')[0],
+          dueDate: dueDate.toISOString().split('T')[0]
+        } : t));
+        optimisticLockRef.current = true;
+        showToast?.('已接受任务', 'success');
+        setActionTaskId(null);
+        
+        // 后台异步发 API（不阻塞 UI）
+        fetch(API_BASE + '/api/update-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_token: APP_TOKEN,
+            table_id: 'tblFwmxmjRJPzVmV',
+            record_id: task.id,
+            fields: {
+              status: '进行中',
               startDate: today.toISOString().split('T')[0],
               dueDate: dueDate.toISOString().split('T')[0]
+            }
+          })
+        }).then(r => r.json()).then(result => {
+          if (!result.success) {
+            // API 失败：回滚乐观更新
+            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+              ...t, status: '待开始', startDate: '', dueDate: ''
             } : t));
-            optimisticLockRef.current = true;
-            showToast?.('已接受任务', 'success');
-            setActionTaskId(null);
-            // 后台静默刷新数据，刷新完解锁
-            setTimeout(() => { 
-              optimisticLockRef.current = false;
-              if (onTaskCreated) onTaskCreated(); 
-            }, 1500);
-            return;
-          } else {
-            throw new Error(result.error || '操作失败');
+            showToast?.('操作失败: ' + (result.error || '未知错误'), 'error');
           }
-        } catch (err) {
+          // 延迟刷新获取最新数据
+          setTimeout(() => { 
+            optimisticLockRef.current = false;
+            if (onTaskCreated) onTaskCreated(); 
+          }, 2000);
+        }).catch(err => {
+          setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+            ...t, status: '待开始', startDate: '', dueDate: ''
+          } : t));
           showToast?.('操作失败: ' + err.message, 'error');
-        }
+          optimisticLockRef.current = false;
+        });
         setActionTaskId(null);
       };
 
@@ -1549,86 +1554,91 @@
         }
         
         setActionTaskId(task.id);
-        try {
-          // 如果有文件，先上传
-          if (hasFile) {
-            const toBase64 = (file) => new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.readAsDataURL(file);
-              reader.onload = () => resolve(reader.result.split(',')[1]);
-              reader.onerror = error => reject(error);
-            });
+        
+        // 保存提交数据
+        const savedFile = hasFile ? outputFile : null;
+        const savedLink = hasLink ? outputLink.trim() : '';
+        const savedText = hasText ? outputText.trim() : '';
+        
+        // 先乐观更新 UI（秒响应）
+        setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+          ...t, status: '已完成',
+          completeDate: new Date().toISOString().split('T')[0]
+        } : t));
+        optimisticLockRef.current = true;
+        setShowCompleteForm(null);
+        setOutputFile(null);
+        setOutputLink('');
+        setOutputText('');
+        setCompleteMode('link');
+        setActionTaskId(null);
+        showToast?.('任务已完成，正在同步数据...', 'success');
+        
+        // 后台异步：文件上传 + 状态更新
+        (async () => {
+          try {
+            if (savedFile) {
+              const toBase64 = (file) => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+              });
+              const fileBase64 = await toBase64(savedFile);
+              const uploadRes = await fetch(API_BASE + '/api/file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  app_token: APP_TOKEN,
+                  table_id: 'tblFwmxmjRJPzVmV',
+                  record_id: task.id,
+                  file_name: savedFile.name,
+                  file_data: fileBase64,
+                  file_size: savedFile.size
+                })
+              });
+              const uploadResult = await uploadRes.json();
+              if (!uploadResult.success) {
+                showToast?.('文件上传失败，但任务状态已更新', 'error');
+              }
+            }
             
-            const fileBase64 = await toBase64(outputFile);
+            const updateFields = {
+              status: '已完成',
+              completeDate: new Date().toISOString().split('T')[0]
+            };
+            if (savedLink) updateFields.outputUrl = savedLink;
+            if (savedText) updateFields.outputText = savedText;
             
-            const uploadRes = await fetch(API_BASE + '/api/file', {
+            const res = await fetch(API_BASE + '/api/update-task', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 app_token: APP_TOKEN,
                 table_id: 'tblFwmxmjRJPzVmV',
                 record_id: task.id,
-                file_name: outputFile.name,
-                file_data: fileBase64,
-                file_size: outputFile.size
+                fields: updateFields
               })
             });
-            
-            const uploadResult = await uploadRes.json();
-            if (!uploadResult.success) {
-              throw new Error(uploadResult.error || '文件上传失败');
+            const result = await res.json();
+            if (!result.success) {
+              // API 失败：回滚
+              setLocalTasks(prev => prev.map(t => t.id === task.id ? {
+                ...t, status: '进行中', completeDate: ''
+              } : t));
+              showToast?.('状态同步失败: ' + (result.error || ''), 'error');
             }
-          }
-          
-          // 更新任务状态+交付内容（单次调用）
-          const updateFields = {
-            status: '已完成',
-            completeDate: new Date().toISOString().split('T')[0]
-          };
-          if (hasLink) {
-            updateFields.outputUrl = outputLink.trim();
-          }
-          if (hasText) {
-            updateFields.outputText = outputText.trim();
-          }
-          
-          const res = await fetch(API_BASE + '/api/update-task', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              app_token: APP_TOKEN,
-              table_id: 'tblFwmxmjRJPzVmV',
-              record_id: task.id,
-              fields: updateFields
-            })
-          });
-          
-          const result = await res.json();
-          if (result.success) {
-            // 乐观更新：通过 setLocalTasks 触发 React 重渲染
+          } catch (err) {
             setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-              ...t, status: '已完成',
-              completeDate: new Date().toISOString().split('T')[0]
+              ...t, status: '进行中', completeDate: ''
             } : t));
-            optimisticLockRef.current = true;
-            setShowCompleteForm(null);
-            setOutputFile(null);
-            setOutputLink('');
-            setOutputText('');
-            setCompleteMode('link');
-            showToast?.('任务已完成', 'success');
-            // 后台静默刷新数据，刷新完解锁
-            setTimeout(() => { 
-              optimisticLockRef.current = false;
-              if (onTaskCreated) onTaskCreated(); 
-            }, 1500);
-          } else {
-            throw new Error(result.error || '操作失败');
+            showToast?.('操作失败: ' + err.message, 'error');
           }
-        } catch (err) {
-          showToast?.('操作失败: ' + err.message, 'error');
-        }
-        setActionTaskId(null);
+          setTimeout(() => { 
+            optimisticLockRef.current = false;
+            if (onTaskCreated) onTaskCreated(); 
+          }, 2000);
+        })();
       };
 
       // 协作人多选处理
