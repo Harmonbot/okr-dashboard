@@ -5002,125 +5002,104 @@
               </div>
             </div>
 
-            {/* 子项目列表（父项目直接展开） */}
+            {/* 子项目流程图摘要（父项目） */}
             {isParent && childProducts.length > 0 && (
-              <div className="border-t" style={{borderColor:'var(--c-border)'}}>
-                {childProducts.map((child, ci) => {
-                  const cProgress = getAutoProgress(child);
-                  const cStatus = getAutoStatus(child);
-                  const cTasks = tasks.filter(t => t.productId === child.id);
-                  const cCompleted = cTasks.filter(t => t.status === '已完成').length;
-                  const cNodes = getNodesForProduct(child, nodes, templates);
-                  // 当前阶段
-                  let currentStage = '';
-                  for (const nd of cNodes) {
-                    const nt = cTasks.filter(t => t.stage === nd.name);
-                    if (nt.some(t => t.status === '进行中')) { currentStage = nd.name; break; }
-                    if (nt.length > 0 && !nt.every(t => t.status === '已完成')) { currentStage = nd.name; break; }
-                  }
+              <div className="border-t px-4 py-3 cursor-pointer" style={{borderColor:'var(--c-border)'}} onClick={() => setSelectedProduct(product)}>
+                {(() => {
+                  // 从模板构建阶段
+                  const parentTplName = Object.values(templates).find(t => t.type === product.templateType && t.ownership === '父项目')?.name || '';
+                  const cTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
                   
-                  // 时间线计算
-                  const parentStart = product.startDate ? new Date(product.startDate) : null;
-                  const tl = calcSubProjectTimeline(child, parentStart, nodes, templates);
-                  const now = new Date();
-                  const deadline = tl.deadline;
-                  const hasTimeline = parentStart && deadline;
-                  let timeStatus = 'pending'; // pending | on-track | warning | overdue | done
-                  let remainingWorkDays = 0;
-                  let timeText = '';
+                  const prereqMap = {};
+                  cTpls.forEach(t => { prereqMap[t.name] = t.prerequisiteNames || []; });
                   
-                  if (cStatus === '已完成') {
-                    timeStatus = 'done';
-                    timeText = '✓ 已完成';
-                  } else if (hasTimeline) {
-                    remainingWorkDays = getWorkingDaysBetween(now, deadline);
-                    if (now > deadline) {
-                      timeStatus = 'overdue';
-                      const overdueDays = getWorkingDaysBetween(deadline, now);
-                      timeText = `逾期${overdueDays}天`;
-                    } else if (remainingWorkDays <= 2) {
-                      timeStatus = 'warning';
-                      timeText = remainingWorkDays <= 0 ? '今天截止' : `剩${remainingWorkDays}天`;
-                    } else {
-                      timeStatus = 'on-track';
-                      timeText = `剩${remainingWorkDays}天`;
-                    }
-                  }
-                  
-                  // 时间进度（已用工作日 / 总工作日）
-                  let timeProgress = 0;
-                  if (hasTimeline && tl.totalDays > 0) {
-                    const elapsed = getWorkingDaysBetween(parentStart, now);
-                    timeProgress = Math.min(100, Math.round((elapsed / tl.totalDays) * 100));
-                  }
-
-                  const deptColors = {
-                    '产品中心': { dot: 'bg-blue-500', bg: 'hover:bg-blue-50/50' },
-                    '运营中心': { dot: 'bg-green-500', bg: 'hover:bg-green-50/50' },
-                    '设计部': { dot: 'bg-pink-500', bg: 'hover:bg-pink-50/50' },
-                    '中枢部': { dot: 'bg-purple-500', bg: 'hover:bg-purple-50/50' },
-                    '营销推广部': { dot: 'bg-orange-500', bg: 'hover:bg-orange-50/50' },
-                    '财务部': { dot: 'bg-gray-500', bg: 'hover:bg-gray-50/50' }
+                  const getDepth = (name, v = new Set()) => {
+                    if (v.has(name)) return 0; v.add(name);
+                    const deps = prereqMap[name] || [];
+                    return deps.length === 0 ? 0 : 1 + Math.max(...deps.map(d => getDepth(d, new Set(v))));
                   };
-                  const dc = deptColors[child.responsibleDept] || { dot: 'bg-gray-400', bg: 'hover:bg-gray-50/50' };
-
+                  
+                  const lineDepths = {};
+                  cTpls.forEach(t => { lineDepths[t.name] = getDepth(t.name); });
+                  const maxDepth = Math.max(...Object.values(lineDepths), 0);
+                  
+                  const stages = [];
+                  for (let d = 0; d <= maxDepth; d++) {
+                    const linesAtDepth = cTpls.filter(t => lineDepths[t.name] === d);
+                    if (linesAtDepth.length === 0) continue;
+                    stages.push(linesAtDepth);
+                  }
+                  
+                  if (stages.length === 0) return null;
+                  
+                  const getChild = (lineName) => childProducts.find(c => c.templateType?.endsWith('-' + lineName));
+                  const stageLabels = ['启动', '执行', '落地', '收尾'];
+                  const deptDots = { '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '设计部': 'bg-pink-500', '中枢部': 'bg-purple-500', '营销推广部': 'bg-orange-500' };
+                  
+                  // 找出当前活跃阶段
+                  let activeStageIdx = 0;
+                  for (let si = 0; si < stages.length; si++) {
+                    const allDone = stages[si].every(tpl => {
+                      const c = getChild(tpl.name);
+                      return c?.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100;
+                    });
+                    if (allDone) activeStageIdx = si + 1;
+                  }
+                  if (activeStageIdx >= stages.length) activeStageIdx = stages.length - 1;
+                  
                   return (
-                    <div key={child.id}
-                      className={`px-4 py-2.5 cursor-pointer transition-colors ${dc.bg} ${ci < childProducts.length - 1 ? 'border-b' : ''} ${timeStatus === 'overdue' ? 'bg-red-50/50' : ''}`}
-                      style={{borderColor: 'var(--c-border)'}}
-                      onClick={() => setSelectedProduct(child)}
-                    >
-                      <div className="flex items-center gap-3">
-                        {/* 部门色点 */}
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dc.dot}`} />
-                        {/* 子项目名 */}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-gray-700 truncate">{child.name}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            {child.responsibleDept && (
-                              <span className="text-[10px] text-gray-400">{child.responsibleDept}</span>
-                            )}
-                            {currentStage && (
-                              <span className="text-[10px] text-blue-500">📍{currentStage}</span>
-                            )}
-                            <span className="text-[10px] text-gray-300">{cCompleted}/{cTasks.length} 任务</span>
-                          </div>
-                        </div>
-                        {/* 时间线 + 进度 */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {hasTimeline && timeStatus !== 'done' && (
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                              timeStatus === 'overdue' ? 'bg-red-100 text-red-600' :
-                              timeStatus === 'warning' ? 'bg-amber-100 text-amber-600' :
-                              'text-gray-400'
-                            }`}>{timeText}</span>
-                          )}
-                          {timeStatus === 'done' && (
-                            <span className="text-[10px] font-medium text-green-500">{timeText}</span>
-                          )}
-                          <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                            <div className={`h-full rounded-full ${cProgress >= 100 ? 'bg-green-500' : cProgress > 0 ? 'bg-blue-500' : 'bg-gray-200'}`} style={{width: `${cProgress}%`}} />
-                          </div>
-                          <span className={`text-xs font-semibold w-8 text-right ${cProgress >= 100 ? 'text-green-600' : cProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{cProgress}%</span>
-                        </div>
+                    <div>
+                      {/* 阶段进度指示器 */}
+                      <div className="flex items-center gap-1 mb-2">
+                        {stages.map((stg, si) => {
+                          const allDone = stg.every(tpl => {
+                            const c = getChild(tpl.name);
+                            return c?.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100;
+                          });
+                          const isActive = si === activeStageIdx;
+                          return (
+                            <React.Fragment key={si}>
+                              <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                                allDone ? 'bg-green-50' : isActive ? 'bg-blue-50' : ''
+                              }`}>
+                                <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                  allDone ? 'bg-green-500 text-white' :
+                                  isActive ? 'bg-blue-500 text-white' :
+                                  'bg-gray-200 text-gray-400'
+                                }`}>{allDone ? '✓' : si + 1}</div>
+                                <span className={`text-[10px] font-medium ${
+                                  allDone ? 'text-green-600' : isActive ? 'text-blue-600' : 'text-gray-400'
+                                }`}>{stageLabels[si] || `S${si+1}`}</span>
+                              </div>
+                              {si < stages.length - 1 && (
+                                <div className={`flex-1 h-px ${allDone ? 'bg-green-300' : 'bg-gray-200'}`} />
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
                       </div>
-                      {/* 时间进度条（已用时间/总工期）*/}
-                      {hasTimeline && timeStatus !== 'done' && tl.totalDays > 0 && (
-                        <div className="flex items-center gap-2 mt-1.5 ml-5">
-                          <div className="flex-1 h-1 rounded-full bg-gray-100 overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${
-                              timeStatus === 'overdue' ? 'bg-red-400' :
-                              timeStatus === 'warning' ? 'bg-amber-400' : 'bg-gray-300'
-                            }`} style={{width: `${timeProgress}%`}} />
-                          </div>
-                          <span className="text-[9px] text-gray-300 flex-shrink-0">
-                            ⏱ {tl.totalDays}天工期 → {deadline ? `${deadline.getMonth()+1}/${deadline.getDate()}` : ''}
-                          </span>
-                        </div>
-                      )}
+                      
+                      {/* 当前阶段子线明细 */}
+                      <div className="flex gap-1.5 flex-wrap">
+                        {stages[activeStageIdx].map((tpl, li) => {
+                          const child = getChild(tpl.name);
+                          const progress = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
+                          const isDone = child?.status === '已完成' || progress >= 100;
+                          const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
+                          return (
+                            <div key={li} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
+                              isDone ? 'bg-green-50 border-green-200' : progress > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
+                              <span className="font-medium text-gray-700">{tpl.name}</span>
+                              <span className={`font-bold ${isDone ? 'text-green-500' : progress > 0 ? 'text-blue-500' : 'text-gray-300'}`}>{progress}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
-                })}
+                })()}
               </div>
             )}
           </div>
