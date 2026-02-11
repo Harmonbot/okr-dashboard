@@ -4999,7 +4999,7 @@
         product.skippedNodes = newArr;
         // 保存到飞书
         try {
-          await fetch(API_BASE + '/api/update-record', {
+          const res = await fetch(API_BASE + '/api/update-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5009,7 +5009,15 @@
               fields: { '跳过节点': JSON.stringify(newArr) }
             })
           });
+          if (!res.ok) {
+            const errText = await res.text();
+            console.error('[Skip Save Error]', res.status, errText);
+            showToast?.('保存跳过状态失败: ' + res.status, 'error');
+          } else {
+            console.log('[Skip Save OK]', productId, newArr);
+          }
         } catch (e) {
+          console.error('[Skip Save Error]', e);
           showToast?.('保存跳过状态失败', 'error');
         }
       };
