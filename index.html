@@ -1993,18 +1993,18 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, currentUser }) => {
+    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer }) => {
       // 部门权限：当前用户是否可查看该子项目详情
       const canViewDetails = (() => {
         if (!product.responsibleDept) return true; // 无负责部门的项目对所有人开放
         if (isParentProject(product)) return true; // 父项目对所有人开放
-        if (!currentUser) return true;
+        if (!viewer) return true;
         // 项目负责人/目标负责人可查看
-        if (currentUser.open_id === product.ownerId) return true;
+        if (viewer.open_id === product.ownerId) return true;
         // 管理员/总监可查看所有
-        if (currentUser.permRole === '管理员' || currentUser.permRole === '总监') return true;
+        if (viewer.permRole === '管理员' || viewer.permRole === '总监') return true;
         // 本部门可查看
-        if (currentUser.department === product.responsibleDept) return true;
+        if (viewer.department === product.responsibleDept) return true;
         return false;
       })();
       // 根据模版类型匹配模板，筛选对应节点（父项目不匹配模板）
@@ -5168,7 +5168,7 @@
               onClose={() => setSelectedProduct(null)}
               onRefresh={onRefresh}
               onSelectProduct={setSelectedProduct}
-              currentUser={currentUser}
+              viewer={currentUser}
             />
           )}
         </div>
