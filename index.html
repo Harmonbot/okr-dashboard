@@ -835,13 +835,24 @@
       if (product.childIds?.length > 0 && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
         if (children.length > 0) {
-          const allDone = children.every(c => calcProjectStatus(c, tasks, allNodes, templates) === '已完成');
-          const anyProgress = children.some(c => calcProjectStatus(c, tasks, allNodes, templates) !== '未开始');
-          return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
+          const allDone = children.every(c => calcProjectStatus(c, tasks, allNodes, templates, allProducts) === '已完成');
+          const anyProgress = children.some(c => calcProjectStatus(c, tasks, allNodes, templates, allProducts) !== '未开始');
+          if (allDone) return '已完成';
+          if (anyProgress) return '进行中';
+          // 兜底：如果子项目都是"未开始"但父项目有进度，仍为进行中
+          const parentProgress = calcProjectProgress(product, allNodes, templates, tasks, allProducts);
+          return parentProgress > 0 ? '进行中' : '未开始';
         }
       }
       const pTasks = tasks.filter(t => t.productId === product.id);
-      if (pTasks.length === 0) return '未开始';
+      if (pTasks.length === 0) {
+        // 无任务但有跳过节点 → 检查进度
+        if (product.skippedNodes?.length > 0) {
+          const progress = calcProjectProgress(product, allNodes, templates, tasks);
+          return progress >= 100 ? '已完成' : progress > 0 ? '进行中' : '未开始';
+        }
+        return '未开始';
+      }
       const completed = pTasks.filter(t => t.status === '已完成').length;
       const inProgress = pTasks.filter(t => t.status === '进行中').length;
       // 所有任务已完成，还要检查是否所有节点都有任务（避免只完成部分节点就显示已完成）
