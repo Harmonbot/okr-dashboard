@@ -547,7 +547,8 @@
             type: r.fields['模板类型'] || '',
             ownership: r.fields['模版归属'] || '', // 父项目 / 子项目
             parentTemplate: parentTpl || '',
-            cycleDays: r.fields['预计周期(天)'] || 0
+            cycleDays: r.fields['预计周期(天)'] || 0,
+            prerequisiteIds: r.fields['前置子线']?.link_record_ids || [] // 前置子线的record_id
           };
         });
       }
@@ -2512,7 +2513,198 @@
                     </div>
                     
                     {/* 子项目列表 */}
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">📂 子项目进度</h3>
+                    {/* === 项目流水线时间线 === */}
+                    {(() => {
+                      if (childProducts.length === 0) return null;
+                      
+                      // 从模板数据动态构建依赖图
+                      // childTpls = 当前父模板下的所有子模板
+                      const tplById = {};
+                      Object.entries(templates).forEach(([id, t]) => { tplById[id] = t; });
+                      
+                      // 构建 name → prerequisite names 映射
+                      const prereqMap = {}; // lineName → [prereqLineName, ...]
+                      childTpls.forEach(t => {
+                        const prereqNames = (t.prerequisiteIds || [])
+                          .map(pid => tplById[pid]?.name)
+                          .filter(Boolean);
+                        prereqMap[t.name] = prereqNames;
+                      });
+                      
+                      // 拓扑排序分层（相同依赖深度的子线归为同一阶段）
+                      const getDepth = (name, visited = new Set()) => {
+                        if (visited.has(name)) return 0;
+                        visited.add(name);
+                        const deps = prereqMap[name] || [];
+                        if (deps.length === 0) return 0;
+                        return 1 + Math.max(...deps.map(d => getDepth(d, new Set(visited))));
+                      };
+                      
+                      const lineDepths = {};
+                      childTpls.forEach(t => { lineDepths[t.name] = getDepth(t.name); });
+                      
+                      const maxDepth = Math.max(...Object.values(lineDepths), 0);
+                      const pipeline = [];
+                      for (let d = 0; d <= maxDepth; d++) {
+                        const linesAtDepth = childTpls.filter(t => lineDepths[t.name] === d);
+                        if (linesAtDepth.length === 0) continue;
+                        const depNames = new Set();
+                        linesAtDepth.forEach(t => (prereqMap[t.name] || []).forEach(n => depNames.add(n)));
+                        pipeline.push({
+                          stage: d + 1,
+                          lines: linesAtDepth.map(t => t.name),
+                          deps: [...depNames]
+                        });
+                      }
+                      
+                      if (pipeline.length === 0) return null;
+                      
+                      const deptDotColors = {
+                        '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '设计部': 'bg-pink-500',
+                        '中枢部': 'bg-purple-500', '营销推广部': 'bg-orange-500'
+                      };
+                      
+                      // 匹配子项目
+                      const getChild = (lineName) => childProducts.find(c => c.templateType?.endsWith('-' + lineName));
+                      
+                      // 计算每阶段的累计工作日
+                      const parentStart = product.startDate ? new Date(product.startDate) : null;
+                      let stageStartDays = 0;
+                      const stageInfos = pipeline.map(stg => {
+                        const lineInfos = stg.lines.map(lineName => {
+                          const child = getChild(lineName);
+                          const tpl = childTpls.find(t => t.name === lineName);
+                          const cycleDays = tpl?.cycleDays || 0;
+                          const progress = child ? calcProjectProgress(child, allNodes, templates, tasks) : 0;
+                          const status = child?.status === '已完成' ? 'done' : progress > 0 ? 'active' : 'pending';
+                          // 子项目负责部门作为协作部门
+                          const depts = child?.responsibleDept ? [child.responsibleDept] : [];
+                          return { lineName, child, cycleDays, progress, status, depts };
+                        });
+                        const maxCycle = Math.max(...lineInfos.map(l => l.cycleDays), 0);
+                        const info = { ...stg, lineInfos, startDay: stageStartDays, maxCycle };
+                        stageStartDays += maxCycle;
+                        return info;
+                      });
+                      
+                      const totalProjectDays = stageStartDays;
+                      const targetDate = parentStart ? addWorkingDays(new Date(parentStart), totalProjectDays) : null;
+                      const now = new Date();
+                      const elapsedDays = parentStart ? getWorkingDaysBetween(parentStart, now) : 0;
+                      const remainingDays = Math.max(0, totalProjectDays - elapsedDays);
+                      
+                      // 阶段状态颜色
+                      const stageColors = ['from-blue-500 to-cyan-500', 'from-amber-500 to-orange-500', 'from-purple-500 to-pink-500'];
+                      const stageBgs = ['bg-blue-50 border-blue-200', 'bg-amber-50 border-amber-200', 'bg-purple-50 border-purple-200'];
+                      const stageTextColors = ['text-blue-700', 'text-amber-700', 'text-purple-700'];
+                      const stageLabels = pipeline.length === 3 ? ['🚀 启动阶段', '⚙️ 执行阶段', '📦 落地阶段'] : ['阶段1', '阶段2', '阶段3'];
+                      
+                      return (
+                        <div className="mb-6">
+                          {/* 计划上线醒目展示 */}
+                          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-xl p-4 mb-4 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="text-3xl">🎯</div>
+                              <div>
+                                <div className="text-sm opacity-80">预计上线日期</div>
+                                <div className="text-2xl font-bold">
+                                  {targetDate ? `${targetDate.getFullYear()}/${targetDate.getMonth()+1}/${targetDate.getDate()}` : product.targetDate ? new Date(product.targetDate).toLocaleDateString('zh-CN') : '未设定'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm opacity-80">关键路径总工期</div>
+                              <div className="text-2xl font-bold">{totalProjectDays} <span className="text-sm font-normal opacity-80">个工作日</span></div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm opacity-80">剩余</div>
+                              <div className={`text-2xl font-bold ${remainingDays <= 10 ? 'text-red-300' : ''}`}>{remainingDays} <span className="text-sm font-normal opacity-80">个工作日</span></div>
+                            </div>
+                          </div>
+                          
+                          {/* 阶段流水线 */}
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3">📐 项目流水线</h3>
+                          <div className="relative">
+                            {stageInfos.map((stg, si) => {
+                              const allDone = stg.lineInfos.every(l => l.status === 'done');
+                              const anyActive = stg.lineInfos.some(l => l.status === 'active');
+                              const stageStatus = allDone ? 'done' : anyActive ? 'active' : 'pending';
+                              
+                              return (
+                                <div key={si} className="mb-3">
+                                  {/* 阶段头 */}
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                                      stageStatus === 'done' ? 'bg-green-500 text-white' :
+                                      stageStatus === 'active' ? 'bg-gradient-to-r ' + stageColors[si % 3] + ' text-white ring-3 ring-offset-1 ring-blue-200' :
+                                      'bg-gray-200 text-gray-500'
+                                    }`}>{si + 1}</div>
+                                    <span className={`text-sm font-semibold ${stageStatus === 'done' ? 'text-green-600' : stageStatus === 'active' ? stageTextColors[si % 3] : 'text-gray-400'}`}>
+                                      {stageLabels[si] || `阶段${si+1}`}
+                                    </span>
+                                    {stg.deps.length > 0 && (
+                                      <span className="text-xs text-gray-400">← 前置：{stg.deps.join('、')}</span>
+                                    )}
+                                    {stageStatus === 'done' && <span className="text-xs text-green-500 font-medium">✓ 已完成</span>}
+                                  </div>
+                                  
+                                  {/* 子线卡片（并行排列） */}
+                                  <div className={`ml-3 pl-5 ${si < stageInfos.length - 1 ? 'border-l-2 border-gray-200 pb-3' : 'border-l-2 border-transparent'}`}>
+                                    <div className="grid gap-2" style={{gridTemplateColumns: `repeat(${Math.min(stg.lineInfos.length, 3)}, 1fr)`}}>
+                                      {stg.lineInfos.map((line, li) => {
+                                        const statusIcon = line.status === 'done' ? '✅' : line.status === 'active' ? '🔄' : '⏳';
+                                        const cardBorder = line.status === 'done' ? 'border-green-200 bg-green-50' : line.status === 'active' ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50';
+                                        return (
+                                          <div key={li} className={`border rounded-lg p-3 ${cardBorder} cursor-pointer hover:shadow-md transition-all`}
+                                            onClick={() => line.child && onSelectProduct?.(line.child)}>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                              <span className="text-sm font-semibold text-gray-800">{statusIcon} {line.lineName}</span>
+                                              <span className={`text-xs font-bold ${line.progress >= 100 ? 'text-green-600' : line.progress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{line.progress}%</span>
+                                            </div>
+                                            {/* 进度条 */}
+                                            <div className="w-full h-1.5 bg-gray-200 rounded-full mb-2 overflow-hidden">
+                                              <div className={`h-full rounded-full transition-all ${line.status === 'done' ? 'bg-green-500' : line.status === 'active' ? 'bg-blue-500' : 'bg-gray-300'}`}
+                                                style={{width: `${line.progress}%`}} />
+                                            </div>
+                                            {/* 信息行 */}
+                                            <div className="flex items-center justify-between text-xs text-gray-500">
+                                              <span>{line.cycleDays}天工期</span>
+                                              <div className="flex gap-0.5">
+                                                {line.depts.map(d => (
+                                                  <span key={d} className={`w-2.5 h-2.5 rounded-full ${deptDotColors[d] || 'bg-gray-400'}`} title={d} />
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* 阶段之间的箭头 */}
+                                  {si < stageInfos.length - 1 && (
+                                    <div className="ml-3 pl-5 border-l-2 border-gray-200 flex items-center py-0.5">
+                                      <span className="text-xs text-gray-400">▼ {stg.lineInfos.length > 1 ? '全部完成后' : '完成后'}进入下一阶段</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* 部门图例 */}
+                          <div className="flex gap-3 mt-2 text-xs text-gray-500 flex-wrap">
+                            {Object.entries(deptDotColors).map(([dept, color]) => (
+                              <span key={dept} className="flex items-center gap-1">
+                                <span className={`w-2.5 h-2.5 rounded-full ${color}`} /> {dept}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">📂 子项目详情</h3>
                     <div className="space-y-3 mb-6">
                       {childProducts.map(child => {
                         const cTasks = tasks.filter(t => t.productId === child.id);
@@ -3095,26 +3287,57 @@
           // 2. 批量创建子项目
           // 子模板 → 负责部门映射
           const deptMap = {
-            '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部',
+            '产品立项线': '产品中心', '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部',
             '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部'
           };
           
-          let created = 0;
+          // 从模板数据动态构建依赖图计算每条子线的开始日期
           const parentStartDate = new Date();
+          const tplByName = {};
+          const tplById = {};
+          for (const [tplId, tpl] of childTpls) { tplByName[tpl.name] = tpl; tplById[tplId] = tpl; }
+          
+          // 构建 name → prerequisite names
+          const prereqMap = {};
+          for (const [tplId, tpl] of childTpls) {
+            prereqMap[tpl.name] = (tpl.prerequisiteIds || []).map(pid => tplById[pid]?.name || templates[pid]?.name).filter(Boolean);
+          }
+          
+          // 拓扑排序分层
+          const getDepth = (name, visited = new Set()) => {
+            if (visited.has(name)) return 0;
+            visited.add(name);
+            const deps = prereqMap[name] || [];
+            if (deps.length === 0) return 0;
+            return 1 + Math.max(...deps.map(d => getDepth(d, new Set(visited))));
+          };
+          
+          const lineDepths = {};
+          for (const [tplId, tpl] of childTpls) { lineDepths[tpl.name] = getDepth(tpl.name); }
+          const maxDepth = Math.max(...Object.values(lineDepths), 0);
+          
+          // 按层计算开始日期
+          const lineStartDates = {};
+          let cumulativeDays = 0;
+          for (let d = 0; d <= maxDepth; d++) {
+            const linesAtDepth = childTpls.filter(([_, t]) => lineDepths[t.name] === d);
+            const stageStart = addWorkingDays(new Date(parentStartDate), cumulativeDays);
+            for (const [_, tpl] of linesAtDepth) {
+              lineStartDates[tpl.name] = new Date(stageStart);
+            }
+            const maxCycle = Math.max(...linesAtDepth.map(([_, t]) => t.cycleDays || 0), 0);
+            cumulativeDays += maxCycle;
+          }
+          
+          let created = 0;
           for (const [tplId, tpl] of childTpls) {
             const childName = `${projectForm.productCode || projectForm.name.replace(/新品上线|项目/g, '')}-${tpl.name}`;
             const dept = deptMap[tpl.name] || '';
-            // 根据模板预计周期计算子项目的计划结束日期（工作日）
             const cycleDays = tpl.cycleDays || 0;
+            const childStart = lineStartDates[tpl.name] || parentStartDate;
             let childEndDate = null;
             if (cycleDays > 0) {
-              childEndDate = new Date(parentStartDate);
-              let remaining = cycleDays;
-              while (remaining > 0) {
-                childEndDate.setDate(childEndDate.getDate() + 1);
-                const dow = childEndDate.getDay();
-                if (dow !== 0 && dow !== 6) remaining--;
-              }
+              childEndDate = addWorkingDays(new Date(childStart), cycleDays);
             }
             const childFields = {
               '项目名称': childName,
@@ -3122,7 +3345,7 @@
               '模版类型': tpl.type,
               '项目状态': '未开始',
               '负责部门': dept,
-              '开始日期': parentStartDate.getTime(),
+              '开始日期': childStart.getTime(),
               ...(childEndDate ? { '计划上线日期': childEndDate.getTime() } : {}),
               ...(parentRecordId ? { '父项目': [parentRecordId] } : {})
             };
