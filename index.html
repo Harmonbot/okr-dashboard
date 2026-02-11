@@ -394,7 +394,8 @@
             ownerName: ownerName,
             parentId: parentId,
             childIds: [], // 后面从 parentId 反推
-            responsibleDept: r.fields['负责部门'] || ''
+            responsibleDept: r.fields['负责部门'] || '',
+            initiatorGroup: r.fields['发起组'] || '' // 发起组别
           };
         });
 
@@ -557,7 +558,9 @@
             ownership: r.fields['模版归属'] || '',
             parentTemplate: parentTpl || '',
             cycleDays: r.fields['预计周期(天)'] || 0,
-            prerequisiteNames: prereqNames.filter(Boolean) // 直接存前置子线名称
+            prerequisiteNames: prereqNames.filter(Boolean),
+            participantRoles: r.fields['参与角色'] || [] // 参与角色多选
+          };
           };
         });
       }
@@ -2004,17 +2007,75 @@
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
     const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer }) => {
-      // 部门权限：当前用户是否可查看该子项目详情
+      // 子线权限：当前用户是否可查看该子项目任务详情
+      // 先从成员表匹配当前用户的部门/组别/角色信息
+      const viewerMember = viewer ? members.find(m => 
+        m.id === viewer.open_id || m.larkUserId === viewer.open_id || 
+        m.name === viewer.name || m.name === viewer.en_name
+      ) : null;
+      const enrichedViewer = viewer ? {
+        ...viewer,
+        department: viewerMember?.department || '',
+        group: viewerMember?.group || '',
+        permRole: viewerMember?.permRole || '',
+        linkedGroups: viewerMember?.linkedGroups || []
+      } : null;
+      
       const canViewDetails = (() => {
-        if (!product.responsibleDept) return true; // 无负责部门的项目对所有人开放
-        if (isParentProject(product)) return true; // 父项目对所有人开放
-        if (!viewer) return true;
-        // 项目负责人/目标负责人可查看
-        if (viewer.open_id === product.ownerId) return true;
-        // 管理员/总监可查看所有
-        if (viewer.permRole === '管理员' || viewer.permRole === '总监') return true;
-        // 本部门可查看
-        if (viewer.department === product.responsibleDept) return true;
+        if (isParentProject(product)) return true;
+        if (!enrichedViewer) return true;
+        
+        // === 全局高权限：总是能看所有子线详情 ===
+        if (enrichedViewer.permRole === '管理员' || enrichedViewer.permRole === '总经理') return true;
+        if (enrichedViewer.open_id === product.ownerId) return true;
+        
+        // 找到父项目，获取发起组别
+        const parentProduct = products.find(p => p.childIds?.includes(product.id));
+        const initiatorGroup = parentProduct?.initiatorGroup || '';
+        
+        // 发起组的部门管理 → 全局高权限
+        if (initiatorGroup && enrichedViewer.permRole === '部门管理') {
+          const initiatorMember = members.find(m => m.group === initiatorGroup);
+          if (initiatorMember && enrichedViewer.department === initiatorMember.department) return true;
+        }
+        
+        // 父项目负责人也有全局权限
+        if (parentProduct && enrichedViewer.open_id === parentProduct.ownerId) return true;
+        
+        // === 子线级权限：根据模板的「参与角色」配置 ===
+        const matchTpl = Object.values(templates).find(t => t.type === product.templateType);
+        const roles = matchTpl?.participantRoles || [];
+        
+        if (roles.length === 0) {
+          // 没配置参与角色 → 降级到旧逻辑：按负责部门
+          if (!product.responsibleDept) return true;
+          return enrichedViewer.department === product.responsibleDept;
+        }
+        
+        for (const role of roles) {
+          switch (role) {
+            case '发起组':
+              if (initiatorGroup && enrichedViewer.group === initiatorGroup) return true;
+              break;
+            case '对应产品组':
+              if (initiatorGroup && enrichedViewer.department === '产品中心' && 
+                  enrichedViewer.linkedGroups?.includes(initiatorGroup)) return true;
+              break;
+            case '中枢部':
+              if (enrichedViewer.department === '中枢部') return true;
+              break;
+            case '营销推广部':
+              if (enrichedViewer.department === '营销推广部') return true;
+              break;
+            case '设计部':
+              if (enrichedViewer.group === '设计部') return true;
+              break;
+            case '财务部':
+              if (enrichedViewer.department === '财务部') return true;
+              break;
+          }
+        }
+        
         return false;
       })();
       // 根据模版类型匹配模板，筛选对应节点（父项目不匹配模板）
@@ -2566,7 +2627,7 @@
                       };
                       const defaultDc = { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700', dot: 'bg-gray-500', ring: 'ring-gray-200', grad: 'from-gray-500 to-gray-600' };
                       
-                      const getChild = (lineName) => childProducts.find(c => c.templateType?.endsWith('-' + lineName));
+                      const getChild = (tpl) => childProducts.find(c => c.templateType === tpl.type);
                       
                       // 计算关键路径总工期
                       const parentStart = product.startDate ? new Date(product.startDate) : null;
@@ -2627,7 +2688,7 @@
                           <div className="relative">
                             {stages.map((stg, si) => {
                               const lineInfos = stg.lines.map(tpl => {
-                                const child = getChild(tpl.name);
+                                const child = getChild(tpl);
                                 const progress = child ? calcProjectProgress(child, allNodes, templates, tasks) : 0;
                                 const status = child?.status === '已完成' ? 'done' : progress > 0 ? 'active' : 'pending';
                                 const dc = deptColors[child?.responsibleDept] || defaultDc;
@@ -3169,7 +3230,7 @@
       });
       const [projectForm, setProjectForm] = useState({
         name: '', templateType: '', targetDate: '', owner: '', priority: '',
-        productCode: ''
+        productCode: '', initiatorGroup: ''
       });
 
       // 创建新项目：选择父模板后自动创建父+子项目
@@ -3180,6 +3241,7 @@
         if (!projectForm.owner) missingFields.push('负责人');
         if (!projectForm.priority) missingFields.push('重要程度');
         if (!projectForm.targetDate) missingFields.push('计划上线日期');
+        if (!projectForm.initiatorGroup) missingFields.push('发起组');
         if (missingFields.length > 0) {
           showToast?.(`请填写: ${missingFields.join('、')}`, 'error');
           return;
@@ -3205,7 +3267,8 @@
             '重要程度': projectForm.priority,
             '计划上线日期': new Date(projectForm.targetDate).getTime(),
             '开始日期': new Date().getTime(),
-            '项目负责人': [{ id: projectForm.owner }]
+            '项目负责人': [{ id: projectForm.owner }],
+            ...(projectForm.initiatorGroup ? { '发起组': projectForm.initiatorGroup } : {})
           };
           
           const parentRes = await fetch(API_BASE + '/api/create-record', {
@@ -3301,7 +3364,7 @@
           showToast?.(`✅ 项目创建完成: 1个父项目 + ${created}个子项目`, 'success');
           
           setShowAddProject(null);
-          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '', productCode: '' });
+          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '', productCode: '', initiatorGroup: '' });
           if (onRefresh) onRefresh();
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
@@ -4549,7 +4612,17 @@
                                               />
                                               <span className="absolute right-3 top-2.5 text-[10px] text-green-400">✨ 自动拼接</span>
                                             </div>
-                                            <div className="grid grid-cols-3 gap-2">
+                                            <div className="grid grid-cols-4 gap-2">
+                                              <select
+                                                value={projectForm.initiatorGroup}
+                                                onChange={e => setProjectForm({ ...projectForm, initiatorGroup: e.target.value })}
+                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.initiatorGroup ? 'text-gray-400' : ''}`}
+                                              >
+                                                <option value="">发起组 *</option>
+                                                {['儿童组','游戏组','VC组','acer组','话务一组','话务二组','多平台组'].map(g => (
+                                                  <option key={g} value={g}>{g}</option>
+                                                ))}
+                                              </select>
                                               <select
                                                 value={projectForm.priority}
                                                 onChange={e => setProjectForm({ ...projectForm, priority: e.target.value })}
@@ -5032,7 +5105,7 @@
                   
                   if (stages.length === 0) return null;
                   
-                  const getChild = (lineName) => childProducts.find(c => c.templateType?.endsWith('-' + lineName));
+                  const getChild = (tpl) => childProducts.find(c => c.templateType === tpl.type);
                   const stageLabels = ['启动', '执行', '落地', '收尾'];
                   const deptDots = { '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '设计部': 'bg-pink-500', '中枢部': 'bg-purple-500', '营销推广部': 'bg-orange-500' };
                   
@@ -5040,7 +5113,7 @@
                   let activeStageIdx = 0;
                   for (let si = 0; si < stages.length; si++) {
                     const allDone = stages[si].every(tpl => {
-                      const c = getChild(tpl.name);
+                      const c = getChild(tpl);
                       return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
                     });
                     if (allDone) activeStageIdx = si + 1;
@@ -5053,7 +5126,7 @@
                       <div className="flex items-center gap-1 mb-2">
                         {stages.map((stg, si) => {
                           const allDone = stg.every(tpl => {
-                            const c = getChild(tpl.name);
+                            const c = getChild(tpl);
                             return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
                           });
                           const isActive = si === activeStageIdx;
@@ -5082,7 +5155,7 @@
                       {/* 当前阶段子线明细 */}
                       <div className="flex gap-1.5 flex-wrap">
                         {stages[activeStageIdx].map((tpl, li) => {
-                          const child = getChild(tpl.name);
+                          const child = getChild(tpl);
                           const progress = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
                           const isDone = child?.status === '已完成' || progress >= 100;
                           const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
