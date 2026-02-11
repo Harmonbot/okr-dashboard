@@ -2151,14 +2151,12 @@
 
       // 检查当前用户是否是项目负责人（含父项目负责人、管理员）
       const isProjectOwner = !!(enrichedViewer && (
-        enrichedViewer.open_id === product.ownerId ||
-        enrichedViewer.name === product.ownerName ||
-        enrichedViewer.en_name === product.ownerName ||
-        (parentProduct && (
-          enrichedViewer.open_id === parentProduct.ownerId ||
-          enrichedViewer.name === parentProduct.ownerName ||
-          enrichedViewer.en_name === parentProduct.ownerName
-        )) ||
+        (product.ownerId && enrichedViewer.open_id === product.ownerId) ||
+        (product.ownerName && enrichedViewer.name === product.ownerName) ||
+        (product.ownerName && enrichedViewer.en_name === product.ownerName) ||
+        (parentProduct?.ownerId && enrichedViewer.open_id === parentProduct.ownerId) ||
+        (parentProduct?.ownerName && enrichedViewer.name === parentProduct.ownerName) ||
+        (parentProduct?.ownerName && enrichedViewer.en_name === parentProduct.ownerName) ||
         enrichedViewer.permRole === '管理员' ||
         enrichedViewer.permRole === '总经理'
       ));
