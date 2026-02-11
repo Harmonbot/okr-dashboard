@@ -3593,8 +3593,8 @@
           const completedCount = projectProgresses.filter(p => 
             p.autoProgress >= 100 || p.autoStatus === '已完成'
           ).length;
-          const hasAnyProgress = projectProgresses.some(p => p.hasProgress);
-          const inProgressCount = projectProgresses.filter(p => p.hasProgress && p.autoProgress < 100 && p.autoStatus !== '已完成').length;
+          const hasAnyProgress = projectProgresses.some(p => p.hasProgress || p.autoProgress > 0 || p.autoStatus === '进行中');
+          const inProgressCount = projectProgresses.filter(p => (p.hasProgress || p.autoProgress > 0 || p.autoStatus === '进行中') && p.autoProgress < 100 && p.autoStatus !== '已完成').length;
           
           const avgProgress = projectProgresses.length > 0 
             ? Math.round(projectProgresses.reduce((sum, p) => sum + p.autoProgress, 0) / projectProgresses.length)
