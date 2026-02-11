@@ -560,11 +560,14 @@
           const prereqRaw = r.fields['前置子线'];
           let prereqNames = [];
           if (Array.isArray(prereqRaw)) {
-            // DuplexLink数组: [{record_ids:[...], text:"产品立项线", ...}]
             prereqRaw.forEach(item => {
               if (item?.text) prereqNames.push(item.text);
               else if (typeof item === 'string') prereqNames.push(item);
             });
+          } else if (prereqRaw && typeof prereqRaw === 'object' && Array.isArray(prereqRaw.link_record_ids)) {
+            // DuplexLink 对象格式: {link_record_ids: ["recXXX"]}
+            // 暂存 record_id，后续转换为模板名称
+            prereqNames = prereqRaw.link_record_ids || [];
           }
           data.templates[r.record_id] = {
             name: tplName || '',
@@ -575,6 +578,13 @@
             prerequisiteNames: prereqNames.filter(Boolean),
             participantRoles: r.fields['参与角色'] || []
           };
+        });
+        // 将 prerequisiteNames 中的 record_id 转换为模板名称
+        Object.values(data.templates).forEach(tpl => {
+          tpl.prerequisiteNames = tpl.prerequisiteNames.map(n => {
+            if (n.startsWith('rec') && data.templates[n]) return data.templates[n].name;
+            return n;
+          }).filter(Boolean);
         });
       }
 
@@ -2649,6 +2659,16 @@
 
                     {/* === 项目流水线流程图 === */}
                     {(() => {
+                      console.log('[DEBUG pipeline]', {
+                        productName: product.name,
+                        templateType: product.templateType,
+                        parentTplId,
+                        parentTplName,
+                        childTplsCount: childTpls.length,
+                        childTpls: childTpls.map(t => ({name: t.name, type: t.type, ownership: t.ownership, parentTemplate: t.parentTemplate})),
+                        allTemplates: Object.entries(templates).map(([id, t]) => ({id, name: t.name, type: t.type, ownership: t.ownership, parentTemplate: t.parentTemplate})),
+                        childProductsCount: childProducts.length
+                      });
                       if (childProducts.length === 0) return null;
                       
                       // 构建 name → prerequisite names 映射（直接从模板数据读取）
