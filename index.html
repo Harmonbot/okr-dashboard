@@ -2327,15 +2327,25 @@
                             onClick={async () => {
                               const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
                               let created = 0;
+                              const startDate = product.startDate ? new Date(product.startDate) : new Date();
                               for (const tpl of childTpls) {
                                 const childName = `${product.name.replace(/建设|SOP|项目/g, '')}-${tpl.name}`;
                                 const dept = deptMap[tpl.name] || '';
+                                const cycleDays = tpl.cycleDays || 0;
+                                let endDate = null;
+                                if (cycleDays > 0) {
+                                  endDate = new Date(startDate);
+                                  let rem = cycleDays;
+                                  while (rem > 0) { endDate.setDate(endDate.getDate() + 1); const d = endDate.getDay(); if (d !== 0 && d !== 6) rem--; }
+                                }
                                 try {
                                   const res = await fetch(API_BASE + '/api/create-record', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: {
                                       '项目名称': childName, '项目类型': '子项目', '模版类型': tpl.type, '项目状态': '未开始', '负责部门': dept,
+                                      '开始日期': startDate.getTime(),
+                                      ...(endDate ? { '计划上线日期': endDate.getTime() } : {}),
                                       '父项目': [product.id]
                                     }})
                                   });
@@ -2947,15 +2957,30 @@
           };
           
           let created = 0;
+          const parentStartDate = new Date();
           for (const [tplId, tpl] of childTpls) {
             const childName = `${projectForm.productCode || projectForm.name.replace(/新品上线|项目/g, '')}-${tpl.name}`;
             const dept = deptMap[tpl.name] || '';
+            // 根据模板预计周期计算子项目的计划结束日期（工作日）
+            const cycleDays = tpl.cycleDays || 0;
+            let childEndDate = null;
+            if (cycleDays > 0) {
+              childEndDate = new Date(parentStartDate);
+              let remaining = cycleDays;
+              while (remaining > 0) {
+                childEndDate.setDate(childEndDate.getDate() + 1);
+                const dow = childEndDate.getDay();
+                if (dow !== 0 && dow !== 6) remaining--;
+              }
+            }
             const childFields = {
               '项目名称': childName,
               '项目类型': '子项目',
               '模版类型': tpl.type,
               '项目状态': '未开始',
               '负责部门': dept,
+              '开始日期': parentStartDate.getTime(),
+              ...(childEndDate ? { '计划上线日期': childEndDate.getTime() } : {}),
               ...(parentRecordId ? { '父项目': [parentRecordId] } : {})
             };
             
