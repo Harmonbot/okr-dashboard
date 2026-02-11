@@ -396,7 +396,8 @@
             parentId: parentId,
             childIds: [], // 后面从 parentId 反推
             responsibleDept: r.fields['负责部门'] || '',
-            initiatorGroup: r.fields['发起组'] || '' // 发起组别
+            initiatorGroup: r.fields['发起组'] || '', // 发起组别
+            skippedNodes: (() => { try { const v = r.fields['跳过节点']; return v ? JSON.parse(v) : []; } catch(e) { return []; } })() // 跳过的节点名称列表
           };
         });
 
@@ -788,6 +789,7 @@
       }
       const pTasks = tasks.filter(t => t.productId === product.id);
       const pNodes = getNodesForProduct(product, allNodes, templates);
+      const skipped = new Set(product.skippedNodes || []);
       if (pNodes.length === 0) {
         // 无模板：直接用任务完成率
         if (pTasks.length === 0) return 0;
@@ -795,6 +797,10 @@
       }
       let total = 0;
       for (const nd of pNodes) {
+        if (skipped.has(nd.name)) {
+          total += 100; // 跳过的节点按100%
+          continue;
+        }
         const nt = pTasks.filter(t => t.stage === nd.name);
         if (nt.length > 0) total += (nt.filter(t => t.status === '已完成').length / nt.length) * 100;
       }
@@ -3127,7 +3133,7 @@
                                   {isProjectOwner && getNodeStatus(node.name) === 'pending' && (
                                     <button
                                       onClick={(e) => handleSkipNode(node.name, e)}
-                                      className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-yellow-500"
+                                      className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 text-white rounded-full text-[9px] flex items-center justify-center shadow-sm hover:bg-yellow-500 active:scale-90 transition-all"
                                       title="跳过此节点"
                                     >
                                       ⏭
@@ -3137,7 +3143,7 @@
                                   {isProjectOwner && getNodeStatus(node.name) === 'skipped' && (
                                     <button
                                       onClick={(e) => handleSkipNode(node.name, e)}
-                                      className="absolute -top-1 -right-1 w-4 h-4 bg-gray-400 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-500"
+                                      className="absolute -top-1 -right-1 w-5 h-5 bg-gray-400 text-white rounded-full text-[9px] flex items-center justify-center shadow-sm hover:bg-gray-500 active:scale-90 transition-all"
                                       title="取消跳过"
                                     >
                                       ↩
@@ -3185,7 +3191,7 @@
                     </span>
                   </div>
                   <span className="text-purple-500">{canViewDetails 
-                    ? <>💡 点击节点查看任务详情{isProjectOwner && ' | 悬浮节点可跳过'}</>
+                    ? <>💡 点击节点查看任务详情{isProjectOwner && ' | 点⏭跳过节点'}</>
                     : '🔒 任务详情仅本部门可见'}</span>
                 </div>
                 </>
@@ -4953,34 +4959,35 @@
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
 
-      // 跳过节点状态 - 按项目ID存储，持久化到 localStorage
-      const [skippedNodesMap, setSkippedNodesMap] = useState(() => {
+      // 跳过节点状态 - 从项目数据读取，保存到飞书
+      const getSkippedNodes = (productId) => {
+        const product = products.find(p => p.id === productId);
+        return new Set(product?.skippedNodes || []);
+      };
+
+      const setSkippedNodes = async (productId, updater) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return;
+        const current = new Set(product.skippedNodes || []);
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        const newArr = [...next];
+        // 立即更新本地数据
+        product.skippedNodes = newArr;
+        // 保存到飞书
         try {
-          const saved = localStorage.getItem('okr_skipped_nodes');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            const map = {};
-            Object.keys(parsed).forEach(k => { map[k] = new Set(parsed[k]); });
-            return map;
-          }
-        } catch (e) {}
-        return {};
-      });
-
-      const getSkippedNodes = (productId) => skippedNodesMap[productId] || new Set();
-
-      const setSkippedNodes = (productId, updater) => {
-        setSkippedNodesMap(prev => {
-          const current = prev[productId] || new Set();
-          const next = typeof updater === 'function' ? updater(current) : updater;
-          const newMap = { ...prev, [productId]: next };
-          try {
-            const serializable = {};
-            Object.keys(newMap).forEach(k => { serializable[k] = [...newMap[k]]; });
-            localStorage.setItem('okr_skipped_nodes', JSON.stringify(serializable));
-          } catch (e) {}
-          return newMap;
-        });
+          await fetch(API_BASE + '/api/update-record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblYM02NyVj3rUkR',
+              record_id: product.id,
+              fields: { '跳过节点': JSON.stringify(newArr) }
+            })
+          });
+        } catch (e) {
+          showToast?.('保存跳过状态失败', 'error');
+        }
       };
 
       // 自动计算项目进度（全局函数已处理父项目聚合）
@@ -5575,16 +5582,10 @@
       const showToast = useToast();
       const currentUser = useContext(UserContext);
 
-      // 读取跳过节点数据（与 ProductOverview 共享 localStorage）
+      // 读取跳过节点数据（从项目数据读取，与 ProductOverview 共享）
       const getSkippedNodes = (productId) => {
-        try {
-          const saved = localStorage.getItem('okr_skipped_nodes');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            return parsed[productId] ? new Set(parsed[productId]) : new Set();
-          }
-        } catch (e) {}
-        return new Set();
+        const product = products.find(p => p.id === productId);
+        return new Set(product?.skippedNodes || []);
       };
       
       // 完成任务弹窗状态
