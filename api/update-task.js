@@ -1,4 +1,4 @@
-// Vercel Serverless Function - 更新飞书任务
+// Vercel Serverless Function - 更新飞书任务（含通用字段透传）
 export default async function handler(req, res) {
   // 设置 CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -45,47 +45,34 @@ export default async function handler(req, res) {
     
     const accessToken = tokenData.tenant_access_token;
     
-    // 构建更新数据
+    // 构建更新数据 - 已知字段做映射，未知字段直接透传
     const updateFields = {};
     
-    // 状态
-    if (fields.status) {
-      updateFields['状态'] = fields.status;
-    }
+    // 已知任务字段映射
+    const knownFieldMap = {
+      'status': '状态',
+      'startDate': { name: '开始日期', transform: v => new Date(v).getTime() },
+      'dueDate': { name: '截止日期', transform: v => new Date(v).getTime() },
+      'completeDate': { name: '完成日期', transform: v => new Date(v).getTime() },
+      'outputFile': '输出文件',
+      'description': '任务描述',
+      'outputUrl': { name: '输出链接', transform: v => ({ link: v, text: v }) },
+      'outputText': '输出文字'
+    };
     
-    // 开始日期（时间戳，毫秒）
-    if (fields.startDate) {
-      updateFields['开始日期'] = new Date(fields.startDate).getTime();
-    }
-    
-    // 截止日期（时间戳，毫秒）
-    if (fields.dueDate) {
-      updateFields['截止日期'] = new Date(fields.dueDate).getTime();
-    }
-    
-    // 完成日期（时间戳，毫秒）
-    if (fields.completeDate) {
-      updateFields['完成日期'] = new Date(fields.completeDate).getTime();
-    }
-    
-    // 输出文件
-    if (fields.outputFile) {
-      updateFields['输出文件'] = fields.outputFile;
-    }
-    
-    // 任务描述
-    if (fields.description) {
-      updateFields['任务描述'] = fields.description;
-    }
-    
-    // 输出链接（Url 类型：需要 { link, text } 格式）
-    if (fields.outputUrl) {
-      updateFields['输出链接'] = { link: fields.outputUrl, text: fields.outputUrl };
-    }
-    
-    // 输出文字
-    if (fields.outputText) {
-      updateFields['输出文字'] = fields.outputText;
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === undefined || value === null) continue;
+      const mapping = knownFieldMap[key];
+      if (mapping) {
+        if (typeof mapping === 'string') {
+          updateFields[mapping] = value;
+        } else {
+          updateFields[mapping.name] = mapping.transform(value);
+        }
+      } else {
+        // 未知字段直接透传（支持中文字段名如 '跳过节点'）
+        updateFields[key] = value;
+      }
     }
     
     // 调用飞书 API 更新记录
@@ -106,14 +93,14 @@ export default async function handler(req, res) {
     if (updateData.code !== 0) {
       return res.status(500).json({ 
         success: false, 
-        error: '更新任务失败: ' + (updateData.msg || JSON.stringify(updateData))
+        error: '更新记录失败: ' + (updateData.msg || JSON.stringify(updateData))
       });
     }
     
     return res.status(200).json({
       success: true,
       data: updateData.data,
-      message: '任务更新成功'
+      message: '记录更新成功'
     });
     
   } catch (error) {
