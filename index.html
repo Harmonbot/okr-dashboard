@@ -5268,23 +5268,51 @@
                         })}
                       </div>
                       
-                      {/* 当前阶段子线明细 */}
+                      {/* 当前活跃子线明细（显示进行中和下一批待开始的） */}
                       <div className="flex gap-1.5 flex-wrap">
-                        {stages[activeStageIdx].map((tpl, li) => {
-                          const child = getChild(tpl);
-                          const progress = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
-                          const isDone = child?.status === '已完成' || progress >= 100;
-                          const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
-                          return (
-                            <div key={li} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
-                              isDone ? 'bg-green-50 border-green-200' : progress > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
-                              <span className="font-medium text-gray-700">{tpl.name}</span>
-                              <span className={`font-bold ${isDone ? 'text-green-500' : progress > 0 ? 'text-blue-500' : 'text-gray-300'}`}>{progress}%</span>
-                            </div>
-                          );
-                        })}
+                        {(() => {
+                          // 收集所有未完成的子线，按阶段顺序
+                          const activeLines = [];
+                          for (let si = 0; si < stages.length; si++) {
+                            for (const tpl of stages[si]) {
+                              const child = getChild(tpl);
+                              const progress = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
+                              const isDone = child?.status === '已完成' || progress >= 100;
+                              if (!isDone) activeLines.push({ tpl, child, progress, stageIdx: si });
+                            }
+                          }
+                          // 如果全部完成，显示最后阶段
+                          if (activeLines.length === 0) {
+                            const lastStage = stages[stages.length - 1];
+                            return lastStage.map((tpl, li) => {
+                              const child = getChild(tpl);
+                              const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
+                              return (
+                                <div key={li} className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] bg-green-50 border-green-200">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
+                                  <span className="font-medium text-gray-700">{tpl.name}</span>
+                                  <span className="font-bold text-green-500">100%</span>
+                                </div>
+                              );
+                            });
+                          }
+                          // 显示最靠前阶段的未完成子线（同一阶段的都显示）
+                          const firstActiveStage = activeLines[0].stageIdx;
+                          const showLines = activeLines.filter(l => l.stageIdx === firstActiveStage);
+                          return showLines.map(({ tpl, child, progress }, li) => {
+                            const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
+                            const isInProgress = progress > 0;
+                            return (
+                              <div key={li} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
+                                isInProgress ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
+                                <span className="font-medium text-gray-700">{tpl.name}</span>
+                                <span className={`font-bold ${isInProgress ? 'text-blue-500' : 'text-gray-300'}`}>{progress}%</span>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   );
@@ -6754,17 +6782,6 @@
           ? data.members.filter(m => myLinkedGroups.includes(m.group)) 
           : [];
         
-        // 过滤任务：负责人在扩展可见范围内 + 属于可见项目的任务 + 自己的任务永远可见
-        const filteredTasks = data.tasks.filter(t => {
-          // 自己的任务永远可见
-          if (me && (t.assignee === me.id || t.assigneeName === me.name || t.assigneeName === me.larkName)) return true;
-          // 属于可见项目的任务
-          if (t.productId && directVisibleProducts.has(t.productId)) return true;
-          // 负责人在可见范围内
-          return extendedVisibleIds.has(t.assignee) || 
-            [...filteredMembers, ...linkedMembers].some(m => m.name === t.assigneeName);
-        });
-        
         // 过滤项目：负责人在扩展可见范围内（本组 + 关联组别）
         // 同时支持父子项目：子项目按负责部门过滤，父项目在有可见子项目时显示
         const directVisibleProducts = new Set();
@@ -6789,6 +6806,17 @@
               directVisibleProducts.add(p.id);
             }
           }
+        });
+        
+        // 过滤任务：负责人在扩展可见范围内 + 属于可见项目的任务 + 自己的任务永远可见
+        const filteredTasks = data.tasks.filter(t => {
+          // 自己的任务永远可见
+          if (me && (t.assignee === me.id || t.assigneeName === me.name || t.assigneeName === me.larkName)) return true;
+          // 属于可见项目的任务
+          if (t.productId && directVisibleProducts.has(t.productId)) return true;
+          // 负责人在可见范围内
+          return extendedVisibleIds.has(t.assignee) || 
+            [...filteredMembers, ...linkedMembers].some(m => m.name === t.assigneeName);
         });
         
         const filteredProducts = data.products.filter(p => directVisibleProducts.has(p.id));
