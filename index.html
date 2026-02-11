@@ -3217,7 +3217,7 @@
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
-        name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '',
+        name: '', cycle: '2026-Q1', level: '公司级', department: '', group: '', status: '进行中', owner: '',
         // 模板化命名字段
         productCode: '', actionGoal: ''
       });
@@ -3587,20 +3587,22 @@
         
         setIsSubmitting(true);
         try {
+          const submitForm = { ...objectiveForm };
+          if (submitForm.group) submitForm.department = submitForm.group; // 存组别到所属部门
           const res = await fetch(API_BASE + '/api/create-objective', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               app_token: APP_TOKEN,
               table_id: 'tbl9TX3RZdLRlEy0',
-              objective: objectiveForm
+              objective: submitForm
             })
           });
           const result = await res.json();
           if (result.success) {
             showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', status: '进行中', owner: '', productCode: '', actionGoal: '', quantifier: '' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', group: '', status: '进行中', owner: '', productCode: '', actionGoal: '', quantifier: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -3852,7 +3854,7 @@
                       value={objectiveForm.productCode}
                       onChange={e => {
                         const pc = e.target.value;
-                        const dept = objectiveForm.department;
+                        const dept = objectiveForm.group || objectiveForm.department;
                         const parts = [objectiveForm.cycle?.replace('-', ''), dept, pc, objectiveForm.actionGoal].filter(Boolean);
                         setObjectiveForm({ ...objectiveForm, productCode: pc, name: parts.join(' ') });
                       }}
@@ -3864,7 +3866,7 @@
                       value={objectiveForm.actionGoal}
                       onChange={e => {
                         const ag = e.target.value;
-                        const dept = objectiveForm.department;
+                        const dept = objectiveForm.group || objectiveForm.department;
                         const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, ag].filter(Boolean);
                         setObjectiveForm({ ...objectiveForm, actionGoal: ag, name: parts.join(' ') });
                       }}
@@ -3877,7 +3879,7 @@
                       value={objectiveForm.quantifier || ''}
                       onChange={e => {
                         const q = e.target.value;
-                        const dept = objectiveForm.department;
+                        const dept = objectiveForm.group || objectiveForm.department;
                         const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, objectiveForm.actionGoal, q].filter(Boolean);
                         setObjectiveForm({ ...objectiveForm, quantifier: q, name: parts.join(' ') });
                       }}
@@ -3906,7 +3908,7 @@
                       value={objectiveForm.cycle}
                       onChange={e => {
                         const cycle = e.target.value;
-                        const parts = [cycle.replace('-', ''), objectiveForm.department, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
+                        const parts = [cycle.replace('-', ''), objectiveForm.group || objectiveForm.department, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
                         setObjectiveForm({ ...objectiveForm, cycle, name: parts.join(' ') });
                       }}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
@@ -3942,22 +3944,48 @@
                   </div>
                 </div>
                 {objectiveForm.level === '部门级' && (
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">所属部门 *</label>
-                    <select
-                      value={objectiveForm.department}
-                      onChange={e => {
-                        const dept = e.target.value;
-                        const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
-                        setObjectiveForm({ ...objectiveForm, department: dept, name: parts.join(' ') });
-                      }}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
-                    >
-                      <option value="">请选择部门</option>
-                      {[...new Set(members.map(m => m.department).filter(Boolean))].sort().map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">所属部门 *</label>
+                      <select
+                        value={objectiveForm.department}
+                        onChange={e => {
+                          const dept = e.target.value;
+                          const parts = [objectiveForm.cycle?.replace('-', ''), dept, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
+                          setObjectiveForm({ ...objectiveForm, department: dept, group: '', name: parts.join(' ') });
+                        }}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                      >
+                        <option value="">请选择部门</option>
+                        {[...new Set(members.map(m => m.department).filter(Boolean))].sort().map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {objectiveForm.department && (() => {
+                      const deptGroups = [...new Set(members.filter(m => m.department === objectiveForm.department).map(m => m.group).filter(g => g && g !== objectiveForm.department))];
+                      if (deptGroups.length === 0) return null;
+                      return (
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">所属组别</label>
+                          <select
+                            value={objectiveForm.group || ''}
+                            onChange={e => {
+                              const grp = e.target.value;
+                              const displayName = grp || objectiveForm.department;
+                              const parts = [objectiveForm.cycle?.replace('-', ''), displayName, objectiveForm.productCode, objectiveForm.actionGoal, objectiveForm.quantifier].filter(Boolean);
+                              setObjectiveForm({ ...objectiveForm, group: grp, name: parts.join(' ') });
+                            }}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
+                          >
+                            <option value="">部门整体</option>
+                            {deptGroups.sort().map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
                 <div>
