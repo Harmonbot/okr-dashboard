@@ -5,15 +5,10 @@
   ],
   "functions": {
     "api/lark.js": {
-      "maxDuration": 30,
-      "region": "hkg1"
+      "maxDuration": 30
     },
     "api/file.js": {
-      "maxDuration": 60,
-      "region": "hkg1"
-    },
-    "api/*.js": {
-      "region": "hkg1"
+      "maxDuration": 60
     }
   },
   "crons": [
