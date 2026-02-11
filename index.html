@@ -835,8 +835,10 @@
       if (product.childIds?.length > 0 && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
         if (children.length > 0) {
-          const allDone = children.every(c => calcProjectStatus(c, tasks, allNodes, templates, allProducts) === '已完成');
-          const anyProgress = children.some(c => calcProjectStatus(c, tasks, allNodes, templates, allProducts) !== '未开始');
+          const childStatuses = children.map(c => ({ name: c.name, status: calcProjectStatus(c, tasks, allNodes, templates, allProducts) }));
+          console.log('[ParentStatus]', product.name, 'children:', childStatuses);
+          const allDone = childStatuses.every(c => c.status === '已完成');
+          const anyProgress = childStatuses.some(c => c.status !== '未开始');
           return allDone ? '已完成' : anyProgress ? '进行中' : '未开始';
         }
       }
