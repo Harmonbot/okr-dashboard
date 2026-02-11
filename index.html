@@ -3819,7 +3819,7 @@
             '单位': krForm.unit || '个'
           };
           
-          const res = await fetch(API_BASE + '/api/update-record', {
+          const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -4982,6 +4982,7 @@
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
+      const showToast = useToast();
 
       // 跳过节点状态 - 从项目数据读取，保存到飞书
       const getSkippedNodes = (productId) => {
@@ -4999,7 +5000,7 @@
         product.skippedNodes = newArr;
         // 保存到飞书
         try {
-          const res = await fetch(API_BASE + '/api/update-record', {
+          const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
