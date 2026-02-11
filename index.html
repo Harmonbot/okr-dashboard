@@ -1324,8 +1324,13 @@
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       const [localTasks, setLocalTasks] = useState(propTasks);
-      // 当 props 更新时同步（后台刷新完成后）
-      React.useEffect(() => { setLocalTasks(propTasks); }, [propTasks]);
+      const optimisticLockRef = React.useRef(false);
+      // 当 props 更新时同步（后台刷新完成后），但乐观更新后延迟同步
+      React.useEffect(() => { 
+        if (!optimisticLockRef.current) {
+          setLocalTasks(propTasks); 
+        }
+      }, [propTasks]);
       const tasks = localTasks;
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1457,8 +1462,12 @@
               plannedStartDate: ''
             });
             showToast?.('任务创建成功', 'success');
-            // 后台静默刷新获取真实数据
-            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
+            optimisticLockRef.current = true;
+            // 后台静默刷新获取真实数据，刷新完解锁
+            setTimeout(() => { 
+              optimisticLockRef.current = false;
+              if (onTaskCreated) onTaskCreated(); 
+            }, 1500);
           } else {
             throw new Error(result.error || '创建失败');
           }
@@ -1510,10 +1519,14 @@
               startDate: today.toISOString().split('T')[0],
               dueDate: dueDate.toISOString().split('T')[0]
             } : t));
+            optimisticLockRef.current = true;
             showToast?.('已接受任务', 'success');
             setActionTaskId(null);
-            // 后台静默刷新数据
-            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
+            // 后台静默刷新数据，刷新完解锁
+            setTimeout(() => { 
+              optimisticLockRef.current = false;
+              if (onTaskCreated) onTaskCreated(); 
+            }, 1500);
             return;
           } else {
             throw new Error(result.error || '操作失败');
@@ -1597,14 +1610,18 @@
               ...t, status: '已完成',
               completeDate: new Date().toISOString().split('T')[0]
             } : t));
+            optimisticLockRef.current = true;
             setShowCompleteForm(null);
             setOutputFile(null);
             setOutputLink('');
             setOutputText('');
             setCompleteMode('link');
             showToast?.('任务已完成', 'success');
-            // 后台静默刷新数据
-            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 500);
+            // 后台静默刷新数据，刷新完解锁
+            setTimeout(() => { 
+              optimisticLockRef.current = false;
+              if (onTaskCreated) onTaskCreated(); 
+            }, 1500);
           } else {
             throw new Error(result.error || '操作失败');
           }
