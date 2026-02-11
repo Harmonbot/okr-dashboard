@@ -1974,11 +1974,11 @@
       // 筛选属于该模板的节点
       const nodes = matchingTemplateId 
         ? allNodes.filter(n => n.templateId === matchingTemplateId)
-        : allNodes;
+        : [];
       
       // 重建分层（如果筛选了节点）
       const nodeLayers = (() => {
-        if (!matchingTemplateId) return allNodeLayers;
+        if (!matchingTemplateId) return [];
         const layers = [];
         const visited = new Set();
         const startNodes = nodes.filter(n => !n.prevNode || !nodes.some(nn => nn.name === n.prevNode));
