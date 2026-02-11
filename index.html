@@ -1473,7 +1473,7 @@
             
             const fileBase64 = await toBase64(outputFile);
             
-            const uploadRes = await fetch(API_BASE + '/api/upload-file', {
+            const uploadRes = await fetch(API_BASE + '/api/file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1945,7 +1945,7 @@
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
                                   {task.outputFile && (
                                     <a 
-                                      href={`${API_BASE}/api/download-file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
+                                      href={`${API_BASE}/api/file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
                                       target="_blank" 
                                       rel="noopener noreferrer"
                                       className="text-xs text-green-600 hover:text-green-700 hover:underline inline-flex items-center gap-1"
@@ -6029,7 +6029,7 @@
                         });
                         
                         // 1. 上传文件
-                        const uploadRes = await fetch(API_BASE + '/api/upload-file', {
+                        const uploadRes = await fetch(API_BASE + '/api/file', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
