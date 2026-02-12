@@ -1805,7 +1805,12 @@
                 
                 // 当前节点的时间范围（从 timelineMap）
                 const nodeTimeline = timelineMap[node?.name];
-                const nodeDateMin = nodeTimeline?.planStart ? new Date(nodeTimeline.planStart).toISOString().split('T')[0] : '';
+                const nodeDateMin = (() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const nodeStart = nodeTimeline?.planStart ? new Date(nodeTimeline.planStart).toISOString().split('T')[0] : '';
+                  if (!nodeStart) return today;
+                  return nodeStart > today ? nodeStart : today;
+                })();
                 const nodeDateMax = nodeTimeline?.planEnd ? new Date(nodeTimeline.planEnd).toISOString().split('T')[0] : '';
                 
                 // 按组别分组
