@@ -500,7 +500,7 @@
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
             plannedStartDate: r.fields['预计开始日期'] ? new Date(r.fields['预计开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
-            completedDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
+            completeDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
             outputFile: r.fields['输出文件']?.[0] || null,
             outputUrl: (() => { const u = r.fields['输出链接']; if (!u) return ''; if (typeof u === 'string') return u; if (u.link) return u.link; if (u.text) return u.text; return ''; })(),
             outputText: (() => { let t = r.fields['输出文字'] || ''; if (Array.isArray(t)) t = t.map(x => x.text || x).join(''); return t; })()
@@ -1380,6 +1380,7 @@
       const [outputLink, setOutputLink] = useState(''); // 输出链接
       const [outputText, setOutputText] = useState(''); // 输出文字内容
       const [completeMode, setCompleteMode] = useState('link'); // 完成方式: file, link, text
+      const [uploadProgress, setUploadProgress] = useState({}); // {taskId: {phase: 'uploading'|'syncing'|'done'|'error', pct: 0-100, msg: ''}}
       const [formData, setFormData] = useState({
         name: '',
         priority: 'P2-中等',
@@ -1565,19 +1566,34 @@
         const savedLink = hasLink ? outputLink.trim() : '';
         const savedText = hasText ? outputText.trim() : '';
         
-        // 立即补丁显示 + 关闭表单
-        patchTaskAndRefresh(task.id, { status: '已完成', completeDate: new Date().toISOString().split('T')[0] });
+        // 构建完整 patch（包含输出内容，这样立即能看到）
+        const patch = {
+          status: '已完成',
+          completeDate: new Date().toISOString().split('T')[0],
+          ...(savedLink ? { outputUrl: savedLink } : {}),
+          ...(savedText ? { outputText: savedText } : {}),
+          ...(savedFile ? { outputFile: { name: savedFile.name, file_token: '__uploading__' } } : {})
+        };
+        
+        // 立即补丁显示 + 关闭表单 + 显示进度
+        setTaskPatches(prev => ({ ...prev, [task.id]: patch }));
         setShowCompleteForm(null);
         setOutputFile(null);
         setOutputLink('');
         setOutputText('');
         setCompleteMode('link');
-        showToast?.('任务已完成，正在同步...', 'success');
+        
+        // 设置上传进度
+        setUploadProgress(prev => ({ ...prev, [task.id]: { 
+          phase: savedFile ? 'uploading' : 'syncing', pct: 10, 
+          msg: savedFile ? `正在上传 ${savedFile.name}...` : '正在同步...'
+        }}));
         
         // 后台异步：文件上传 + 状态更新
         (async () => {
           try {
             if (savedFile) {
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 30, msg: `正在上传 ${savedFile.name}...` } }));
               const toBase64 = (file) => new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
@@ -1585,6 +1601,7 @@
                 reader.onerror = error => reject(error);
               });
               const fileBase64 = await toBase64(savedFile);
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 60, msg: '文件已编码，正在发送...' } }));
               const uploadRes = await fetch(API_BASE + '/api/file', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1598,9 +1615,22 @@
                 })
               });
               const uploadResult = await uploadRes.json();
-              if (!uploadResult.success) showToast?.('文件上传失败', 'error');
+              if (!uploadResult.success) {
+                showToast?.('文件上传失败', 'error');
+              } else {
+                // 更新 patch 中的 file_token
+                setTaskPatches(prev => {
+                  const cur = prev[task.id];
+                  if (cur && cur.outputFile) {
+                    return { ...prev, [task.id]: { ...cur, outputFile: { name: savedFile.name, file_token: uploadResult.file_token || '' } } };
+                  }
+                  return prev;
+                });
+              }
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 80, msg: '文件上传完成，正在同步状态...' } }));
             }
             
+            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 85, msg: '正在同步状态...' } }));
             const updateFields = { status: '已完成', completeDate: new Date().toISOString().split('T')[0] };
             if (savedLink) updateFields.outputUrl = savedLink;
             if (savedText) updateFields.outputText = savedText;
@@ -1618,10 +1648,18 @@
             const result = await res.json();
             if (!result.success) {
               setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
-              showToast?.('状态同步失败: ' + (result.error || ''), 'error');
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '同步失败: ' + (result.error || '') } }));
+              showToast?.('状态同步失败', 'error');
+            } else {
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'done', pct: 100, msg: '✓ 同步完成' } }));
+              // 3秒后清除进度条
+              setTimeout(() => { setUploadProgress(prev => { const n = { ...prev }; delete n[task.id]; return n; }); }, 3000);
+              // 2秒后 fetchData
+              setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 2000);
             }
           } catch (err) {
             setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
+            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '操作失败: ' + err.message } }));
             showToast?.('操作失败: ' + err.message, 'error');
           }
         })();
@@ -2037,7 +2075,7 @@
                               {/* 已完成状态：显示交付物（文件/链接/文字） */}
                               {task.status === '已完成' && (
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
-                                  {task.outputFile && (
+                                  {task.outputFile && task.outputFile.file_token !== '__uploading__' && (
                                     <a 
                                       href={`${API_BASE}/api/file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
                                       target="_blank" 
@@ -2046,6 +2084,11 @@
                                     >
                                       📎 {task.outputFile.name || '查看附件'}
                                     </a>
+                                  )}
+                                  {task.outputFile && task.outputFile.file_token === '__uploading__' && (
+                                    <span className="text-xs text-orange-500 inline-flex items-center gap-1 animate-pulse">
+                                      📎 {task.outputFile.name} (上传中...)
+                                    </span>
                                   )}
                                   {task.outputUrl && (
                                     <a 
@@ -2062,6 +2105,30 @@
                                       📝 {task.outputText.length > 20 ? task.outputText.slice(0, 20) + '...' : task.outputText}
                                     </span>
                                   )}
+                                </div>
+                              )}
+                              {/* 上传/同步进度条 */}
+                              {uploadProgress[task.id] && (
+                                <div className="mt-1.5 w-full">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${
+                                          uploadProgress[task.id].phase === 'error' ? 'bg-red-400' :
+                                          uploadProgress[task.id].phase === 'done' ? 'bg-green-400' :
+                                          'bg-blue-400 animate-pulse'
+                                        }`}
+                                        style={{ width: uploadProgress[task.id].pct + '%' }}
+                                      />
+                                    </div>
+                                    <span className={`text-[10px] flex-shrink-0 ${
+                                      uploadProgress[task.id].phase === 'error' ? 'text-red-500' :
+                                      uploadProgress[task.id].phase === 'done' ? 'text-green-500' :
+                                      'text-blue-500'
+                                    }`}>
+                                      {uploadProgress[task.id].msg}
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -6044,7 +6111,7 @@
                       const dueDate = task.dueDate ? new Date(task.dueDate) : null;
                       
                       if (task.status === '已完成') {
-                        const doneDate = task.completedDate ? new Date(task.completedDate) : null;
+                        const doneDate = task.completeDate ? new Date(task.completeDate) : null;
                         if (dueDate && doneDate) {
                           const diffDays = Math.ceil((dueDate - doneDate) / (1000*60*60*24));
                           if (diffDays >= 0) {
