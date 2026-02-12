@@ -1549,9 +1549,11 @@
           if (!result.success) {
             removeTempTask(tempId);
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
+          } else if (result.record_id) {
+            // 用真实 ID 替换 temp ID，这样任务立即可操作
+            setTempTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: result.record_id } : t));
           }
-          // 成功时不移除 temp task，等 fetchData 刷新后自然替换
-          // fetchData 已在 addTempTaskAndRefresh 中 2 秒后触发
+          // fetchData 已在 addTempTaskAndRefresh 中 2 秒后触发，会清除 temp
           setIsSubmitting(false);
         }).catch(err => {
           removeTempTask(tempId);
