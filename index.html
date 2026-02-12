@@ -3027,12 +3027,7 @@
                     <div className="flex items-center gap-3 mb-2">
                       <div className="text-2xl font-bold text-blue-600 min-w-[60px]">{autoProgress}%</div>
                       <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-                        {total > 0 && (
-                          <div className="h-full flex">
-                            <div className="bg-green-500 transition-all" style={{width: `${(completed/total)*100}%`}}></div>
-                            <div className="bg-blue-400 transition-all" style={{width: `${(inProgress/total)*100}%`}}></div>
-                          </div>
-                        )}
+                        <div className="h-full bg-green-500 rounded-full transition-all" style={{width: `${autoProgress}%`}}></div>
                       </div>
                     </div>
                     {/* 关键数字 - 一行 */}
