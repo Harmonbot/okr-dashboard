@@ -1493,6 +1493,8 @@
           alert('请输入任务名称');
           return;
         }
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         
         const tempId = 'temp_' + Date.now();
         const assigneeMember = members.find(m => m.id === formData.assignee);
@@ -1541,18 +1543,19 @@
           if (!result.success) {
             removeTempTask(tempId);
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
-          } else if (result.record_id) {
-            // 用真实 record_id 替换临时 ID
-            setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: result.record_id } : t));
-            removeTempTask(tempId);
           } else {
-            // API 成功但没返回 record_id，等 fetchData 刷新时自然替换
-            // 先移除 temp task 避免重复显示
+            // API 成功，移除 temp task，fetchData 会拉到真实数据
             removeTempTask(tempId);
+            if (result.record_id && onTaskCreated) {
+              // 立即刷新获取真实数据
+              onTaskCreated();
+            }
           }
+          setIsSubmitting(false);
         }).catch(err => {
           removeTempTask(tempId);
           showToast?.('创建失败: ' + err.message, 'error');
+          setIsSubmitting(false);
         });
       };
 
