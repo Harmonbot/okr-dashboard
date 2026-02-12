@@ -1323,42 +1323,55 @@
     const NodeTaskModal = ({ node, tasks: propTasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
-      // === 乐观更新系统 ===
-      // localTasks 是唯一的显示数据源
-      // 初始值从 propTasks 来，之后只通过 setLocalTasks 更新
-      const [localTasks, setLocalTasks] = useState(propTasks);
-      const lastPropTasksLenRef = React.useRef(propTasks.length);
-      const optimisticRef = React.useRef(false);
+      // === 任务显示：直接使用 propTasks，不做乐观更新 ===
+      // 本地补丁机制：API成功后直接修改propTasks副本，避免等fetchData
+      const [taskPatches, setTaskPatches] = useState({}); // {taskId: {field: value}}
+      const [tempTasks, setTempTasks] = useState([]); // 临时新建的任务
       
-      // 只在非乐观状态 且 propTasks 实际数据变化时同步
+      // 合并 propTasks + patches + tempTasks
+      const tasks = React.useMemo(() => {
+        const patched = propTasks.map(t => {
+          const patch = taskPatches[t.id];
+          return patch ? { ...t, ...patch } : t;
+        });
+        return [...patched, ...tempTasks];
+      }, [propTasks, taskPatches, tempTasks]);
+      
+      // 当 propTasks 更新时（fetchData完成），清除已同步的patches和tempTasks
       React.useEffect(() => {
-        if (optimisticRef.current) return; // 乐观锁定中，不同步
-        setLocalTasks(propTasks);
-        lastPropTasksLenRef.current = propTasks.length;
-      }, [JSON.stringify(propTasks.map(t => t.id + '|' + t.status))]);
-      
-      const startOptimistic = () => { optimisticRef.current = true; };
-      const finishOptimistic = () => {
-        // 等飞书同步后触发 fetchData，完成后强制同步
-        setTimeout(() => {
-          if (onTaskCreated) {
-            // 调 fetchData，它是 async 的
-            const p = onTaskCreated();
-            if (p && p.then) {
-              p.then(() => {
-                // fetchData 完成，下一帧解锁
-                requestAnimationFrame(() => { optimisticRef.current = false; });
-              });
-            } else {
-              setTimeout(() => { optimisticRef.current = false; }, 5000);
+        const propIds = new Set(propTasks.map(t => t.id));
+        // 清除tempTasks中已被propTasks包含的
+        setTempTasks(prev => prev.filter(t => !propIds.has(t.id)));
+        // 清除patches中已被propTasks反映的
+        setTaskPatches(prev => {
+          const next = { ...prev };
+          for (const id of Object.keys(next)) {
+            const propTask = propTasks.find(t => t.id === id);
+            if (propTask) {
+              const patch = next[id];
+              // 如果propTasks里的状态已经匹配patch，说明已同步
+              if (!patch.status || propTask.status === patch.status) {
+                delete next[id];
+              }
             }
-          } else {
-            optimisticRef.current = false;
           }
-        }, 2000);
+          return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+        });
+      }, [propTasks]);
+      
+      // 辅助：API 成功后补丁 + 后台静默刷新
+      const patchTaskAndRefresh = (taskId, patch) => {
+        setTaskPatches(prev => ({ ...prev, [taskId]: patch }));
+        // 2秒后后台静默刷新
+        setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 2000);
       };
-      const cancelOptimistic = () => { optimisticRef.current = false; };
-      const tasks = localTasks;
+      const addTempTaskAndRefresh = (task) => {
+        setTempTasks(prev => [...prev, task]);
+        setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 2000);
+      };
+      const removeTempTask = (id) => {
+        setTempTasks(prev => prev.filter(t => t.id !== id));
+      };
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
@@ -1437,11 +1450,12 @@
           return;
         }
         
-        // 先乐观更新 UI（秒响应）
         const tempId = 'temp_' + Date.now();
         const assigneeMember = members.find(m => m.id === formData.assignee);
         const savedFormData = { ...formData };
-        setLocalTasks(prev => [...prev, {
+        
+        // 立即显示临时任务
+        addTempTaskAndRefresh({
           id: tempId,
           name: savedFormData.name,
           stage: node.name,
@@ -1455,17 +1469,9 @@
           startDate: savedFormData.plannedStartDate || '',
           dueDate: '',
           completeDate: ''
-        }]);
-        startOptimistic();
-        setShowAddForm(false);
-        setFormData({
-          name: '',
-          priority: 'P2-中等',
-          assignee: '',
-          collaborators: [],
-          description: '',
-          plannedStartDate: ''
         });
+        setShowAddForm(false);
+        setFormData({ name: '', priority: 'P2-中等', assignee: '', collaborators: [], description: '', plannedStartDate: '' });
         showToast?.('任务创建成功', 'success');
         
         // 后台异步发 API
@@ -1489,50 +1495,42 @@
           })
         }).then(r => r.json()).then(result => {
           if (!result.success) {
-            // API 失败：移除临时任务
-            setLocalTasks(prev => prev.filter(t => t.id !== tempId));
+            removeTempTask(tempId);
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
-            cancelOptimistic();
-          } else {
-            // API 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
-            finishOptimistic();
           }
+          // fetchData 已在 addTempTaskAndRefresh 中安排
         }).catch(err => {
-          setLocalTasks(prev => prev.filter(t => t.id !== tempId));
+          removeTempTask(tempId);
           showToast?.('创建失败: ' + err.message, 'error');
-          cancelOptimistic();
         });
       };
 
       // 接受任务：设置开始日期为今天，截止日期根据节点预计工时计算，状态改为进行中
       const handleAcceptTask = async (task) => {
-        // 检查前置节点是否完成
         if (!predecessorCheck.canAccept) {
           showToast?.(`⚠️ ${predecessorCheck.message}，请等待前置节点完成后再接受任务`, 'error');
           return;
         }
         
-        const nodeDays = parseInt(node.days, 10) || 7; // 确保是数字，默认7天
+        const nodeDays = parseInt(node.days, 10) || 7;
         if (!confirm(`确认接受任务「${task.name}」？\n\n开始日期将设为今天，截止日期根据节点预计工时（${nodeDays}天）自动计算。`)) {
           return;
         }
         
-        setActionTaskId(task.id);
         const today = new Date();
         const dueDate = new Date(today);
         dueDate.setDate(dueDate.getDate() + nodeDays);
-        
-        // 先乐观更新 UI（秒响应）
-        setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-          ...t, status: '进行中',
+        const patch = {
+          status: '进行中',
           startDate: today.toISOString().split('T')[0],
           dueDate: dueDate.toISOString().split('T')[0]
-        } : t));
-        startOptimistic();
-        showToast?.('已接受任务', 'success');
-        setActionTaskId(null);
+        };
         
-        // 后台异步发 API（不阻塞 UI）
+        // 立即补丁 + 安排后台刷新
+        patchTaskAndRefresh(task.id, patch);
+        showToast?.('已接受任务', 'success');
+        
+        // 后台异步发 API
         fetch(API_BASE + '/api/update-task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1540,37 +1538,21 @@
             app_token: APP_TOKEN,
             table_id: 'tblFwmxmjRJPzVmV',
             record_id: task.id,
-            fields: {
-              status: '进行中',
-              startDate: today.toISOString().split('T')[0],
-              dueDate: dueDate.toISOString().split('T')[0]
-            }
+            fields: patch
           })
         }).then(r => r.json()).then(result => {
           if (!result.success) {
-            // API 失败：回滚乐观更新
-            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-              ...t, status: '待开始', startDate: '', dueDate: ''
-            } : t));
+            setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
             showToast?.('操作失败: ' + (result.error || '未知错误'), 'error');
-            cancelOptimistic();
-          } else {
-            // API 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
-            finishOptimistic();
           }
         }).catch(err => {
-          setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-            ...t, status: '待开始', startDate: '', dueDate: ''
-          } : t));
+          setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
           showToast?.('操作失败: ' + err.message, 'error');
-          cancelOptimistic();
         });
-        setActionTaskId(null);
       };
 
       // 完成任务：需要上传输出文件
       const handleCompleteTask = async (task) => {
-        // 校验：三种方式至少有一种
         const hasFile = outputFile !== null;
         const hasLink = outputLink.trim() !== '';
         const hasText = outputText.trim() !== '';
@@ -1579,26 +1561,18 @@
           return;
         }
         
-        setActionTaskId(task.id);
-        
-        // 保存提交数据
         const savedFile = hasFile ? outputFile : null;
         const savedLink = hasLink ? outputLink.trim() : '';
         const savedText = hasText ? outputText.trim() : '';
         
-        // 先乐观更新 UI（秒响应）
-        setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-          ...t, status: '已完成',
-          completeDate: new Date().toISOString().split('T')[0]
-        } : t));
-        startOptimistic();
+        // 立即补丁显示 + 关闭表单
+        patchTaskAndRefresh(task.id, { status: '已完成', completeDate: new Date().toISOString().split('T')[0] });
         setShowCompleteForm(null);
         setOutputFile(null);
         setOutputLink('');
         setOutputText('');
         setCompleteMode('link');
-        setActionTaskId(null);
-        showToast?.('任务已完成，正在同步数据...', 'success');
+        showToast?.('任务已完成，正在同步...', 'success');
         
         // 后台异步：文件上传 + 状态更新
         (async () => {
@@ -1624,15 +1598,10 @@
                 })
               });
               const uploadResult = await uploadRes.json();
-              if (!uploadResult.success) {
-                showToast?.('文件上传失败，但任务状态已更新', 'error');
-              }
+              if (!uploadResult.success) showToast?.('文件上传失败', 'error');
             }
             
-            const updateFields = {
-              status: '已完成',
-              completeDate: new Date().toISOString().split('T')[0]
-            };
+            const updateFields = { status: '已完成', completeDate: new Date().toISOString().split('T')[0] };
             if (savedLink) updateFields.outputUrl = savedLink;
             if (savedText) updateFields.outputText = savedText;
             
@@ -1648,22 +1617,12 @@
             });
             const result = await res.json();
             if (!result.success) {
-              // API 失败：回滚
-              setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-                ...t, status: '进行中', completeDate: ''
-              } : t));
+              setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
               showToast?.('状态同步失败: ' + (result.error || ''), 'error');
-              cancelOptimistic();
-            } else {
-              // 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
-              finishOptimistic();
             }
           } catch (err) {
-            setLocalTasks(prev => prev.map(t => t.id === task.id ? {
-              ...t, status: '进行中', completeDate: ''
-            } : t));
+            setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
             showToast?.('操作失败: ' + err.message, 'error');
-            cancelOptimistic();
           }
         })();
       };
