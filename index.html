@@ -1499,6 +1499,9 @@
           if (!result.success) {
             removeTempTask(tempId);
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
+          } else if (result.record_id) {
+            // 用真实 record_id 替换临时 ID
+            setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: result.record_id } : t));
           }
           // fetchData 已在 addTempTaskAndRefresh 中安排
         }).catch(err => {
@@ -1509,6 +1512,11 @@
 
       // 接受任务：设置开始日期为今天，截止日期根据节点预计工时计算，状态改为进行中
       const handleAcceptTask = async (task) => {
+        // 防止对临时任务操作（等待真实 record_id）
+        if (task.id?.startsWith?.('temp_')) {
+          showToast?.('任务正在创建中，请稍后再试', 'error');
+          return;
+        }
         if (!predecessorCheck.canAccept) {
           showToast?.(`⚠️ ${predecessorCheck.message}，请等待前置节点完成后再接受任务`, 'error');
           return;
@@ -1555,6 +1563,10 @@
 
       // 完成任务：需要上传输出文件
       const handleCompleteTask = async (task) => {
+        if (task.id?.startsWith?.('temp_')) {
+          showToast?.('任务正在创建中，请稍后再试', 'error');
+          return;
+        }
         const hasFile = outputFile !== null;
         const hasLink = outputLink.trim() !== '';
         const hasText = outputText.trim() !== '';
