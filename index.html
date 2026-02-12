@@ -436,7 +436,7 @@
           });
         }
         
-        data.tasks = rawData['任务 Tasks'].records.map(r => {
+        data.tasks = rawData['任务 Tasks'].records.map((r) => {
           // 优先使用「所属节点」关联字段
           let stage = '';
           const linkedNode = r.fields['所属节点'];
@@ -491,7 +491,7 @@
             name: taskName,
             stage: stage,
             priority: (r.fields['优先级'] || 'P2').replace(/-.*$/, ''),
-            status: r.fields['状态'] || '待开始',
+            status: (() => { const s = r.fields['状态']; if (typeof s === 'object' && s !== null) return s.text || s.value || s.name || JSON.stringify(s); return s || '待开始'; })(),
             productId: productId,
             assignee: r.fields['负责人']?.[0]?.id || null,
             assigneeName: r.fields['负责人']?.[0]?.name || '',
