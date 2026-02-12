@@ -507,8 +507,32 @@
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
             completeDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
             outputFile: r.fields['输出文件']?.[0] || null,
-            outputUrl: (() => { const u = r.fields['输出链接']; if (!u) return ''; if (typeof u === 'string') return u; if (u.link) return u.link; if (u.text) return u.text; return ''; })(),
-            outputText: (() => { let t = r.fields['输出文字'] || ''; if (Array.isArray(t)) t = t.map(x => x.text || x).join(''); return t; })()
+            outputUrl: (() => {
+              // 输出链接：先检查独立字段，再从输出文字中提取
+              const u = r.fields['输出链接'];
+              if (u) {
+                if (typeof u === 'string') return u;
+                if (u.link) return u.link;
+                if (u.text) return u.text;
+              }
+              // 从输出文字中提取 URL（链接存在第一行）
+              let t = r.fields['输出文字'] || '';
+              if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
+              if (typeof t === 'string' && /^https?:\/\//.test(t.trim())) {
+                return t.trim().split('\n')[0].trim();
+              }
+              return '';
+            })(),
+            outputText: (() => {
+              let t = r.fields['输出文字'] || '';
+              if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
+              // 如果文字以 URL 开头，去掉第一行（那是链接）
+              if (typeof t === 'string' && /^https?:\/\//.test(t.trim())) {
+                const lines = t.trim().split('\n');
+                return lines.slice(1).join('\n').trim();
+              }
+              return t;
+            })()
           };
         });
       }
