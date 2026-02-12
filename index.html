@@ -1338,15 +1338,19 @@
       // 乐观更新辅助：锁定 → 更新本地 → API 后台执行 → 成功则延迟刷新 → 刷新回来解锁
       const startOptimistic = () => { optimisticRef.current = true; };
       const finishOptimistic = () => {
-        // 延迟触发 fetchData，给飞书同步时间
-        setTimeout(() => {
-          if (onTaskCreated) onTaskCreated();
-          // fetchData 完成后 propTasks 会变化，再延迟解锁让 useEffect 接管
-          setTimeout(() => {
-            optimisticRef.current = false;
-            setLocalTasks(propTasksRef.current);
-          }, 5000); // 给 fetchData 5秒完成
-        }, 1500); // 先等飞书同步 1.5s
+        // 等飞书同步后触发 fetchData，等完成+渲染后再解锁
+        setTimeout(async () => {
+          try {
+            if (onTaskCreated) await onTaskCreated();
+          } catch(e) {}
+          // 等待 React 渲染完成（propTasksRef 更新）
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              optimisticRef.current = false;
+              setLocalTasks(propTasksRef.current);
+            }, 100);
+          });
+        }, 2000); // 给飞书 2s 同步时间
       };
       const cancelOptimistic = () => { optimisticRef.current = false; };
       const tasks = localTasks;
