@@ -1775,7 +1775,7 @@
                 </button>
               </div>
               
-              {/* 新增任务表单 - 紧凑版 */}
+              {/* 新增任务表单 */}
               {showAddForm && (() => {
                 // 计算可指派的成员范围（基于当前用户角色）
                 const viewerMember = currentUser ? members.find(m =>
@@ -1786,39 +1786,30 @@
                 const viewerGroup = viewerMember?.group || '';
                 const viewerDept = viewerMember?.department || '';
                 
-                // 获取项目关联的组别/部门（从父项目的发起组推导）
                 const parentProduct = product.parentId ? 
                   products.find(p => p.id === product.parentId) : null;
                 const initiatorGroup = parentProduct?.initiatorGroup || product.initiatorGroup || '';
                 
                 const assignableMembers = (() => {
-                  // 管理员/总经理：可指派所有人
                   if (viewerRole === '管理员' || viewerRole === '总经理') return members;
-                  
-                  // 部门管理：本部门所有组 + 项目参与部门的人
                   if (viewerRole === '部门管理') {
-                    return members.filter(m => 
-                      m.department === viewerDept || // 本部门
-                      (initiatorGroup && m.group === initiatorGroup) // 发起组
-                    );
+                    return members.filter(m => m.department === viewerDept || (initiatorGroup && m.group === initiatorGroup));
                   }
-                  
-                  // 组别管理：本组 + 发起组 + 关联组
                   if (viewerRole === '组别管理') {
                     const myLinkedGroups = viewerMember?.linkedGroups || [];
-                    return members.filter(m =>
-                      m.group === viewerGroup || // 本组
-                      (initiatorGroup && m.group === initiatorGroup) || // 发起组
-                      myLinkedGroups.includes(m.group) // 关联组
-                    );
+                    return members.filter(m => m.group === viewerGroup || (initiatorGroup && m.group === initiatorGroup) || myLinkedGroups.includes(m.group));
                   }
-                  
-                  // 组员：只能指派本组
                   return members.filter(m => m.group === viewerGroup);
                 })();
-                
-                // 如果过滤后为空（可能是数据不全），回退显示全部
                 const selectableMembers = assignableMembers.length > 0 ? assignableMembers : members;
+                
+                // 按组别分组
+                const groupedMembers = {};
+                selectableMembers.forEach(m => {
+                  const g = m.group || '未分组';
+                  if (!groupedMembers[g]) groupedMembers[g] = [];
+                  groupedMembers[g].push(m);
+                });
                 
                 return (
                 <div className="bg-purple-50 rounded-lg p-3 mb-3 border border-purple-200">
@@ -1827,7 +1818,6 @@
                     <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
                   </div>
                   <form onSubmit={handleSubmit}>
-                    {/* 第一行：任务名称 */}
                     <input
                       type="text"
                       value={formData.name}
@@ -1835,9 +1825,9 @@
                       className="w-full px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none mb-2"
                       placeholder="任务名称 *"
                       required
+                      autoFocus
                     />
-                    {/* 第二行：优先级 + 日期 + 负责人 */}
-                    <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div className="grid grid-cols-2 gap-2 mb-2">
                       <select
                         value={formData.priority}
                         onChange={e => setFormData({...formData, priority: e.target.value})}
@@ -1848,46 +1838,46 @@
                         <option value="P2-中等">P2-中等</option>
                         <option value="P3-低优">P3-低优</option>
                       </select>
-                      <input
-                        type="date"
-                        value={formData.plannedStartDate}
-                        onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
-                        className="px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
-                      />
-                      <select
-                        value={formData.assignee}
-                        onChange={e => setFormData({...formData, assignee: e.target.value})}
-                        className="px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
-                      >
-                        <option value="">负责人</option>
-                        {selectableMembers.map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* 第三行：协作人（横向头像选择） + 描述 */}
-                    <div className="flex gap-2 mb-2">
-                      <div className="flex-1">
-                        <div className="text-[10px] text-gray-400 mb-1">协作人</div>
-                        <div className="flex flex-wrap gap-1">
-                          {selectableMembers.map(m => {
-                            const selected = formData.collaborators.includes(m.id);
-                            return (
-                              <button key={m.id} type="button" onClick={() => handleCollaboratorChange(m.id)}
-                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${selected ? 'bg-purple-100 border-purple-400 text-purple-700' : 'bg-white border-gray-200 text-gray-500 hover:border-purple-300'}`}>
-                                {m.avatarUrl ? (
-                                  <img src={m.avatarUrl} alt="" className="w-4 h-4 rounded-full object-cover" />
-                                ) : (
-                                  <span className={`w-4 h-4 ${m.color} rounded-full flex items-center justify-center text-white text-[8px]`}>{m.avatar}</span>
-                                )}
-                                <span>{m.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={formData.plannedStartDate}
+                          onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
+                          className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
+                          title="预计开始日期"
+                        />
                       </div>
                     </div>
-                    {/* 描述（可选，折叠） */}
+                    {/* 负责人 - tag按钮 */}
+                    <div className="mb-2">
+                      <div className="text-[10px] text-gray-400 mb-1">负责人 {formData.assignee && <span className="text-purple-500">✓</span>}</div>
+                      <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+                        {Object.entries(groupedMembers).map(([group, gMembers]) => (
+                          <React.Fragment key={group}>
+                            {Object.keys(groupedMembers).length > 1 && (
+                              <div className="w-full text-[9px] text-gray-300 mt-1 first:mt-0">{group}</div>
+                            )}
+                            {gMembers.map(m => {
+                              const selected = formData.assignee === m.id;
+                              return (
+                                <button key={m.id} type="button"
+                                  onClick={() => setFormData({...formData, assignee: selected ? '' : m.id})}
+                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-all ${
+                                    selected ? 'bg-purple-500 border-purple-500 text-white shadow-sm' : 'bg-white border-gray-200 text-gray-500 hover:border-purple-300'
+                                  }`}>
+                                  {m.avatarUrl ? (
+                                    <img src={m.avatarUrl} alt="" className="w-4 h-4 rounded-full object-cover" />
+                                  ) : (
+                                    <span className={`w-4 h-4 ${m.color} rounded-full flex items-center justify-center text-white text-[8px]`}>{m.avatar}</span>
+                                  )}
+                                  <span>{m.name}</span>
+                                </button>
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
                     <textarea
                       value={formData.description}
                       onChange={e => setFormData({...formData, description: e.target.value})}
@@ -1895,7 +1885,6 @@
                       rows={1}
                       placeholder="任务描述（选填）"
                     />
-                    {/* 按钮 */}
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setShowAddForm(false)}
                         className="flex-1 px-3 py-1.5 border border-gray-300 text-gray-500 rounded-lg text-xs hover:bg-gray-50 transition-colors">
@@ -1911,7 +1900,8 @@
                 );
               })()}
               
-              {nodeTasks.length > 0 ? (
+              {/* 任务列表（创建表单展开时隐藏） */}
+              {!showAddForm && nodeTasks.length > 0 ? (
                 <div className="space-y-2">
                   {nodeTasks.map(task => {
                     const assignee = members.find(m => m.id === task.assignee || m.name === task.assigneeName);
