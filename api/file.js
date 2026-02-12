@@ -1,5 +1,5 @@
 // api/file.js - 极速版
-// 优化：tenant_access_token 缓存（省 500ms），body size 限制 20MB
+// 优化：tenant_access_token 缓存（省500ms/次）
 
 // token 缓存（Vercel warm instance 复用）
 let cachedToken = null;
