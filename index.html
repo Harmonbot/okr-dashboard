@@ -1544,8 +1544,12 @@
           } else if (result.record_id) {
             // 用真实 record_id 替换临时 ID
             setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: result.record_id } : t));
+            removeTempTask(tempId);
+          } else {
+            // API 成功但没返回 record_id，等 fetchData 刷新时自然替换
+            // 先移除 temp task 避免重复显示
+            removeTempTask(tempId);
           }
-          // fetchData 已在 addTempTaskAndRefresh 中安排
         }).catch(err => {
           removeTempTask(tempId);
           showToast?.('创建失败: ' + err.message, 'error');
@@ -1556,7 +1560,7 @@
       const handleAcceptTask = async (task) => {
         // 防止对临时任务操作（等待真实 record_id）
         if (task.id?.startsWith?.('temp_')) {
-          showToast?.('任务正在创建中，请稍后再试', 'error');
+          showToast?.('任务同步中，请稍等几秒再试', 'info');
           return;
         }
         if (!predecessorCheck.canAccept) {
@@ -1606,7 +1610,7 @@
       // 完成任务：需要上传输出文件
       const handleCompleteTask = async (task) => {
         if (task.id?.startsWith?.('temp_')) {
-          showToast?.('任务正在创建中，请稍后再试', 'error');
+          showToast?.('任务同步中，请稍等几秒再试', 'info');
           return;
         }
         const hasLink = outputLink.trim() !== '';
