@@ -1323,37 +1323,41 @@
     const NodeTaskModal = ({ node, tasks: propTasks, members, product, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
+      // === 乐观更新系统 ===
+      // localTasks 是唯一的显示数据源
+      // 初始值从 propTasks 来，之后只通过 setLocalTasks 更新
       const [localTasks, setLocalTasks] = useState(propTasks);
+      const lastPropTasksLenRef = React.useRef(propTasks.length);
       const optimisticRef = React.useRef(false);
-      const pendingRefreshRef = React.useRef(false);
       
-      // 核心同步逻辑：当 propTasks 变化时判断是否应该同步
-      React.useEffect(() => { 
-        if (!optimisticRef.current) {
-          // 没有乐观锁，直接同步
-          setLocalTasks(propTasks); 
-        } else if (pendingRefreshRef.current) {
-          // 有乐观锁 + 正在等 fetchData 返回 → 说明这次 propTasks 就是 fetchData 的结果
-          optimisticRef.current = false;
-          pendingRefreshRef.current = false;
-          setLocalTasks(propTasks);
-        }
-        // 有乐观锁但没等 fetchData → 忽略（可能是其他原因触发的渲染）
-      }, [propTasks]);
+      // 只在非乐观状态 且 propTasks 实际数据变化时同步
+      React.useEffect(() => {
+        if (optimisticRef.current) return; // 乐观锁定中，不同步
+        setLocalTasks(propTasks);
+        lastPropTasksLenRef.current = propTasks.length;
+      }, [JSON.stringify(propTasks.map(t => t.id + '|' + t.status))]);
       
       const startOptimistic = () => { optimisticRef.current = true; };
       const finishOptimistic = () => {
-        // 标记等待 fetchData
-        pendingRefreshRef.current = true;
-        // 等飞书同步后触发 fetchData
+        // 等飞书同步后触发 fetchData，完成后强制同步
         setTimeout(() => {
-          if (onTaskCreated) onTaskCreated(); // fetchData 完成后 propTasks 变化 → useEffect 自动解锁
+          if (onTaskCreated) {
+            // 调 fetchData，它是 async 的
+            const p = onTaskCreated();
+            if (p && p.then) {
+              p.then(() => {
+                // fetchData 完成，下一帧解锁
+                requestAnimationFrame(() => { optimisticRef.current = false; });
+              });
+            } else {
+              setTimeout(() => { optimisticRef.current = false; }, 5000);
+            }
+          } else {
+            optimisticRef.current = false;
+          }
         }, 2000);
       };
-      const cancelOptimistic = () => { 
-        optimisticRef.current = false; 
-        pendingRefreshRef.current = false;
-      };
+      const cancelOptimistic = () => { optimisticRef.current = false; };
       const tasks = localTasks;
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
