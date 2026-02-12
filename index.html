@@ -1377,6 +1377,7 @@
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
       const [showCompleteForm, setShowCompleteForm] = useState(null); // 显示完成表单的任务ID
       const [outputFile, setOutputFile] = useState(null); // 输出文件对象
+      const [outputFileBase64, setOutputFileBase64] = useState(null); // 预编码的 base64
       const [outputLink, setOutputLink] = useState(''); // 输出链接
       const [outputText, setOutputText] = useState(''); // 输出文字内容
       const [completeMode, setCompleteMode] = useState('link'); // 完成方式: file, link, text
@@ -1563,6 +1564,7 @@
         }
         
         const savedFile = hasFile ? outputFile : null;
+        const savedBase64 = hasFile ? outputFileBase64 : null;
         const savedLink = hasLink ? outputLink.trim() : '';
         const savedText = hasText ? outputText.trim() : '';
         
@@ -1579,6 +1581,7 @@
         setTaskPatches(prev => ({ ...prev, [task.id]: patch }));
         setShowCompleteForm(null);
         setOutputFile(null);
+        setOutputFileBase64(null);
         setOutputLink('');
         setOutputText('');
         setCompleteMode('link');
@@ -1611,16 +1614,20 @@
             // 文件上传（如果有）与状态更新并行
             let filePromise = Promise.resolve(null);
             if (savedFile) {
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 5, msg: `正在上传 ${savedFile.name}...` } }));
+              // base64 已在选择文件时预编码
+              const fileBase64 = savedBase64;
+              if (!fileBase64) {
+                showToast?.('文件编码中，请稍后重试', 'error');
+                return;
+              }
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 10, msg: `上传 ${savedFile.name}...` } }));
               
-              // 用 XMLHttpRequest 获取真实上传进度
+              // XHR 获取真实上传进度
               filePromise = new Promise((resolve) => {
                 const xhr = new XMLHttpRequest();
-                
-                // 真实进度回调
                 xhr.upload.onprogress = (e) => {
                   if (e.lengthComputable) {
-                    const pct = Math.round((e.loaded / e.total) * 70) + 5; // 5-75%
+                    const pct = Math.round((e.loaded / e.total) * 65) + 10; // 10-75%
                     const loaded = (e.loaded / 1024).toFixed(0);
                     const total = (e.total / 1024).toFixed(0);
                     setUploadProgress(prev => ({ ...prev, [task.id]: { 
@@ -1629,56 +1636,23 @@
                     }}));
                   }
                 };
-                
                 xhr.onload = () => {
-                  try {
-                    const result = JSON.parse(xhr.responseText);
-                    resolve(result);
-                  } catch {
-                    resolve({ success: false, error: 'Parse error' });
-                  }
+                  try { resolve(JSON.parse(xhr.responseText)); } 
+                  catch { resolve({ success: false, error: 'Parse error' }); }
                 };
                 xhr.onerror = () => resolve({ success: false, error: 'Network error' });
                 xhr.ontimeout = () => resolve({ success: false, error: 'Timeout' });
-                xhr.timeout = 60000;
-                
-                // 先尝试 multipart 上传（更快）
-                const formData = new FormData();
-                formData.append('file', savedFile);
-                formData.append('app_token', APP_TOKEN);
-                formData.append('table_id', 'tblFwmxmjRJPzVmV');
-                formData.append('record_id', task.id);
-                formData.append('file_name', savedFile.name);
-                
+                xhr.timeout = 30000;
                 xhr.open('POST', API_BASE + '/api/file');
-                xhr.send(formData);
-              }).then(async (result) => {
-                // multipart 成功
-                if (result && result.success) return result;
-                
-                // multipart 失败 → 回退 Base64 JSON
-                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 30, msg: '编码上传中...' } }));
-                const toBase64 = (file) => new Promise((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.readAsDataURL(file);
-                  reader.onload = () => resolve(reader.result.split(',')[1]);
-                  reader.onerror = error => reject(error);
-                });
-                const fileBase64 = await toBase64(savedFile);
-                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 55, msg: '正在发送...' } }));
-                const res = await fetch(API_BASE + '/api/file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    app_token: APP_TOKEN,
-                    table_id: 'tblFwmxmjRJPzVmV',
-                    record_id: task.id,
-                    file_name: savedFile.name,
-                    file_data: fileBase64,
-                    file_size: savedFile.size
-                  })
-                });
-                return res.json();
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify({
+                  app_token: APP_TOKEN,
+                  table_id: 'tblFwmxmjRJPzVmV',
+                  record_id: task.id,
+                  file_name: savedFile.name,
+                  file_data: fileBase64,
+                  file_size: savedFile.size
+                }));
               });
             }
             
@@ -2070,7 +2044,17 @@
                                           </span>
                                           <input
                                             type="file"
-                                            onChange={e => setOutputFile(e.target.files[0] || null)}
+                                            onChange={e => {
+                                              const f = e.target.files[0] || null;
+                                              setOutputFile(f);
+                                              if (f) {
+                                                const reader = new FileReader();
+                                                reader.readAsDataURL(f);
+                                                reader.onload = () => setOutputFileBase64(reader.result.split(',')[1]);
+                                              } else {
+                                                setOutputFileBase64(null);
+                                              }
+                                            }}
                                             className="hidden"
                                           />
                                         </label>
@@ -2097,7 +2081,7 @@
                                           {isActioning ? '提交中...' : '✓ 提交完成'}
                                         </button>
                                         <button
-                                          onClick={() => { setShowCompleteForm(null); setOutputFile(null); setOutputLink(''); setOutputText(''); setCompleteMode('link'); }}
+                                          onClick={() => { setShowCompleteForm(null); setOutputFile(null); setOutputFileBase64(null); setOutputLink(''); setOutputText(''); setCompleteMode('link'); }}
                                           className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-600 text-xs rounded-lg transition-colors"
                                         >
                                           取消
@@ -6351,39 +6335,27 @@
                       }
                       setIsSubmitting(true);
                       try {
-                        // 文件上传（FormData multipart，更快）和状态更新并行
-                        const formData = new FormData();
-                        formData.append('file', outputFile);
-                        formData.append('app_token', APP_TOKEN);
-                        formData.append('table_id', 'tblFwmxmjRJPzVmV');
-                        formData.append('record_id', completeTask.id);
-                        formData.append('file_name', outputFile.name);
+                        // Base64 编码
+                        const fileBase64 = await new Promise((resolve, reject) => {
+                          const reader = new FileReader();
+                          reader.readAsDataURL(outputFile);
+                          reader.onload = () => resolve(reader.result.split(',')[1]);
+                          reader.onerror = reject;
+                        });
                         
+                        // 文件上传和状态更新并行
                         const uploadPromise = fetch(API_BASE + '/api/file', {
                           method: 'POST',
-                          body: formData
-                        }).then(r => r.json()).catch(async () => {
-                          // multipart 失败回退 Base64
-                          const fileBase64 = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.readAsDataURL(outputFile);
-                            reader.onload = () => resolve(reader.result.split(',')[1]);
-                            reader.onerror = reject;
-                          });
-                          const res = await fetch(API_BASE + '/api/file', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              app_token: APP_TOKEN,
-                              table_id: 'tblFwmxmjRJPzVmV',
-                              record_id: completeTask.id,
-                              file_name: outputFile.name,
-                              file_data: fileBase64,
-                              file_size: outputFile.size
-                            })
-                          });
-                          return res.json();
-                        });
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            app_token: APP_TOKEN,
+                            table_id: 'tblFwmxmjRJPzVmV',
+                            record_id: completeTask.id,
+                            file_name: outputFile.name,
+                            file_data: fileBase64,
+                            file_size: outputFile.size
+                          })
+                        }).then(r => r.json());
                         
                         const statusPromise = fetch(API_BASE + '/api/update-task', {
                           method: 'POST',
