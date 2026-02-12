@@ -2156,10 +2156,10 @@
         const parentProduct = products.find(p => p.childIds?.includes(product.id));
         const initiatorGroup = parentProduct?.initiatorGroup || '';
         
-        // 发起组的部门管理 → 全局高权限
-        if (initiatorGroup && enrichedViewer.permRole === '部门管理') {
-          const initiatorMember = members.find(m => m.group === initiatorGroup);
-          if (initiatorMember && enrichedViewer.department === initiatorMember.department) return true;
+        // 部门管理：如果发起组属于自己管辖的部门 → 能看该项目所有子线详情
+        if (enrichedViewer.permRole === '部门管理' && initiatorGroup) {
+          const initiatorMembers = members.filter(m => m.group === initiatorGroup);
+          if (initiatorMembers.some(m => m.department === enrichedViewer.department)) return true;
         }
         
         // 父项目负责人也有全局权限
