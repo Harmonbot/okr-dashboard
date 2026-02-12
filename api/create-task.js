@@ -122,8 +122,10 @@ export default async function handler(req, res) {
       });
     }
     
+    // 返回 record_id 供前端替换临时ID
     return res.status(200).json({
       success: true,
+      record_id: createData.data?.record?.record_id,
       data: createData.data,
       message: '任务创建成功'
     });
