@@ -49,6 +49,7 @@ export default async function handler(req, res) {
     const updateFields = {};
     
     // 已知任务字段映射
+    // 注意：飞书表中没有「输出链接」字段，链接和文字统一存入「输出文字」
     const knownFieldMap = {
       'status': '状态',
       'startDate': { name: '开始日期', transform: v => new Date(v).getTime() },
@@ -56,9 +57,19 @@ export default async function handler(req, res) {
       'completeDate': { name: '完成日期', transform: v => new Date(v).getTime() },
       'outputFile': '输出文件',
       'description': '任务描述',
-      'outputUrl': { name: '输出链接', transform: v => ({ link: v, text: v }) },
       'outputText': '输出文字'
     };
+    
+    // 特殊处理：outputUrl 和 outputText 合并到「输出文字」字段
+    // 格式：如果两者都有，用换行分隔；如果只有链接，直接存链接
+    if (fields.outputUrl) {
+      const link = fields.outputUrl;
+      const text = fields.outputText || '';
+      updateFields['输出文字'] = text ? `${link}\n${text}` : link;
+      // 移除已处理的字段，防止后续重复写入
+      delete fields.outputUrl;
+      delete fields.outputText;
+    }
     
     for (const [key, value] of Object.entries(fields)) {
       if (value === undefined || value === null) continue;
