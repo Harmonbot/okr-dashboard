@@ -1611,22 +1611,53 @@
             // 文件上传（如果有）与状态更新并行
             let filePromise = Promise.resolve(null);
             if (savedFile) {
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 20, msg: `正在上传 ${savedFile.name}...` } }));
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 5, msg: `正在上传 ${savedFile.name}...` } }));
               
-              // 尝试 FormData 二进制上传（更快，无Base64膨胀）
-              const formData = new FormData();
-              formData.append('file', savedFile);
-              formData.append('app_token', APP_TOKEN);
-              formData.append('table_id', 'tblFwmxmjRJPzVmV');
-              formData.append('record_id', task.id);
-              formData.append('file_name', savedFile.name);
-              
-              filePromise = fetch(API_BASE + '/api/file', {
-                method: 'POST',
-                body: formData  // 浏览器自动设 multipart/form-data
-              }).then(r => r.json()).catch(async () => {
-                // 如果 API 不支持 FormData，回退到 Base64
-                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 40, msg: '编码上传中...' } }));
+              // 用 XMLHttpRequest 获取真实上传进度
+              filePromise = new Promise((resolve) => {
+                const xhr = new XMLHttpRequest();
+                
+                // 真实进度回调
+                xhr.upload.onprogress = (e) => {
+                  if (e.lengthComputable) {
+                    const pct = Math.round((e.loaded / e.total) * 70) + 5; // 5-75%
+                    const loaded = (e.loaded / 1024).toFixed(0);
+                    const total = (e.total / 1024).toFixed(0);
+                    setUploadProgress(prev => ({ ...prev, [task.id]: { 
+                      phase: 'uploading', pct, 
+                      msg: `上传中 ${loaded}/${total} KB` 
+                    }}));
+                  }
+                };
+                
+                xhr.onload = () => {
+                  try {
+                    const result = JSON.parse(xhr.responseText);
+                    resolve(result);
+                  } catch {
+                    resolve({ success: false, error: 'Parse error' });
+                  }
+                };
+                xhr.onerror = () => resolve({ success: false, error: 'Network error' });
+                xhr.ontimeout = () => resolve({ success: false, error: 'Timeout' });
+                xhr.timeout = 60000;
+                
+                // 先尝试 multipart 上传（更快）
+                const formData = new FormData();
+                formData.append('file', savedFile);
+                formData.append('app_token', APP_TOKEN);
+                formData.append('table_id', 'tblFwmxmjRJPzVmV');
+                formData.append('record_id', task.id);
+                formData.append('file_name', savedFile.name);
+                
+                xhr.open('POST', API_BASE + '/api/file');
+                xhr.send(formData);
+              }).then(async (result) => {
+                // multipart 成功
+                if (result && result.success) return result;
+                
+                // multipart 失败 → 回退 Base64 JSON
+                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 30, msg: '编码上传中...' } }));
                 const toBase64 = (file) => new Promise((resolve, reject) => {
                   const reader = new FileReader();
                   reader.readAsDataURL(file);
@@ -1634,6 +1665,7 @@
                   reader.onerror = error => reject(error);
                 });
                 const fileBase64 = await toBase64(savedFile);
+                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 55, msg: '正在发送...' } }));
                 const res = await fetch(API_BASE + '/api/file', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -6319,32 +6351,41 @@
                       }
                       setIsSubmitting(true);
                       try {
-                        // 转 Base64
-                        const fileBase64 = await new Promise((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.readAsDataURL(outputFile);
-                          reader.onload = () => resolve(reader.result.split(',')[1]);
-                          reader.onerror = reject;
-                        });
+                        // 文件上传（FormData multipart，更快）和状态更新并行
+                        const formData = new FormData();
+                        formData.append('file', outputFile);
+                        formData.append('app_token', APP_TOKEN);
+                        formData.append('table_id', 'tblFwmxmjRJPzVmV');
+                        formData.append('record_id', completeTask.id);
+                        formData.append('file_name', outputFile.name);
                         
-                        // 1. 上传文件
-                        const uploadRes = await fetch(API_BASE + '/api/file', {
+                        const uploadPromise = fetch(API_BASE + '/api/file', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            app_token: APP_TOKEN,
-                            table_id: 'tblFwmxmjRJPzVmV',
-                            record_id: completeTask.id,
-                            file_name: outputFile.name,
-                            file_data: fileBase64,
-                            file_size: outputFile.size
-                          })
+                          body: formData
+                        }).then(r => r.json()).catch(async () => {
+                          // multipart 失败回退 Base64
+                          const fileBase64 = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.readAsDataURL(outputFile);
+                            reader.onload = () => resolve(reader.result.split(',')[1]);
+                            reader.onerror = reject;
+                          });
+                          const res = await fetch(API_BASE + '/api/file', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              app_token: APP_TOKEN,
+                              table_id: 'tblFwmxmjRJPzVmV',
+                              record_id: completeTask.id,
+                              file_name: outputFile.name,
+                              file_data: fileBase64,
+                              file_size: outputFile.size
+                            })
+                          });
+                          return res.json();
                         });
-                        const uploadResult = await uploadRes.json();
-                        if (!uploadResult.success) throw new Error(uploadResult.error || '文件上传失败');
                         
-                        // 2. 更新状态为已完成
-                        const res = await fetch(API_BASE + '/api/update-task', {
+                        const statusPromise = fetch(API_BASE + '/api/update-task', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -6356,14 +6397,16 @@
                               completeDate: new Date().toISOString().split('T')[0]
                             }
                           })
-                        });
-                        const result = await res.json();
-                        if (result.success) {
+                        }).then(r => r.json());
+                        
+                        const [uploadResult, statusResult] = await Promise.all([uploadPromise, statusPromise]);
+                        if (!uploadResult?.success) showToast?.('文件上传失败', 'error');
+                        if (statusResult.success) {
                           showToast?.('任务已完成', 'success');
                           setCompleteTask(null);
                           setOutputFile(null);
                           onRefresh?.();
-                        } else throw new Error(result.error);
+                        } else throw new Error(statusResult.error);
                       } catch (err) {
                         showToast?.('操作失败: ' + err.message, 'error');
                       }
