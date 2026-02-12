@@ -1324,11 +1324,10 @@
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       const [localTasks, setLocalTasks] = useState(propTasks);
-      const optimisticLockRef = React.useRef(0); // 用计数器代替布尔值，支持多个并发操作
+      const optimisticLockRef = React.useRef(0);
       const lockTimeoutRef = React.useRef(null);
       const lockAndScheduleUnlock = () => {
-        lockAndScheduleUnlock();
-        // 安全超时：15秒后强制解锁，防止永久锁定
+        optimisticLockRef.current++;
         if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
         lockTimeoutRef.current = setTimeout(() => {
           if (optimisticLockRef.current > 0) {
