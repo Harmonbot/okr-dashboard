@@ -262,14 +262,10 @@
 
       // 转换关键结果表
       if (rawData['关键结果 Key Results']) {
-        console.log('[DEBUG] KR records count:', rawData['关键结果 Key Results'].records?.length);
         if (rawData['关键结果 Key Results'].records?.[0]) {
-          console.log('[DEBUG] KR sample fields:', JSON.stringify(Object.keys(rawData['关键结果 Key Results'].records[0].fields)));
-          console.log('[DEBUG] KR sample 所属目标:', JSON.stringify(rawData['关键结果 Key Results'].records[0].fields['所属目标']));
         }
         // 列出所有 KR 的 record_id 和 objectiveId
         rawData['关键结果 Key Results'].records.forEach((r, i) => {
-          console.log(`[DEBUG] KR[${i}] record_id=${r.record_id}, 所属目标raw=`, JSON.stringify(r.fields['所属目标']));
         });
         data.keyResults = rawData['关键结果 Key Results'].records.map((r, idx) => {
           // 处理关联字段 - 支持多种格式
@@ -352,7 +348,6 @@
           // 处理关联KR字段 - 支持多种格式
           let krId = null;
           const linkedKR = r.fields['关联KR'];
-          if (idx === 0) console.log('[DEBUG] Project 关联KR raw:', JSON.stringify(linkedKR));
           if (linkedKR) {
             if (linkedKR.link_record_ids?.[0]) {
               krId = linkedKR.link_record_ids[0];
@@ -6773,21 +6768,16 @@
           
           if (json.success) {
             const transformed = transformData(json.data);
-            console.log('[DEBUG] Objectives:', transformed.objectives?.length, 'KRs:', transformed.keyResults?.length, 'Products:', transformed.products?.length);
-            console.log('[DEBUG] Products with krId:', transformed.products?.filter(p => p.krId).length);
             // 检查链条是否完整
             transformed.products?.filter(p => p.krId).forEach(p => {
               const kr = transformed.keyResults.find(k => k.id === p.krId);
               const obj = kr ? transformed.objectives.find(o => o.id === kr.objectiveId) : null;
-              console.log(`[DEBUG] Project "${p.name}" krId=${p.krId} → KR found=${!!kr}${kr ? ' objId=' + kr.objectiveId : ''} → Obj found=${!!obj}${obj ? ' "' + obj.name + '"' : ''}`);
             });
             // 列出所有 KR ids 和 objectiveIds
             transformed.keyResults?.forEach(kr => {
-              console.log(`[DEBUG] KR id=${kr.id} objectiveId=${kr.objectiveId} name="${kr.name}"`);
             });
             // 列出所有 Objective ids
             transformed.objectives?.forEach(o => {
-              console.log(`[DEBUG] Obj id=${o.id} name="${o.name}"`);
             });
             setData(transformed);
             setLastUpdate(new Date().toLocaleTimeString());
@@ -6930,12 +6920,13 @@
           if (o.level === '个人级') {
             return filteredMembers.some(m => m.name === o.ownerName || m.id === o.ownerId);
           }
-          // 部门级
+          // 部门级：检查目标所属部门是否匹配用户的部门或组别
           if (isDeptHead) {
             const deptGroups = data.members.filter(m => m.department === myDept).map(m => m.group);
-            return deptGroups.includes(o.department);
+            return o.department === myDept || deptGroups.includes(o.department);
           } else {
-            return o.department === myGroup;
+            // 组员/组长：目标的部门匹配自己的部门 或 匹配自己的组别
+            return o.department === myDept || o.department === myGroup;
           }
         });
         
