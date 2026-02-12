@@ -515,11 +515,25 @@
                 if (u.link) return u.link;
                 if (u.text) return u.text;
               }
-              // 从输出文字中提取 URL（链接存在第一行）
+              // 从输出文字中提取 URL（格式：链接||标题\n补充文字）
               let t = r.fields['输出文字'] || '';
               if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
-              if (typeof t === 'string' && /^https?:\/\//.test(t.trim())) {
-                return t.trim().split('\n')[0].trim();
+              if (typeof t === 'string') {
+                const firstLine = t.trim().split('\n')[0].trim();
+                const urlPart = firstLine.split('||')[0].trim();
+                if (/^https?:\/\//.test(urlPart)) return urlPart;
+              }
+              return '';
+            })(),
+            outputUrlTitle: (() => {
+              // 从 链接||标题 格式中提取标题
+              let t = r.fields['输出文字'] || '';
+              if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
+              if (typeof t === 'string') {
+                const firstLine = t.trim().split('\n')[0].trim();
+                if (firstLine.includes('||')) {
+                  return firstLine.split('||').slice(1).join('||').trim();
+                }
               }
               return '';
             })(),
@@ -2058,36 +2072,35 @@
                               {task.status === '已完成' && (
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
                                   {task.outputUrl && (() => {
-                                    // 飞书链接智能显示：提取文档标题或友好名称
+                                    // 飞书链接智能显示
                                     const url = task.outputUrl;
                                     let icon = '🔗';
-                                    let label = (() => { try { return new URL(url).hostname; } catch { return '查看链接'; } })();
+                                    let label = '';
                                     
-                                    // 飞书文档链接
-                                    if (url.includes('feishu.cn') || url.includes('larksuite.com')) {
-                                      icon = '📄';
-                                      // 尝试从 URL 路径提取类型
-                                      if (url.includes('/docx/')) label = '飞书文档';
-                                      else if (url.includes('/sheets/') || url.includes('/sheet/')) label = '飞书表格';
-                                      else if (url.includes('/base/')) label = '多维表格';
-                                      else if (url.includes('/mindnotes/') || url.includes('/mindnote/')) label = '飞书思维导图';
-                                      else if (url.includes('/slides/')) label = '飞书幻灯片';
-                                      else if (url.includes('/wiki/')) label = '飞书知识库';
-                                      else if (url.includes('/drive/') || url.includes('/file/')) label = '飞书云盘文件';
-                                      else if (url.includes('/minutes/')) label = '飞书妙记';
-                                      else label = '飞书文档';
+                                    // 优先使用 API 解析的标题
+                                    if (task.outputUrlTitle) {
+                                      label = task.outputUrlTitle;
+                                      if (url.includes('feishu.cn') || url.includes('larksuite.com')) icon = '📄';
+                                    } else {
+                                      // 回退：从 URL 路径推断类型
+                                      label = (() => { try { return new URL(url).hostname; } catch { return '查看链接'; } })();
                                       
-                                      // 尝试从 URL 参数或 hash 提取标题
-                                      try {
-                                        const u = new URL(url);
-                                        const title = u.searchParams.get('title') || u.searchParams.get('name');
-                                        if (title) label = decodeURIComponent(title);
-                                      } catch {}
+                                      if (url.includes('feishu.cn') || url.includes('larksuite.com')) {
+                                        icon = '📄';
+                                        if (url.includes('/docx/')) label = '飞书文档';
+                                        else if (url.includes('/sheets/') || url.includes('/sheet/')) label = '飞书表格';
+                                        else if (url.includes('/base/')) label = '多维表格';
+                                        else if (url.includes('/mindnotes/') || url.includes('/mindnote/')) label = '飞书思维导图';
+                                        else if (url.includes('/slides/')) label = '飞书幻灯片';
+                                        else if (url.includes('/wiki/')) label = '飞书知识库';
+                                        else if (url.includes('/drive/') || url.includes('/file/')) label = '飞书云盘文件';
+                                        else if (url.includes('/minutes/')) label = '飞书妙记';
+                                        else label = '飞书文档';
+                                      }
+                                      else if (url.includes('docs.google.com')) { icon = '📄'; label = 'Google 文档'; }
+                                      else if (url.includes('drive.google.com')) { icon = '📁'; label = 'Google 云盘'; }
+                                      else if (url.includes('notion.so') || url.includes('notion.site')) { icon = '📝'; label = 'Notion'; }
                                     }
-                                    // 其他常见链接
-                                    else if (url.includes('docs.google.com')) { icon = '📄'; label = 'Google 文档'; }
-                                    else if (url.includes('drive.google.com')) { icon = '📁'; label = 'Google 云盘'; }
-                                    else if (url.includes('notion.so') || url.includes('notion.site')) { icon = '📝'; label = 'Notion'; }
                                     
                                     return (
                                       <a 
