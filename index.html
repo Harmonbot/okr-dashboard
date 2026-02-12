@@ -1589,53 +1589,15 @@
           msg: savedFile ? `正在上传 ${savedFile.name}...` : '正在同步...'
         }}));
         
-        // 后台异步：文件上传 + 状态更新
+        // 后台异步：文件上传 + 状态更新 **并行执行**
         (async () => {
           try {
-            if (savedFile) {
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 30, msg: `正在上传 ${savedFile.name}...` } }));
-              const toBase64 = (file) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = error => reject(error);
-              });
-              const fileBase64 = await toBase64(savedFile);
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 60, msg: '文件已编码，正在发送...' } }));
-              const uploadRes = await fetch(API_BASE + '/api/file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  app_token: APP_TOKEN,
-                  table_id: 'tblFwmxmjRJPzVmV',
-                  record_id: task.id,
-                  file_name: savedFile.name,
-                  file_data: fileBase64,
-                  file_size: savedFile.size
-                })
-              });
-              const uploadResult = await uploadRes.json();
-              if (!uploadResult.success) {
-                showToast?.('文件上传失败', 'error');
-              } else {
-                // 更新 patch 中的 file_token
-                setTaskPatches(prev => {
-                  const cur = prev[task.id];
-                  if (cur && cur.outputFile) {
-                    return { ...prev, [task.id]: { ...cur, outputFile: { name: savedFile.name, file_token: uploadResult.file_token || '' } } };
-                  }
-                  return prev;
-                });
-              }
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 80, msg: '文件上传完成，正在同步状态...' } }));
-            }
-            
-            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 85, msg: '正在同步状态...' } }));
+            // 构建状态更新请求
             const updateFields = { status: '已完成', completeDate: new Date().toISOString().split('T')[0] };
             if (savedLink) updateFields.outputUrl = savedLink;
             if (savedText) updateFields.outputText = savedText;
             
-            const res = await fetch(API_BASE + '/api/update-task', {
+            const statusPromise = fetch(API_BASE + '/api/update-task', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1644,22 +1606,82 @@
                 record_id: task.id,
                 fields: updateFields
               })
-            });
-            const result = await res.json();
-            if (!result.success) {
+            }).then(r => r.json());
+            
+            // 文件上传（如果有）与状态更新并行
+            let filePromise = Promise.resolve(null);
+            if (savedFile) {
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 20, msg: `正在上传 ${savedFile.name}...` } }));
+              
+              // 尝试 FormData 二进制上传（更快，无Base64膨胀）
+              const formData = new FormData();
+              formData.append('file', savedFile);
+              formData.append('app_token', APP_TOKEN);
+              formData.append('table_id', 'tblFwmxmjRJPzVmV');
+              formData.append('record_id', task.id);
+              formData.append('file_name', savedFile.name);
+              
+              filePromise = fetch(API_BASE + '/api/file', {
+                method: 'POST',
+                body: formData  // 浏览器自动设 multipart/form-data
+              }).then(r => r.json()).catch(async () => {
+                // 如果 API 不支持 FormData，回退到 Base64
+                setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 40, msg: '编码上传中...' } }));
+                const toBase64 = (file) => new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.readAsDataURL(file);
+                  reader.onload = () => resolve(reader.result.split(',')[1]);
+                  reader.onerror = error => reject(error);
+                });
+                const fileBase64 = await toBase64(savedFile);
+                const res = await fetch(API_BASE + '/api/file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    app_token: APP_TOKEN,
+                    table_id: 'tblFwmxmjRJPzVmV',
+                    record_id: task.id,
+                    file_name: savedFile.name,
+                    file_data: fileBase64,
+                    file_size: savedFile.size
+                  })
+                });
+                return res.json();
+              });
+            }
+            
+            // 等待两者都完成
+            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 60, msg: savedFile ? '上传中，同步状态...' : '正在同步...' } }));
+            const [statusResult, fileResult] = await Promise.all([statusPromise, filePromise]);
+            
+            // 处理文件结果
+            if (fileResult) {
+              if (fileResult.success) {
+                setTaskPatches(prev => {
+                  const cur = prev[task.id];
+                  if (cur && cur.outputFile) {
+                    return { ...prev, [task.id]: { ...cur, outputFile: { name: savedFile.name, file_token: fileResult.file_token || '' } } };
+                  }
+                  return prev;
+                });
+              } else {
+                showToast?.('文件上传失败: ' + (fileResult.error || ''), 'error');
+              }
+            }
+            
+            // 处理状态结果
+            if (!statusResult.success) {
               setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '同步失败: ' + (result.error || '') } }));
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '同步失败' } }));
               showToast?.('状态同步失败', 'error');
             } else {
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'done', pct: 100, msg: '✓ 同步完成' } }));
-              // 3秒后清除进度条
-              setTimeout(() => { setUploadProgress(prev => { const n = { ...prev }; delete n[task.id]; return n; }); }, 3000);
-              // 2秒后 fetchData
-              setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 2000);
+              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'done', pct: 100, msg: '✓ 完成' } }));
+              setTimeout(() => { setUploadProgress(prev => { const n = { ...prev }; delete n[task.id]; return n; }); }, 2500);
+              setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 1500);
             }
           } catch (err) {
             setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
-            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '操作失败: ' + err.message } }));
+            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '失败: ' + err.message } }));
             showToast?.('操作失败: ' + err.message, 'error');
           }
         })();
