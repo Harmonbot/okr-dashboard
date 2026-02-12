@@ -1376,12 +1376,11 @@
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [actionTaskId, setActionTaskId] = useState(null); // 正在操作的任务ID
       const [showCompleteForm, setShowCompleteForm] = useState(null); // 显示完成表单的任务ID
-      const [outputFile, setOutputFile] = useState(null); // 输出文件对象
-      const [outputFileBase64, setOutputFileBase64] = useState(null); // 预编码的 base64
+      const [outputFile, setOutputFile] = useState(null); // 保留避免引用错误
       const [outputLink, setOutputLink] = useState(''); // 输出链接
       const [outputText, setOutputText] = useState(''); // 输出文字内容
-      const [completeMode, setCompleteMode] = useState('link'); // 完成方式: file, link, text
-      const [uploadProgress, setUploadProgress] = useState({}); // {taskId: {phase: 'uploading'|'syncing'|'done'|'error', pct: 0-100, msg: ''}}
+      const [completeMode, setCompleteMode] = useState('link'); // 完成方式: link, text
+      const [uploadProgress, setUploadProgress] = useState({}); // 同步进度
       const [formData, setFormData] = useState({
         name: '',
         priority: 'P2-中等',
@@ -1567,16 +1566,13 @@
           showToast?.('任务正在创建中，请稍后再试', 'error');
           return;
         }
-        const hasFile = outputFile !== null;
         const hasLink = outputLink.trim() !== '';
         const hasText = outputText.trim() !== '';
-        if (!hasFile && !hasLink && !hasText) {
-          showToast?.('请提交链接、文件或文字内容（至少一项）', 'error');
+        if (!hasLink && !hasText) {
+          showToast?.('请提交链接或文字内容（至少一项）', 'error');
           return;
         }
         
-        const savedFile = hasFile ? outputFile : null;
-        const savedBase64 = hasFile ? outputFileBase64 : null;
         const savedLink = hasLink ? outputLink.trim() : '';
         const savedText = hasText ? outputText.trim() : '';
         
@@ -1585,34 +1581,31 @@
           status: '已完成',
           completeDate: new Date().toISOString().split('T')[0],
           ...(savedLink ? { outputUrl: savedLink } : {}),
-          ...(savedText ? { outputText: savedText } : {}),
-          ...(savedFile ? { outputFile: { name: savedFile.name, file_token: '__uploading__' } } : {})
+          ...(savedText ? { outputText: savedText } : {})
         };
         
         // 立即补丁显示 + 关闭表单 + 显示进度
         setTaskPatches(prev => ({ ...prev, [task.id]: patch }));
         setShowCompleteForm(null);
         setOutputFile(null);
-        setOutputFileBase64(null);
         setOutputLink('');
         setOutputText('');
         setCompleteMode('link');
         
-        // 设置上传进度
+        // 设置同步进度
         setUploadProgress(prev => ({ ...prev, [task.id]: { 
-          phase: savedFile ? 'uploading' : 'syncing', pct: 10, 
-          msg: savedFile ? `正在上传 ${savedFile.name}...` : '正在同步...'
+          phase: 'syncing', pct: 10, msg: '正在同步...'
         }}));
         
-        // 后台异步：文件上传 + 状态更新 **并行执行**
+        // 后台异步：状态更新
         (async () => {
           try {
-            // 构建状态更新请求
             const updateFields = { status: '已完成', completeDate: new Date().toISOString().split('T')[0] };
             if (savedLink) updateFields.outputUrl = savedLink;
             if (savedText) updateFields.outputText = savedText;
             
-            const statusPromise = fetch(API_BASE + '/api/update-task', {
+            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 30, msg: '正在同步...' } }));
+            const res = await fetch(API_BASE + '/api/update-task', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1621,77 +1614,13 @@
                 record_id: task.id,
                 fields: updateFields
               })
-            }).then(r => r.json());
+            });
+            const statusResult = await res.json();
             
-            // 文件上传（如果有）与状态更新并行
-            let filePromise = Promise.resolve(null);
-            if (savedFile) {
-              // base64 已在选择文件时预编码
-              const fileBase64 = savedBase64;
-              if (!fileBase64) {
-                showToast?.('文件编码中，请稍后重试', 'error');
-                return;
-              }
-              setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'uploading', pct: 10, msg: `上传 ${savedFile.name}...` } }));
-              
-              // XHR 获取真实上传进度
-              filePromise = new Promise((resolve) => {
-                const xhr = new XMLHttpRequest();
-                xhr.upload.onprogress = (e) => {
-                  if (e.lengthComputable) {
-                    const pct = Math.round((e.loaded / e.total) * 65) + 10; // 10-75%
-                    const loaded = (e.loaded / 1024).toFixed(0);
-                    const total = (e.total / 1024).toFixed(0);
-                    setUploadProgress(prev => ({ ...prev, [task.id]: { 
-                      phase: 'uploading', pct, 
-                      msg: `上传中 ${loaded}/${total} KB` 
-                    }}));
-                  }
-                };
-                xhr.onload = () => {
-                  try { resolve(JSON.parse(xhr.responseText)); } 
-                  catch { resolve({ success: false, error: 'Parse error' }); }
-                };
-                xhr.onerror = () => resolve({ success: false, error: 'Network error' });
-                xhr.ontimeout = () => resolve({ success: false, error: 'Timeout' });
-                xhr.timeout = 30000;
-                xhr.open('POST', API_BASE + '/api/file');
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.send(JSON.stringify({
-                  app_token: APP_TOKEN,
-                  table_id: 'tblFwmxmjRJPzVmV',
-                  record_id: task.id,
-                  file_name: savedFile.name,
-                  file_data: fileBase64,
-                  file_size: savedFile.size
-                }));
-              });
-            }
-            
-            // 等待两者都完成
-            setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'syncing', pct: 60, msg: savedFile ? '上传中，同步状态...' : '正在同步...' } }));
-            const [statusResult, fileResult] = await Promise.all([statusPromise, filePromise]);
-            
-            // 处理文件结果
-            if (fileResult) {
-              if (fileResult.success) {
-                setTaskPatches(prev => {
-                  const cur = prev[task.id];
-                  if (cur && cur.outputFile) {
-                    return { ...prev, [task.id]: { ...cur, outputFile: { name: savedFile.name, file_token: fileResult.file_token || '' } } };
-                  }
-                  return prev;
-                });
-              } else {
-                showToast?.('文件上传失败: ' + (fileResult.error || ''), 'error');
-              }
-            }
-            
-            // 处理状态结果
             if (!statusResult.success) {
               setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
               setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'error', pct: 0, msg: '同步失败' } }));
-              showToast?.('状态同步失败', 'error');
+              showToast?.('操作失败: ' + (statusResult.error || ''), 'error');
             } else {
               setUploadProgress(prev => ({ ...prev, [task.id]: { phase: 'done', pct: 100, msg: '✓ 完成' } }));
               setTimeout(() => { setUploadProgress(prev => { const n = { ...prev }; delete n[task.id]; return n; }); }, 2500);
@@ -2023,7 +1952,6 @@
                                       <div className="flex gap-1 border-b pb-1">
                                         {[
                                           { key: 'link', label: '🔗 链接', },
-                                          { key: 'file', label: '📎 文件', },
                                           { key: 'text', label: '📝 文字', },
                                         ].map(m => (
                                           <button 
@@ -2043,33 +1971,8 @@
                                           value={outputLink}
                                           onChange={e => setOutputLink(e.target.value)}
                                           className="w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-green-300 outline-none"
-                                          placeholder="粘贴链接，如飞书文档、网盘地址等..."
+                                          placeholder="粘贴飞书文档链接、网盘地址等..."
                                         />
-                                      )}
-
-                                      {/* 文件选择 */}
-                                      {completeMode === 'file' && (
-                                        <label className="flex items-center gap-2 px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors">
-                                          <span className="text-gray-400">📎</span>
-                                          <span className="text-xs text-gray-500 truncate">
-                                            {outputFile ? `${outputFile.name} (${(outputFile.size / 1024).toFixed(1)}KB)` : '点击选择文件...'}
-                                          </span>
-                                          <input
-                                            type="file"
-                                            onChange={e => {
-                                              const f = e.target.files[0] || null;
-                                              setOutputFile(f);
-                                              if (f) {
-                                                const reader = new FileReader();
-                                                reader.readAsDataURL(f);
-                                                reader.onload = () => setOutputFileBase64(reader.result.split(',')[1]);
-                                              } else {
-                                                setOutputFileBase64(null);
-                                              }
-                                            }}
-                                            className="hidden"
-                                          />
-                                        </label>
                                       )}
 
                                       {/* 文字输入 */}
@@ -2087,18 +1990,18 @@
                                       <div className="flex items-center gap-2">
                                         <button
                                           onClick={() => handleCompleteTask(task)}
-                                          disabled={isActioning || (!outputFile && !outputLink.trim() && !outputText.trim())}
+                                          disabled={isActioning || (!outputLink.trim() && !outputText.trim())}
                                           className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                           {isActioning ? '提交中...' : '✓ 提交完成'}
                                         </button>
                                         <button
-                                          onClick={() => { setShowCompleteForm(null); setOutputFile(null); setOutputFileBase64(null); setOutputLink(''); setOutputText(''); setCompleteMode('link'); }}
+                                          onClick={() => { setShowCompleteForm(null); setOutputFile(null); setOutputLink(''); setOutputText(''); setCompleteMode('link'); }}
                                           className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-600 text-xs rounded-lg transition-colors"
                                         >
                                           取消
                                         </button>
-                                        <span className="text-[10px] text-gray-400 ml-auto">链接/文件/文字任选一项</span>
+                                        <span className="text-[10px] text-gray-400 ml-auto">链接或文字任选一项</span>
                                       </div>
                                     </div>
                                   ) : (
@@ -2122,34 +2025,53 @@
                                 </span>
                               )}
                               
-                              {/* 已完成状态：显示交付物（文件/链接/文字） */}
+                              {/* 已完成状态：显示交付物（链接/文字） */}
                               {task.status === '已完成' && (
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
-                                  {task.outputFile && task.outputFile.file_token !== '__uploading__' && (
-                                    <a 
-                                      href={`${API_BASE}/api/file?file_token=${task.outputFile.file_token}&file_name=${encodeURIComponent(task.outputFile.name || 'file')}`}
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-xs text-green-600 hover:text-green-700 hover:underline inline-flex items-center gap-1"
-                                    >
-                                      📎 {task.outputFile.name || '查看附件'}
-                                    </a>
-                                  )}
-                                  {task.outputFile && task.outputFile.file_token === '__uploading__' && (
-                                    <span className="text-xs text-orange-500 inline-flex items-center gap-1 animate-pulse">
-                                      📎 {task.outputFile.name} (上传中...)
-                                    </span>
-                                  )}
-                                  {task.outputUrl && (
-                                    <a 
-                                      href={task.outputUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
-                                    >
-                                      🔗 {(() => { try { return new URL(task.outputUrl).hostname; } catch { return '查看链接'; } })()}
-                                    </a>
-                                  )}
+                                  {task.outputUrl && (() => {
+                                    // 飞书链接智能显示：提取文档标题或友好名称
+                                    const url = task.outputUrl;
+                                    let icon = '🔗';
+                                    let label = (() => { try { return new URL(url).hostname; } catch { return '查看链接'; } })();
+                                    
+                                    // 飞书文档链接
+                                    if (url.includes('feishu.cn') || url.includes('larksuite.com')) {
+                                      icon = '📄';
+                                      // 尝试从 URL 路径提取类型
+                                      if (url.includes('/docx/')) label = '飞书文档';
+                                      else if (url.includes('/sheets/') || url.includes('/sheet/')) label = '飞书表格';
+                                      else if (url.includes('/base/')) label = '多维表格';
+                                      else if (url.includes('/mindnotes/') || url.includes('/mindnote/')) label = '飞书思维导图';
+                                      else if (url.includes('/slides/')) label = '飞书幻灯片';
+                                      else if (url.includes('/wiki/')) label = '飞书知识库';
+                                      else if (url.includes('/drive/') || url.includes('/file/')) label = '飞书云盘文件';
+                                      else if (url.includes('/minutes/')) label = '飞书妙记';
+                                      else label = '飞书文档';
+                                      
+                                      // 尝试从 URL 参数或 hash 提取标题
+                                      try {
+                                        const u = new URL(url);
+                                        const title = u.searchParams.get('title') || u.searchParams.get('name');
+                                        if (title) label = decodeURIComponent(title);
+                                      } catch {}
+                                    }
+                                    // 其他常见链接
+                                    else if (url.includes('docs.google.com')) { icon = '📄'; label = 'Google 文档'; }
+                                    else if (url.includes('drive.google.com')) { icon = '📁'; label = 'Google 云盘'; }
+                                    else if (url.includes('notion.so') || url.includes('notion.site')) { icon = '📝'; label = 'Notion'; }
+                                    
+                                    return (
+                                      <a 
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 max-w-[200px]"
+                                        title={url}
+                                      >
+                                        {icon} <span className="truncate">{label}</span>
+                                      </a>
+                                    );
+                                  })()}
                                   {task.outputText && (
                                     <span className="text-xs text-gray-500" title={task.outputText}>
                                       📝 {task.outputText.length > 20 ? task.outputText.slice(0, 20) + '...' : task.outputText}
@@ -6294,11 +6216,11 @@
           
           {/* 完成任务弹窗 - 需要上传文件 */}
           {completeTask && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setCompleteTask(null); setOutputFile(null); }}>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setCompleteTask(null); }}>
               <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-gray-800">✅ 完成任务</h3>
-                  <button onClick={() => { setCompleteTask(null); setOutputFile(null); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+                  <button onClick={() => { setCompleteTask(null); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
                 </div>
                 
                 <div className="bg-gray-50 rounded-xl p-3 mb-4">
@@ -6311,65 +6233,34 @@
                 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    📎 上传输出文件 <span className="text-red-500">*</span>
+                    🔗 粘贴交付链接
                   </label>
-                  <div className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors ${outputFile ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-blue-300'}`}>
-                    {outputFile ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="text-green-600">📄</span>
-                        <span className="text-sm text-green-700 font-medium">{outputFile.name}</span>
-                        <span className="text-xs text-gray-400">({(outputFile.size / 1024).toFixed(1)} KB)</span>
-                        <button onClick={() => setOutputFile(null)} className="text-red-400 hover:text-red-600 ml-2">✕</button>
-                      </div>
-                    ) : (
-                      <label className="cursor-pointer">
-                        <div className="text-3xl mb-1">📁</div>
-                        <div className="text-sm text-gray-500">点击选择文件</div>
-                        <div className="text-xs text-gray-400 mt-1">支持任意文件格式</div>
-                        <input type="file" className="hidden" onChange={e => setOutputFile(e.target.files[0])} />
-                      </label>
-                    )}
-                  </div>
+                  <input
+                    type="url"
+                    value={outputLink}
+                    onChange={e => setOutputLink(e.target.value)}
+                    className="w-full px-3 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-green-300 outline-none"
+                    placeholder="粘贴飞书文档链接、网盘地址等..."
+                    autoFocus
+                  />
                 </div>
                 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => { setCompleteTask(null); setOutputFile(null); }}
+                    onClick={() => { setCompleteTask(null); setOutputLink(''); }}
                     className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-colors"
                   >
                     取消
                   </button>
                   <button
                     onClick={async () => {
-                      if (!outputFile) {
-                        showToast?.('请先上传输出文件', 'error');
+                      if (!outputLink.trim()) {
+                        showToast?.('请粘贴交付链接', 'error');
                         return;
                       }
                       setIsSubmitting(true);
                       try {
-                        // Base64 编码
-                        const fileBase64 = await new Promise((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.readAsDataURL(outputFile);
-                          reader.onload = () => resolve(reader.result.split(',')[1]);
-                          reader.onerror = reject;
-                        });
-                        
-                        // 文件上传和状态更新并行
-                        const uploadPromise = fetch(API_BASE + '/api/file', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            app_token: APP_TOKEN,
-                            table_id: 'tblFwmxmjRJPzVmV',
-                            record_id: completeTask.id,
-                            file_name: outputFile.name,
-                            file_data: fileBase64,
-                            file_size: outputFile.size
-                          })
-                        }).then(r => r.json());
-                        
-                        const statusPromise = fetch(API_BASE + '/api/update-task', {
+                        const res = await fetch(API_BASE + '/api/update-task', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -6378,25 +6269,24 @@
                             record_id: completeTask.id,
                             fields: {
                               status: '已完成',
-                              completeDate: new Date().toISOString().split('T')[0]
+                              completeDate: new Date().toISOString().split('T')[0],
+                              outputUrl: outputLink.trim()
                             }
                           })
-                        }).then(r => r.json());
-                        
-                        const [uploadResult, statusResult] = await Promise.all([uploadPromise, statusPromise]);
-                        if (!uploadResult?.success) showToast?.('文件上传失败', 'error');
-                        if (statusResult.success) {
+                        });
+                        const result = await res.json();
+                        if (result.success) {
                           showToast?.('任务已完成', 'success');
                           setCompleteTask(null);
-                          setOutputFile(null);
+                          setOutputLink('');
                           onRefresh?.();
-                        } else throw new Error(statusResult.error);
+                        } else throw new Error(result.error);
                       } catch (err) {
                         showToast?.('操作失败: ' + err.message, 'error');
                       }
                       setIsSubmitting(false);
                     }}
-                    disabled={!outputFile || isSubmitting}
+                    disabled={!outputLink.trim() || isSubmitting}
                     className="flex-1 py-2 px-4 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-1"
                   >
                     {isSubmitting ? (
