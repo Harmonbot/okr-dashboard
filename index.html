@@ -1324,11 +1324,27 @@
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       const [localTasks, setLocalTasks] = useState(propTasks);
-      const optimisticLockRef = React.useRef(false);
-      // 当 props 更新时同步（后台刷新完成后），但乐观更新后延迟同步
+      const optimisticLockRef = React.useRef(0); // 用计数器代替布尔值，支持多个并发操作
+      const lockTimeoutRef = React.useRef(null);
+      const lockAndScheduleUnlock = () => {
+        lockAndScheduleUnlock();
+        // 安全超时：15秒后强制解锁，防止永久锁定
+        if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+        lockTimeoutRef.current = setTimeout(() => {
+          if (optimisticLockRef.current > 0) {
+            optimisticLockRef.current = 0;
+            setLocalTasks(propTasks);
+          }
+        }, 15000);
+      };
+      // 当 props 更新时同步（后台刷新完成后）
       React.useEffect(() => { 
-        if (!optimisticLockRef.current) {
+        if (optimisticLockRef.current <= 0) {
           setLocalTasks(propTasks); 
+        } else {
+          // 锁定中但收到新 props，说明 fetchData 完成了，延迟解锁并应用
+          optimisticLockRef.current = 0;
+          setLocalTasks(propTasks);
         }
       }, [propTasks]);
       const tasks = localTasks;
@@ -1429,7 +1445,7 @@
           dueDate: '',
           completeDate: ''
         }]);
-        optimisticLockRef.current = true;
+        lockAndScheduleUnlock();
         setShowAddForm(false);
         setFormData({
           name: '',
@@ -1465,15 +1481,15 @@
             // API 失败：移除临时任务
             setLocalTasks(prev => prev.filter(t => t.id !== tempId));
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
+            optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
+          } else {
+            // API 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
+            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 1000);
           }
-          setTimeout(() => { 
-            optimisticLockRef.current = false;
-            if (onTaskCreated) onTaskCreated(); 
-          }, 2000);
         }).catch(err => {
           setLocalTasks(prev => prev.filter(t => t.id !== tempId));
           showToast?.('创建失败: ' + err.message, 'error');
-          optimisticLockRef.current = false;
+          optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
         });
       };
 
@@ -1501,7 +1517,7 @@
           startDate: today.toISOString().split('T')[0],
           dueDate: dueDate.toISOString().split('T')[0]
         } : t));
-        optimisticLockRef.current = true;
+        lockAndScheduleUnlock();
         showToast?.('已接受任务', 'success');
         setActionTaskId(null);
         
@@ -1526,18 +1542,17 @@
               ...t, status: '待开始', startDate: '', dueDate: ''
             } : t));
             showToast?.('操作失败: ' + (result.error || '未知错误'), 'error');
+            optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
+          } else {
+            // API 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
+            setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 1000);
           }
-          // 延迟刷新获取最新数据
-          setTimeout(() => { 
-            optimisticLockRef.current = false;
-            if (onTaskCreated) onTaskCreated(); 
-          }, 2000);
         }).catch(err => {
           setLocalTasks(prev => prev.map(t => t.id === task.id ? {
             ...t, status: '待开始', startDate: '', dueDate: ''
           } : t));
           showToast?.('操作失败: ' + err.message, 'error');
-          optimisticLockRef.current = false;
+          optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
         });
         setActionTaskId(null);
       };
@@ -1565,7 +1580,7 @@
           ...t, status: '已完成',
           completeDate: new Date().toISOString().split('T')[0]
         } : t));
-        optimisticLockRef.current = true;
+        lockAndScheduleUnlock();
         setShowCompleteForm(null);
         setOutputFile(null);
         setOutputLink('');
@@ -1627,17 +1642,18 @@
                 ...t, status: '进行中', completeDate: ''
               } : t));
               showToast?.('状态同步失败: ' + (result.error || ''), 'error');
+              optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
+            } else {
+              // 成功：延迟刷新，让 useEffect 在 propTasks 更新时自动解锁
+              setTimeout(() => { if (onTaskCreated) onTaskCreated(); }, 1000);
             }
           } catch (err) {
             setLocalTasks(prev => prev.map(t => t.id === task.id ? {
               ...t, status: '进行中', completeDate: ''
             } : t));
             showToast?.('操作失败: ' + err.message, 'error');
+            optimisticLockRef.current = Math.max(0, optimisticLockRef.current - 1);
           }
-          setTimeout(() => { 
-            optimisticLockRef.current = false;
-            if (onTaskCreated) onTaskCreated(); 
-          }, 2000);
         })();
       };
 
