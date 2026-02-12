@@ -1277,7 +1277,7 @@
                     </div>
                     <div>
                       <div className={`text-sm font-bold ${isLate ? 'text-red-700' : isUrgent ? 'text-orange-700' : 'text-purple-700'}`}>
-                        计划上线: {product.targetDate}
+                        Deadline: {product.targetDate}
                       </div>
                       <div className={`text-xs ${isLate ? 'text-red-500' : isUrgent ? 'text-orange-500' : 'text-purple-400'}`}>
                         {isLate ? `已逾期 ${Math.abs(daysUntil)} 天` : daysUntil === 0 ? '今天上线！' : `剩余 ${daysUntil} 天`}
@@ -2838,7 +2838,7 @@
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-xl bg-white/20 flex items-center justify-center text-2xl sm:text-3xl">🎯</div>
                                 <div>
-                                  <div className="text-[10px] sm:text-xs opacity-70 uppercase tracking-wide">计划上线日期</div>
+                                  <div className="text-[10px] sm:text-xs opacity-70 uppercase tracking-wide">Deadline</div>
                                   <div className="text-xl sm:text-3xl font-bold tracking-tight">
                                     {targetDate ? `${targetDate.getMonth()+1}月${targetDate.getDate()}日` : '未设定'}
                                   </div>
@@ -3085,14 +3085,15 @@
                     {/* 工期 */}
                     {hasTimeline && (
                       <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                        <span className="text-[11px] text-gray-400 flex-shrink-0">{parentStart.getMonth()+1}/{parentStart.getDate()}</span>
-                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden relative">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0">工期</span>
+                        <span className="text-[11px] text-gray-500 flex-shrink-0">{parentStart.getMonth()+1}/{parentStart.getDate()}</span>
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden relative" title={`时间消耗 ${timeProgress}% · 完成进度 ${autoProgress}%`}>
                           <div className={`h-full rounded-full absolute left-0 top-0 ${isOverdue ? 'bg-red-300' : 'bg-blue-200'}`} style={{width: `${timeProgress}%`}} />
                           <div className="h-full rounded-full bg-green-500 absolute left-0 top-0 opacity-60" style={{width: `${autoProgress}%`}} />
                         </div>
-                        <span className="text-[11px] text-gray-400 flex-shrink-0">{tl.deadline.getMonth()+1}/{tl.deadline.getDate()}</span>
+                        <span className="text-[11px] text-gray-500 flex-shrink-0">{tl.deadline.getMonth()+1}/{tl.deadline.getDate()}</span>
                         <span className={`text-xs font-medium flex-shrink-0 ${isOverdue ? 'text-red-500' : remaining <= 3 ? 'text-amber-500' : 'text-blue-500'}`}>
-                          {isOverdue ? `逾期${getWorkingDaysBetween(tl.deadline, now)}天` : `剩余${remaining}天`}
+                          {isOverdue ? `逾期${getWorkingDaysBetween(tl.deadline, now)}天` : `剩${remaining}天`}
                         </span>
                       </div>
                     )}
