@@ -1383,8 +1383,14 @@
       // 当 propTasks 更新时（fetchData完成），清除已同步的patches和tempTasks
       React.useEffect(() => {
         const propIds = new Set(propTasks.map(t => t.id));
-        // 清除tempTasks中已被propTasks包含的
-        setTempTasks(prev => prev.filter(t => !propIds.has(t.id)));
+        // 清除tempTasks：按ID匹配 或 按名称+节点匹配（temp ID不会和真实ID相同）
+        setTempTasks(prev => prev.filter(t => {
+          if (propIds.has(t.id)) return false; // ID匹配
+          // 名称+阶段匹配：说明 fetchData 已拉到这条任务的真实数据
+          const realExists = propTasks.some(pt => pt.name === t.name && pt.stage === t.stage);
+          if (realExists) return false;
+          return true;
+        }));
         // 清除patches中已被propTasks反映的
         setTaskPatches(prev => {
           const next = { ...prev };
@@ -1543,14 +1549,9 @@
           if (!result.success) {
             removeTempTask(tempId);
             showToast?.('创建失败: ' + (result.error || '未知错误'), 'error');
-          } else {
-            // API 成功，移除 temp task，fetchData 会拉到真实数据
-            removeTempTask(tempId);
-            if (result.record_id && onTaskCreated) {
-              // 立即刷新获取真实数据
-              onTaskCreated();
-            }
           }
+          // 成功时不移除 temp task，等 fetchData 刷新后自然替换
+          // fetchData 已在 addTempTaskAndRefresh 中 2 秒后触发
           setIsSubmitting(false);
         }).catch(err => {
           removeTempTask(tempId);
