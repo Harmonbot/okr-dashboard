@@ -267,6 +267,10 @@
           console.log('[DEBUG] KR sample fields:', JSON.stringify(Object.keys(rawData['关键结果 Key Results'].records[0].fields)));
           console.log('[DEBUG] KR sample 所属目标:', JSON.stringify(rawData['关键结果 Key Results'].records[0].fields['所属目标']));
         }
+        // 列出所有 KR 的 record_id 和 objectiveId
+        rawData['关键结果 Key Results'].records.forEach((r, i) => {
+          console.log(`[DEBUG] KR[${i}] record_id=${r.record_id}, 所属目标raw=`, JSON.stringify(r.fields['所属目标']));
+        });
         data.keyResults = rawData['关键结果 Key Results'].records.map((r, idx) => {
           // 处理关联字段 - 支持多种格式
           let objectiveId = null;
@@ -6771,7 +6775,20 @@
             const transformed = transformData(json.data);
             console.log('[DEBUG] Objectives:', transformed.objectives?.length, 'KRs:', transformed.keyResults?.length, 'Products:', transformed.products?.length);
             console.log('[DEBUG] Products with krId:', transformed.products?.filter(p => p.krId).length);
-            if (transformed.products?.[0]) console.log('[DEBUG] First product krId:', transformed.products[0].krId);
+            // 检查链条是否完整
+            transformed.products?.filter(p => p.krId).forEach(p => {
+              const kr = transformed.keyResults.find(k => k.id === p.krId);
+              const obj = kr ? transformed.objectives.find(o => o.id === kr.objectiveId) : null;
+              console.log(`[DEBUG] Project "${p.name}" krId=${p.krId} → KR found=${!!kr}${kr ? ' objId=' + kr.objectiveId : ''} → Obj found=${!!obj}${obj ? ' "' + obj.name + '"' : ''}`);
+            });
+            // 列出所有 KR ids 和 objectiveIds
+            transformed.keyResults?.forEach(kr => {
+              console.log(`[DEBUG] KR id=${kr.id} objectiveId=${kr.objectiveId} name="${kr.name}"`);
+            });
+            // 列出所有 Objective ids
+            transformed.objectives?.forEach(o => {
+              console.log(`[DEBUG] Obj id=${o.id} name="${o.name}"`);
+            });
             setData(transformed);
             setLastUpdate(new Date().toLocaleTimeString());
           } else {
