@@ -1363,7 +1363,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       // === 任务显示：直接使用 propTasks，不做乐观更新 ===
@@ -1803,6 +1803,11 @@
                 })();
                 const selectableMembers = assignableMembers.length > 0 ? assignableMembers : members;
                 
+                // 当前节点的时间范围（从 timelineMap）
+                const nodeTimeline = timelineMap[node?.name];
+                const nodeDateMin = nodeTimeline?.planStart ? new Date(nodeTimeline.planStart).toISOString().split('T')[0] : '';
+                const nodeDateMax = nodeTimeline?.planEnd ? new Date(nodeTimeline.planEnd).toISOString().split('T')[0] : '';
+                
                 // 按组别分组
                 const groupedMembers = {};
                 selectableMembers.forEach(m => {
@@ -1843,11 +1848,18 @@
                           type="date"
                           value={formData.plannedStartDate}
                           onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
+                          min={nodeDateMin}
+                          max={nodeDateMax}
                           className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
-                          title="预计开始日期"
+                          title={nodeDateMin && nodeDateMax ? `开始日期范围: ${nodeDateMin} ~ ${nodeDateMax}` : '预计开始日期'}
                         />
                       </div>
                     </div>
+                    {nodeDateMin && nodeDateMax && (
+                      <div className="text-[10px] text-gray-400 -mt-1 mb-2">
+                        📅 本节点工期：{nodeDateMin.slice(5)} ~ {nodeDateMax.slice(5)}
+                      </div>
+                    )}
                     {/* 负责人 - tag按钮 */}
                     <div className="mb-2">
                       <div className="text-[10px] text-gray-400 mb-1">负责人 {formData.assignee && <span className="text-purple-500">✓</span>}</div>
@@ -3320,6 +3332,7 @@
               members={members}
               product={product}
               products={products}
+              timelineMap={timelineMap}
               nodeRecordId={selectedNode.id}
               nodes={nodes}
               skippedNodes={skippedNodes}
