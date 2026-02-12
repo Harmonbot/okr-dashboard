@@ -1325,34 +1325,35 @@
       const showToast = useToast();
       const [localTasks, setLocalTasks] = useState(propTasks);
       const optimisticRef = React.useRef(false);
-      const propTasksRef = React.useRef(propTasks);
-      propTasksRef.current = propTasks; // 始终保持最新引用
+      const pendingRefreshRef = React.useRef(false);
       
-      // 当 propTasks 变化时，如果没有乐观锁就同步
+      // 核心同步逻辑：当 propTasks 变化时判断是否应该同步
       React.useEffect(() => { 
         if (!optimisticRef.current) {
+          // 没有乐观锁，直接同步
           setLocalTasks(propTasks); 
+        } else if (pendingRefreshRef.current) {
+          // 有乐观锁 + 正在等 fetchData 返回 → 说明这次 propTasks 就是 fetchData 的结果
+          optimisticRef.current = false;
+          pendingRefreshRef.current = false;
+          setLocalTasks(propTasks);
         }
+        // 有乐观锁但没等 fetchData → 忽略（可能是其他原因触发的渲染）
       }, [propTasks]);
       
-      // 乐观更新辅助：锁定 → 更新本地 → API 后台执行 → 成功则延迟刷新 → 刷新回来解锁
       const startOptimistic = () => { optimisticRef.current = true; };
       const finishOptimistic = () => {
-        // 等飞书同步后触发 fetchData，等完成+渲染后再解锁
-        setTimeout(async () => {
-          try {
-            if (onTaskCreated) await onTaskCreated();
-          } catch(e) {}
-          // 等待 React 渲染完成（propTasksRef 更新）
-          requestAnimationFrame(() => {
-            setTimeout(() => {
-              optimisticRef.current = false;
-              setLocalTasks(propTasksRef.current);
-            }, 100);
-          });
-        }, 2000); // 给飞书 2s 同步时间
+        // 标记等待 fetchData
+        pendingRefreshRef.current = true;
+        // 等飞书同步后触发 fetchData
+        setTimeout(() => {
+          if (onTaskCreated) onTaskCreated(); // fetchData 完成后 propTasks 变化 → useEffect 自动解锁
+        }, 2000);
       };
-      const cancelOptimistic = () => { optimisticRef.current = false; };
+      const cancelOptimistic = () => { 
+        optimisticRef.current = false; 
+        pendingRefreshRef.current = false;
+      };
       const tasks = localTasks;
       const [showAddForm, setShowAddForm] = useState(false);
       const [isSubmitting, setIsSubmitting] = useState(false);
