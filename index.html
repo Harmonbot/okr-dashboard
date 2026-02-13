@@ -535,7 +535,19 @@
               return '';
             })(),
             outputUrlTitle: (() => {
-              // 从 链接||标题 格式中提取标题
+              // 新格式：「输出链接」有URL时，「输出文字」就是文档标题
+              const hasDirectLink = (() => {
+                const u = r.fields['输出链接'];
+                return u && (typeof u === 'string' ? u : (u.link || u.text));
+              })();
+              
+              if (hasDirectLink) {
+                let t = r.fields['输出文字'] || '';
+                if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
+                return typeof t === 'string' ? t.trim().split('\n')[0].trim() : '';
+              }
+              
+              // 旧格式：从 链接||标题 格式中提取标题
               let t = r.fields['输出文字'] || '';
               if (Array.isArray(t)) t = t.map(x => x.text || x).join('');
               if (typeof t === 'string') {
@@ -2180,7 +2192,7 @@
                                       </a>
                                     );
                                   })()}
-                                  {task.outputText && (
+                                  {task.outputText && !task.outputUrl && (
                                     <span className="text-xs text-gray-500" title={task.outputText}>
                                       📝 {task.outputText.length > 20 ? task.outputText.slice(0, 20) + '...' : task.outputText}
                                     </span>
@@ -7287,7 +7299,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            微铸@2026
+            飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
         </UserContext.Provider>
