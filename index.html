@@ -416,7 +416,7 @@
               } catch(e) { return []; }
             })() // 跳过的节点名称列表
           };
-        });
+        }).filter(p => !p.name.includes('废弃-请删除'));
 
         // 从 parentId 反推 childIds（飞书DuplexLink反向字段不在API返回中）
         data.products.forEach(p => {
@@ -2678,7 +2678,7 @@
                             onClick={async () => {
                               if (isCreatingChildren) return;
                               setIsCreatingChildren(true);
-                              const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
+                              const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协助线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
                               let created = 0;
                               const startDate = product.startDate ? new Date(product.startDate) : new Date();
                               for (const tpl of childTpls) {
@@ -2743,7 +2743,7 @@
                                 onClick={async () => {
                                   if (isCreatingChildren) return;
                                   setIsCreatingChildren(true);
-                                  const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
+                                  const deptMap = { '产品开发线': '产品中心', '产品立项线': '产品中心', '运营计划线': '运营中心', '中枢协助线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部', '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心' };
                                   const startDate = product.startDate ? new Date(product.startDate) : new Date();
                                   let created = 0;
                                   for (const tpl of missingTpls) {
@@ -3467,7 +3467,7 @@
           // 2. 批量创建子项目
           // 子模板 → 负责部门映射
           const deptMap = {
-            '产品立项线': '产品中心', '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部',
+            '产品立项线': '产品中心', '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协助线': '中枢部',
             '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部'
           };
           
@@ -3518,6 +3518,11 @@
             let childEndDate = null;
             if (cycleDays > 0) {
               childEndDate = addWorkingDays(new Date(childStart), cycleDays);
+              // 约束子项目截止不超过父项目deadline
+              const parentDeadline = projectForm.deadline ? new Date(projectForm.deadline + 'T23:59:59') : null;
+              if (parentDeadline && childEndDate > parentDeadline) {
+                childEndDate = new Date(parentDeadline);
+              }
             }
             const childFields = {
               '项目名称': childName,
@@ -4891,7 +4896,7 @@
                                               const parentTplName = parentTplId ? templates[parentTplId].name : '';
                                               const childTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
                                               if (childTpls.length === 0) return null;
-                                              const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协作线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部' };
+                                              const deptMap = { '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协助线': '中枢部', '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部' };
                                               const deptDotColors = { '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '中枢部': 'bg-purple-500', '设计部': 'bg-pink-500', '营销推广部': 'bg-orange-500' };
                                               return (
                                                 <div className="bg-violet-50 rounded-lg p-2.5 border border-violet-200">
