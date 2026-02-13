@@ -447,19 +447,27 @@
           const linkedNode = r.fields['所属节点'];
           
           if (linkedNode) {
-            // Vercel API 格式: [{record_ids: [...], text: "节点名称", ...}]
-            if (Array.isArray(linkedNode) && linkedNode.length > 0) {
-              const firstItem = linkedNode[0];
-              // 直接使用 text 字段（最简单）
-              if (firstItem.text) {
-                stage = firstItem.text;
-              } else if (firstItem.record_ids && firstItem.record_ids.length > 0) {
-                stage = nodeRecordMap[firstItem.record_ids[0]] || '';
+            // 通用解析：支持所有飞书关联字段格式
+            const resolveLink = (field) => {
+              if (!field) return null;
+              // 格式1: [{record_ids: [...], text: "名称"}] (Vercel API)
+              if (Array.isArray(field) && field.length > 0) {
+                const first = field[0];
+                if (first.text && typeof first.text === 'string') return { text: first.text, id: first.record_ids?.[0] };
+                if (first.record_ids?.[0]) return { id: first.record_ids[0] };
+                if (typeof first === 'string') return { id: first };
               }
-            }
-            // 飞书 MCP 格式: {link_record_ids: [...]}
-            else if (linkedNode.link_record_ids && linkedNode.link_record_ids.length > 0) {
-              stage = nodeRecordMap[linkedNode.link_record_ids[0]] || '';
+              // 格式2: {link_record_ids: [...], text: "名称"} (飞书 MCP/新版API)
+              if (field.link_record_ids?.[0]) return { text: field.text, id: field.link_record_ids[0] };
+              // 格式3: 纯字符串 record_id
+              if (typeof field === 'string') return { id: field };
+              // 格式4: {text: "名称"}
+              if (field.text) return { text: field.text };
+              return null;
+            };
+            const resolved = resolveLink(linkedNode);
+            if (resolved) {
+              stage = resolved.text || (resolved.id ? nodeRecordMap[resolved.id] : '') || '';
             }
           }
           
@@ -478,17 +486,18 @@
           let productId = null;
           const projectField = r.fields['所属项目'];
           if (projectField) {
-            // Vercel API 格式: [{record_ids: [...], text: "项目名称", ...}]
-            if (Array.isArray(projectField) && projectField.length > 0) {
-              const firstItem = projectField[0];
-              if (firstItem.record_ids && firstItem.record_ids.length > 0) {
-                productId = firstItem.record_ids[0];
+            const resolveId = (field) => {
+              if (!field) return null;
+              if (Array.isArray(field) && field.length > 0) {
+                const first = field[0];
+                if (first.record_ids?.[0]) return first.record_ids[0];
+                if (typeof first === 'string') return first;
               }
-            }
-            // 飞书 MCP 格式: {link_record_ids: [...]}
-            else if (projectField.link_record_ids && projectField.link_record_ids.length > 0) {
-              productId = projectField.link_record_ids[0];
-            }
+              if (field.link_record_ids?.[0]) return field.link_record_ids[0];
+              if (typeof field === 'string') return field;
+              return null;
+            };
+            productId = resolveId(projectField);
           }
           
           return {
