@@ -1611,6 +1611,35 @@
           setTaskPatches(prev => { const n = { ...prev }; delete n[task.id]; return n; });
           showToast?.('操作失败: ' + err.message, 'error');
         });
+        
+        // 提前开始检测：如果今天早于子项目或父项目的开始日期，自动更新
+        const todayStr = today.toISOString().split('T')[0];
+        const updateStartDate = (recordId, tableName) => {
+          fetch(API_BASE + '/api/update-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              app_token: APP_TOKEN,
+              table_id: 'tblYM02NyVj3rUkR',
+              record_id: recordId,
+              fields: { '开始日期': today.getTime() }
+            })
+          }).then(r => r.json()).then(res => {
+            if (res.success) showToast?.(`📅 ${tableName}开始日期已更新为今天`, 'info');
+          }).catch(() => {});
+        };
+        
+        // 更新子项目开始日期
+        if (product.startDate && todayStr < product.startDate) {
+          updateStartDate(product.id, '子项目');
+        }
+        // 更新父项目开始日期
+        if (product.parentId) {
+          const parentProd = products.find(p => p.id === product.parentId);
+          if (parentProd?.startDate && todayStr < parentProd.startDate) {
+            updateStartDate(parentProd.id, '父项目');
+          }
+        }
       };
 
       // 完成任务：需要上传输出文件
@@ -3379,7 +3408,7 @@
         krType: 'project_count' // project_count | metric_value
       });
       const [projectForm, setProjectForm] = useState({
-        name: '', templateType: '', targetDate: '', owner: '', priority: '',
+        name: '', templateType: '', targetDate: '', startDate: '', owner: '', priority: '',
         productCode: '', initiatorGroup: ''
       });
 
@@ -3416,7 +3445,7 @@
             '关联KR': [krId],
             '重要程度': projectForm.priority,
             '计划上线日期': new Date(projectForm.targetDate).getTime(),
-            '开始日期': new Date().getTime(),
+            '开始日期': projectForm.startDate ? new Date(projectForm.startDate).getTime() : new Date().getTime(),
             '项目负责人': [{ id: projectForm.owner }],
             ...(projectForm.initiatorGroup ? { '发起组': projectForm.initiatorGroup } : {})
           };
@@ -3440,7 +3469,7 @@
           };
           
           // 从模板数据动态构建依赖图计算每条子线的开始日期
-          const parentStartDate = new Date();
+          const parentStartDate = projectForm.startDate ? new Date(projectForm.startDate) : new Date();
           const tplByName = {};
           const tplById = {};
           for (const [tplId, tpl] of childTpls) { tplByName[tpl.name] = tpl; tplById[tplId] = tpl; }
@@ -3514,7 +3543,7 @@
           showToast?.(`✅ 项目创建完成: 1个父项目 + ${created}个子项目`, 'success');
           
           setShowAddProject(null);
-          setProjectForm({ name: '', templateType: '', targetDate: '', owner: '', priority: '', productCode: '', initiatorGroup: '' });
+          setProjectForm({ name: '', templateType: '', targetDate: '', startDate: '', owner: '', priority: '', productCode: '', initiatorGroup: '' });
           if (onRefresh) onRefresh();
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
@@ -4792,7 +4821,7 @@
                                               />
                                               <span className="absolute right-3 top-2.5 text-[10px] text-green-400">✨ 自动拼接</span>
                                             </div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                            <div className="grid grid-cols-3 gap-2">
                                               <select
                                                 value={projectForm.initiatorGroup}
                                                 onChange={e => setProjectForm({ ...projectForm, initiatorGroup: e.target.value })}
@@ -4829,14 +4858,29 @@
                                                   <option key={m.id} value={m.id}>{m.name}</option>
                                                 ))}
                                               </select>
-                                              <input
-                                                type="date"
-                                                value={projectForm.targetDate}
-                                                onChange={e => setProjectForm({ ...projectForm, targetDate: e.target.value })}
-                                                className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.targetDate ? 'text-gray-400' : ''}`}
-                                                placeholder="上线日期 *"
-                                                required
-                                              />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <div>
+                                                <label className="text-[10px] text-gray-400 mb-0.5 block">开始日期（不填默认今天）</label>
+                                                <input
+                                                  type="date"
+                                                  value={projectForm.startDate}
+                                                  onChange={e => setProjectForm({ ...projectForm, startDate: e.target.value })}
+                                                  min={new Date().toISOString().split('T')[0]}
+                                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[10px] text-gray-400 mb-0.5 block">Deadline *</label>
+                                                <input
+                                                  type="date"
+                                                  value={projectForm.targetDate}
+                                                  onChange={e => setProjectForm({ ...projectForm, targetDate: e.target.value })}
+                                                  min={projectForm.startDate || new Date().toISOString().split('T')[0]}
+                                                  className={`w-full px-3 py-2 border rounded-lg text-sm ${!projectForm.targetDate ? 'text-gray-400' : ''}`}
+                                                  required
+                                                />
+                                              </div>
                                             </div>
                                             {/* 子模板预览 */}
                                             {projectForm.templateType && (() => {
