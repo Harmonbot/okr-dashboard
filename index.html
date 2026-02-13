@@ -1505,7 +1505,11 @@
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
-          alert('请输入任务名称');
+          showToast?.('请输入任务名称', 'error');
+          return;
+        }
+        if (!formData.assignee) {
+          showToast?.('请选择负责人', 'error');
           return;
         }
         if (isSubmitting) return;
@@ -1887,13 +1891,14 @@
                         <option value="P3-低优">P3-低优</option>
                       </select>
                       <div className="relative">
+                        <label className="absolute -top-1.5 left-2 px-1 bg-white text-[9px] text-gray-400 z-10">预计开始</label>
                         <input
                           type="date"
-                          value={formData.plannedStartDate}
+                          value={formData.plannedStartDate || new Date().toISOString().split('T')[0]}
                           onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
                           min={nodeDateMin}
                           max={nodeDateMax}
-                          className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
+                          className="w-full px-2 py-1.5 pt-2 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
                           title={nodeDateMin && nodeDateMax ? `开始日期范围: ${nodeDateMin} ~ ${nodeDateMax}` : '预计开始日期'}
                         />
                       </div>
@@ -7282,7 +7287,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            飞书多维表格 · 每5分钟自动同步
+            微铸@2026
           </div>
         </div>
         </UserContext.Provider>
