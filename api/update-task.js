@@ -49,7 +49,6 @@ export default async function handler(req, res) {
     const updateFields = {};
     
     // 已知任务字段映射
-    // 注意：飞书表中没有「输出链接」字段，链接和文字统一存入「输出文字」
     const knownFieldMap = {
       'status': '状态',
       'startDate': { name: '开始日期', transform: v => new Date(v).getTime() },
@@ -57,14 +56,18 @@ export default async function handler(req, res) {
       'completeDate': { name: '完成日期', transform: v => new Date(v).getTime() },
       'outputFile': '输出文件',
       'description': '任务描述',
-      'outputText': '输出文字'
+      'outputText': '输出文字',
+      'outputUrl': { name: '输出链接', transform: v => ({ link: v, text: v }) }
     };
     
-    // 特殊处理：outputUrl 和 outputText 合并到「输出文字」字段
-    // 格式：链接||文档标题\n补充文字
+    // outputUrl 写入「输出链接」字段(Url类型)，outputText 写入「输出文字」字段
+    // 如果有链接，同时尝试解析飞书文档标题存入输出文字备注
     if (fields.outputUrl) {
       const link = fields.outputUrl;
       const text = fields.outputText || '';
+      
+      // 写入输出链接字段（飞书Url字段格式：{link, text}）
+      updateFields['输出链接'] = { link: link, text: link };
       
       // 尝试获取飞书文档标题
       let docTitle = '';
@@ -76,10 +79,11 @@ export default async function handler(req, res) {
         }
       }
       
-      // 存储格式：链接||标题\n补充文字
-      // ||是分隔符，前端解析时用
-      const linkPart = docTitle ? `${link}||${docTitle}` : link;
-      updateFields['输出文字'] = text ? `${linkPart}\n${text}` : linkPart;
+      // 输出文字：存标题和补充文字（如果有）
+      if (docTitle || text) {
+        const textParts = [docTitle, text].filter(Boolean);
+        updateFields['输出文字'] = textParts.join('\n');
+      }
       
       delete fields.outputUrl;
       delete fields.outputText;
