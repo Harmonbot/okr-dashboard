@@ -2865,11 +2865,14 @@
                         cumulativeDays += maxCycle;
                       });
                       const totalProjectDays = cumulativeDays;
-                      const targetDate = parentStart ? addWorkingDays(new Date(parentStart), totalProjectDays) : 
-                        (product.targetDate ? new Date(product.targetDate) : null);
+                      // Deadline 优先使用计划上线日期，仅在未设置时用工期推算
+                      const targetDate = product.targetDate ? new Date(product.targetDate) : 
+                        (parentStart ? addWorkingDays(new Date(parentStart), totalProjectDays) : null);
+                      // 总工期优先从实际日期计算
+                      const actualTotalDays = (parentStart && targetDate) ? getWorkingDaysBetween(parentStart, targetDate) : totalProjectDays;
                       const now = new Date();
-                      const elapsedDays = parentStart ? getWorkingDaysBetween(parentStart, now) : 0;
-                      const remainingDays = Math.max(0, totalProjectDays - elapsedDays);
+                      const elapsedDays = parentStart ? Math.max(0, getWorkingDaysBetween(parentStart, now)) : 0;
+                      const remainingDays = targetDate ? Math.max(0, getWorkingDaysBetween(now, targetDate)) : Math.max(0, actualTotalDays - elapsedDays);
                       
                       const stageLabels = ['🚀 启动阶段', '⚙️ 并行执行', '📦 全面落地', '🎯 收尾阶段'];
                       
@@ -2890,7 +2893,7 @@
                               <div className="flex gap-4 sm:gap-6">
                                 <div className="text-center">
                                   <div className="text-[10px] sm:text-xs opacity-70">总工期</div>
-                                  <div className="text-lg sm:text-2xl font-bold">{totalProjectDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
+                                  <div className="text-lg sm:text-2xl font-bold">{actualTotalDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
                                 </div>
                                 <div className="text-center">
                                   <div className="text-[10px] sm:text-xs opacity-70">已用</div>
@@ -2905,9 +2908,9 @@
                             {/* 整体时间进度条 */}
                             <div className="mt-3 flex items-center gap-3">
                               <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-white/80 rounded-full transition-all" style={{width: `${Math.min(100, totalProjectDays > 0 ? (elapsedDays / totalProjectDays * 100) : 0)}%`}} />
+                                <div className="h-full bg-white/80 rounded-full transition-all" style={{width: `${Math.min(100, actualTotalDays > 0 ? (elapsedDays / actualTotalDays * 100) : 0)}%`}} />
                               </div>
-                              <span className="text-xs opacity-70">{totalProjectDays > 0 ? Math.round(elapsedDays / totalProjectDays * 100) : 0}%</span>
+                              <span className="text-xs opacity-70">{actualTotalDays > 0 ? Math.round(elapsedDays / actualTotalDays * 100) : 0}%</span>
                             </div>
                           </div>
                           
