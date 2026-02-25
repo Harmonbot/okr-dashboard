@@ -4862,9 +4862,12 @@
                                                 className={`px-3 py-2 border rounded-lg text-sm ${!projectForm.initiatorGroup ? 'text-gray-400' : ''}`}
                                               >
                                                 <option value="">发起组 *</option>
-                                                {['儿童组','游戏组','VC组','acer组','话务一组','话务二组','多平台组'].map(g => (
-                                                  <option key={g} value={g}>{g}</option>
-                                                ))}
+                                                {(() => {
+                                                  const groups = [...new Set(members.map(m => m.group).filter(g => g && g !== '未分组'))].sort();
+                                                  return groups.map(g => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                  ));
+                                                })()}
                                               </select>
                                               <select
                                                 value={projectForm.priority}
@@ -7299,7 +7302,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            微铸© 2026
+            飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
         </UserContext.Provider>
