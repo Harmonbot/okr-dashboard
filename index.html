@@ -3997,7 +3997,9 @@
             : completedCount;
           
           let autoStatus = '未开始';
-          if (completedCount >= kr.target || completedCount >= relatedProjects.length) {
+          if (kr.target > 0 && completedCount >= kr.target) {
+            autoStatus = '已完成';
+          } else if (kr.target <= 0 && relatedProjects.length > 0 && completedCount >= relatedProjects.length) {
             autoStatus = '已完成';
           } else if (hasAnyProgress || completedCount > 0) {
             autoStatus = '进行中';
@@ -7945,7 +7947,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            微铸@2026
+            飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
         </UserContext.Provider>
