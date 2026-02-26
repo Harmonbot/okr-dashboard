@@ -1856,7 +1856,6 @@
                   
                   // 项目负责人（含父项目负责人）：能看到所有参与组/部门的成员
                   if (isProjectOwner) {
-                    const roleMap = { '发起组': null, '对应产品组': '产品中心', '中枢部': '中枢部', '营销推广部': '营销推广部', '设计部': '设计部', '财务部': '财务部' };
                     const relevantDepts = new Set();
                     const relevantGroups = new Set();
                     
@@ -1889,14 +1888,29 @@
                       }
                     }
                     
-                    // 将角色映射到部门/组
+                    // 将角色映射到部门和组别（同一角色名同时加入两个集合，确保双向匹配）
+                    // 角色名 → 对应的部门名称（用于匹配 member.department）
+                    const roleToDept = { 
+                      '对应产品组': '产品中心', '中枢部': '中枢部', 
+                      '营销推广部': '营销推广部', '设计部': '设计部', '财务部': '财务部' 
+                    };
+                    
                     allRoles.forEach(role => {
                       if (role === '发起组' && initiatorGroup) {
+                        // 发起组：按组别名匹配
                         relevantGroups.add(initiatorGroup);
-                      } else if (roleMap[role]) {
-                        relevantDepts.add(roleMap[role]);
+                        // 同时找发起组成员的部门，也加入
+                        const groupMembers = members.filter(m => m.group === initiatorGroup);
+                        groupMembers.forEach(m => { if (m.department) relevantDepts.add(m.department); });
+                      } else if (roleToDept[role]) {
+                        // 其他角色：角色名同时作为 department 和 group 匹配
+                        relevantDepts.add(roleToDept[role]);
+                        relevantGroups.add(role); // 角色名也可能是组别名
                       }
                     });
+                    
+                    // 也包含子项目自身的负责部门
+                    if (product.responsibleDept) relevantDepts.add(product.responsibleDept);
                     
                     // 始终包含负责人自己的部门/组
                     if (viewerDept) relevantDepts.add(viewerDept);
@@ -1906,7 +1920,7 @@
                       allRoles: [...allRoles], 
                       relevantDepts: [...relevantDepts], 
                       relevantGroups: [...relevantGroups],
-                      matchedMembers: members.filter(m => relevantDepts.has(m.department) || relevantGroups.has(m.group)).map(m => m.name)
+                      matchedMembers: members.filter(m => relevantDepts.has(m.department) || relevantGroups.has(m.group)).map(m => `${m.name}(${m.department}/${m.group})`)
                     });
                     
                     if (relevantDepts.size > 0 || relevantGroups.size > 0) {
