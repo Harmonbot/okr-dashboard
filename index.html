@@ -1854,25 +1854,60 @@
                   });
                   if (viewerRole === '管理员' || viewerRole === '总经理') return members;
                   
-                  // 项目负责人（含父项目负责人）：能看到所有相关部门/组的成员
+                  // 项目负责人（含父项目负责人）：能看到所有参与组/部门的成员
                   if (isProjectOwner) {
-                    // 收集该子项目涉及的所有角色对应的部门
                     const roleMap = { '发起组': null, '对应产品组': '产品中心', '中枢部': '中枢部', '营销推广部': '营销推广部', '设计部': '设计部', '财务部': '财务部' };
-                    const matchTpl = product.templateType ? Object.values(templates).find(t => t.type === product.templateType) : null;
-                    const roles = matchTpl?.participantRoles || [];
                     const relevantDepts = new Set();
                     const relevantGroups = new Set();
                     
-                    roles.forEach(role => {
+                    // === 收集所有参与角色（多来源合并） ===
+                    const allRoles = new Set();
+                    
+                    // 来源1: 当前子项目自身模板的参与角色
+                    const matchTpl = product.templateType ? Object.values(templates).find(t => t.type === product.templateType) : null;
+                    (matchTpl?.participantRoles || []).forEach(r => allRoles.add(r));
+                    
+                    // 来源2: 如果是子项目，收集同一父项目下所有兄弟子项目模板的参与角色
+                    if (parentProduct) {
+                      const siblingProducts = products.filter(p => p.parentId === parentProduct.id);
+                      siblingProducts.forEach(sp => {
+                        const spTpl = sp.templateType ? Object.values(templates).find(t => t.type === sp.templateType) : null;
+                        (spTpl?.participantRoles || []).forEach(r => allRoles.add(r));
+                      });
+                      
+                      // 来源3: 父项目模板下所有子模板的参与角色
+                      const parentTplEntry = parentProduct.templateType
+                        ? Object.entries(templates).find(([_, t]) => t.type === parentProduct.templateType && t.ownership === '父项目')
+                        : null;
+                      if (parentTplEntry) {
+                        const parentTplName = parentTplEntry[1].name;
+                        Object.values(templates).forEach(tpl => {
+                          if (tpl.parentTemplate === parentTplName) {
+                            (tpl.participantRoles || []).forEach(r => allRoles.add(r));
+                          }
+                        });
+                      }
+                    }
+                    
+                    // 将角色映射到部门/组
+                    allRoles.forEach(role => {
                       if (role === '发起组' && initiatorGroup) {
                         relevantGroups.add(initiatorGroup);
                       } else if (roleMap[role]) {
                         relevantDepts.add(roleMap[role]);
                       }
                     });
-                    // 也包含负责人自己的部门
+                    
+                    // 始终包含负责人自己的部门/组
                     if (viewerDept) relevantDepts.add(viewerDept);
                     if (viewerGroup) relevantGroups.add(viewerGroup);
+                    
+                    console.log('[Assign Owner]', { 
+                      allRoles: [...allRoles], 
+                      relevantDepts: [...relevantDepts], 
+                      relevantGroups: [...relevantGroups],
+                      matchedMembers: members.filter(m => relevantDepts.has(m.department) || relevantGroups.has(m.group)).map(m => m.name)
+                    });
                     
                     if (relevantDepts.size > 0 || relevantGroups.size > 0) {
                       return members.filter(m => 
