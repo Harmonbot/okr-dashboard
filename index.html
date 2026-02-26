@@ -2551,6 +2551,29 @@
         }
         const isCurrentlySkipped = skippedNodes.has(nodeName);
         if (!isCurrentlySkipped) {
+          // 前置子线检查：如果当前子项目有前置子线未完成，不允许跳过节点
+          if (product.parentId && product.templateType) {
+            const matchTpl = Object.values(templates).find(t => t.type === product.templateType);
+            const prereqNames = matchTpl?.prerequisiteNames || [];
+            if (prereqNames.length > 0) {
+              const parentProduct = products.find(p => p.childIds?.includes(product.id));
+              if (parentProduct) {
+                const siblingProducts = products.filter(p => parentProduct.childIds?.includes(p.id) && p.id !== product.id);
+                const unfinishedPrereqs = prereqNames.filter(preName => {
+                  const preTpl = Object.values(templates).find(t => t.name === preName);
+                  if (!preTpl) return false;
+                  const preChild = siblingProducts.find(s => s.templateType === preTpl.type);
+                  if (!preChild) return true;
+                  const preProgress = calcProjectProgress(preChild, allNodes, templates, tasks);
+                  return preChild.status !== '已完成' && preProgress < 100;
+                });
+                if (unfinishedPrereqs.length > 0) {
+                  showToast?.(`前置子线「${unfinishedPrereqs.join('、')}」尚未完成，无法跳过当前节点`, 'error');
+                  return;
+                }
+              }
+            }
+          }
           if (!confirm(`确认跳过节点「${nodeName}」？\n\n跳过后，后续节点将不受此节点限制。`)) return;
         }
         onSkippedNodesChange?.(prev => {
