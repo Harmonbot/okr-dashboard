@@ -263,7 +263,17 @@
               if (Array.isArray(g)) return g.map(item => item.text || '').join('');
               return String(g);
             })(),
-            parentObjectiveId: r.fields['父目标']?.link_record_ids?.[0] || '',
+            parentObjectiveId: (() => {
+              const pf = r.fields['父目标'];
+              if (!pf) return '';
+              // DuplexLink格式: {link_record_ids: [...]}
+              if (pf.link_record_ids?.[0]) return pf.link_record_ids[0];
+              // 可能的其他格式: [{record_ids: [...]}] 或 直接 record_id 数组
+              if (Array.isArray(pf) && pf[0]?.record_ids?.[0]) return pf[0].record_ids[0];
+              if (Array.isArray(pf) && typeof pf[0] === 'string') return pf[0];
+              console.log('[DEBUG] 父目标字段格式:', r.fields['目标名称'], JSON.stringify(pf));
+              return '';
+            })(),
             progress: r.fields['进度'] || 0,
             status: r.fields['状态'] || '未开始',
             ownerId,
