@@ -1845,6 +1845,13 @@
                 const initiatorGroup = parentProduct?.initiatorGroup || product.initiatorGroup || '';
                 
                 const assignableMembers = (() => {
+                  console.log('[Assign Debug]', { 
+                    viewerRole, isProjectOwner, viewerGroup, viewerDept,
+                    templateType: product.templateType, 
+                    initiatorGroup,
+                    parentId: product.parentId,
+                    parentFound: !!parentProduct
+                  });
                   if (viewerRole === '管理员' || viewerRole === '总经理') return members;
                   
                   // 项目负责人（含父项目负责人）：能看到所有相关部门/组的成员
