@@ -252,6 +252,7 @@
             cycle: r.fields['目标周期'] || '',
             level: r.fields['目标层级'] || '',
             department: r.fields['所属部门'] || '',
+            parentObjectiveId: r.fields['父目标']?.link_record_ids?.[0] || '',
             progress: r.fields['进度'] || 0,
             status: r.fields['状态'] || '未开始',
             ownerId,
@@ -958,7 +959,7 @@
     };
 
     // === 全局: 项目重要性评分 ===
-    const LEVEL_SCORE = { '公司级': 100, '部门级': 60, '个人级': 30 };
+    const LEVEL_SCORE = { '公司级': 100, '部门级': 60, '组别级': 40, '个人级': 30 };
     const PRIORITY_SCORE = { 'P0': 100, 'P1': 70, 'P2': 40, 'P3': 10 };
     
     const calcProjectImportanceScore = (product, objectives, keyResults) => {
@@ -3616,7 +3617,7 @@
       );
     };
 
-    const OKROverview = ({ objectives, keyResults, products, tasks = [], nodes = [], templates = {}, members = [], onRefresh }) => {
+    const OKROverview = ({ objectives, allObjectives = [], keyResults, products, tasks = [], nodes = [], templates = {}, members = [], permRole = '组员', permScope = '', onRefresh }) => {
       const [expandedObjectives, setExpandedObjectives] = useState(new Set());
       const [expandedKRs, setExpandedKRs] = useState(new Set());
       const [showAddObjective, setShowAddObjective] = useState(false);
@@ -3632,10 +3633,27 @@
       
       // 表单数据
       const [objectiveForm, setObjectiveForm] = useState({
-        name: '', cycle: '2026-Q1', level: '公司级', department: '', group: '', status: '进行中', owner: '',
+        name: '', cycle: '2026-Q1', level: '', department: '', group: '', status: '进行中', owner: '',
+        parentObjectiveId: '',
         // 模板化命名字段
         productCode: '', actionGoal: ''
       });
+      
+      // 根据权限角色计算可选层级
+      const allowedLevels = (() => {
+        if (permRole === '管理员' || permRole === '总经理') return ['公司级', '部门级', '组别级', '个人级'];
+        if (permRole === '部门管理') return ['部门级', '组别级', '个人级'];
+        if (permRole === '组别管理') return ['组别级', '个人级'];
+        return ['个人级'];
+      })();
+      
+      // 根据选中层级计算可选的父目标
+      const parentLevelMap = { '部门级': '公司级', '组别级': '部门级', '个人级': '组别级' };
+      const availableParentObjectives = (() => {
+        const parentLevel = parentLevelMap[objectiveForm.level];
+        if (!parentLevel) return []; // 公司级没有父目标
+        return allObjectives.filter(o => o.level === parentLevel && o.cycle === objectiveForm.cycle);
+      })();
       const [krForm, setKRForm] = useState({
         name: '', target: 5, current: 0, weight: 1, status: '未开始', objectiveId: '', owner: '',
         // 模板化命名字段
@@ -4004,27 +4022,41 @@
         if (!objectiveForm.name.trim()) return alert('请输入目标名称');
         if (!objectiveForm.cycle) return alert('请选择目标周期');
         if (!objectiveForm.level) return alert('请选择目标层级');
-        if (objectiveForm.level === '部门级' && !objectiveForm.department) return alert('部门级目标请选择所属部门');
+        if ((objectiveForm.level === '部门级' || objectiveForm.level === '组别级') && !objectiveForm.department) return alert('请选择所属部门/组别');
         if (!objectiveForm.owner) return alert('请选择负责人');
         
         setIsSubmitting(true);
         try {
           const submitForm = { ...objectiveForm };
           if (submitForm.group) submitForm.department = submitForm.group; // 存组别到所属部门
-          const res = await fetch(API_BASE + '/api/create-objective', {
+          
+          // 直接使用 create-record API，确保所有字段正确映射（含父目标）
+          const objFields = {
+            '目标名称': submitForm.name,
+            '目标周期': submitForm.cycle,
+            '目标层级': submitForm.level,
+            '所属部门': submitForm.department || '',
+            '负责人': [{ id: submitForm.owner }],
+            '状态': submitForm.status || '进行中'
+          };
+          if (submitForm.parentObjectiveId) {
+            objFields['父目标'] = [submitForm.parentObjectiveId];
+          }
+          
+          const res = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               app_token: APP_TOKEN,
               table_id: 'tbl9TX3RZdLRlEy0',
-              objective: submitForm
+              fields: objFields
             })
           });
           const result = await res.json();
           if (result.success) {
             showToast?.('目标创建成功', 'success');
             setShowAddObjective(false);
-            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '公司级', department: '', group: '', status: '进行中', owner: '', productCode: '', actionGoal: '', quantifier: '' });
+            setObjectiveForm({ name: '', cycle: '2026-Q1', level: '', department: '', group: '', status: '进行中', owner: '', parentObjectiveId: '', productCode: '', actionGoal: '', quantifier: '' });
             onRefresh();
           } else {
             throw new Error(result.error);
@@ -4038,8 +4070,8 @@
       // 更新目标
       const handleUpdateObjective = async (e) => {
         e.preventDefault();
-        if (objectiveForm.level === '部门级' && !objectiveForm.department) {
-          showToast?.('部门级目标请选择所属部门', 'error');
+        if ((objectiveForm.level === '部门级' || objectiveForm.level === '组别级') && !objectiveForm.department) {
+          showToast?.('请选择所属部门', 'error');
           return;
         }
         setIsSubmitting(true);
@@ -4356,16 +4388,56 @@
                     <label className="block text-sm text-gray-600 mb-1">目标层级 *</label>
                     <select
                       value={objectiveForm.level}
-                      onChange={e => setObjectiveForm({ ...objectiveForm, level: e.target.value, department: e.target.value !== '部门级' ? '' : objectiveForm.department })}
+                      onChange={e => {
+                        const level = e.target.value;
+                        const needsDept = level === '部门级' || level === '组别级';
+                        setObjectiveForm({ 
+                          ...objectiveForm, 
+                          level, 
+                          department: needsDept ? objectiveForm.department : '', 
+                          group: level === '组别级' ? objectiveForm.group : '',
+                          parentObjectiveId: '' 
+                        });
+                      }}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                     >
-                      <option>公司级</option>
-                      <option>部门级</option>
-                      <option>个人级</option>
+                      <option value="">请选择层级</option>
+                      {allowedLevels.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
+                    {allowedLevels.length < 4 && (
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        当前角色({permRole})可创建: {allowedLevels.join('、')}
+                      </div>
+                    )}
                   </div>
                 </div>
-                {objectiveForm.level === '部门级' && (
+                {/* 父目标选择 - 非公司级时显示 */}
+                {objectiveForm.level && objectiveForm.level !== '公司级' && (
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">
+                      父目标 <span className="text-[10px] text-gray-400">（推荐关联到上级{parentLevelMap[objectiveForm.level]}目标）</span>
+                    </label>
+                    <select
+                      value={objectiveForm.parentObjectiveId}
+                      onChange={e => setObjectiveForm({ ...objectiveForm, parentObjectiveId: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none text-sm"
+                    >
+                      <option value="">不关联父目标</option>
+                      {availableParentObjectives.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}{o.department ? ` (${o.department})` : ''}{o.ownerName ? ` - ${o.ownerName}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {availableParentObjectives.length === 0 && objectiveForm.cycle && (
+                      <div className="text-[10px] text-orange-500 mt-0.5">
+                        ⚠ {objectiveForm.cycle} 暂无{parentLevelMap[objectiveForm.level]}目标，可先创建上级目标或跳过
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* 部门级/组别级需要选部门和组 */}
+                {(objectiveForm.level === '部门级' || objectiveForm.level === '组别级') && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                     <div>
                       <label className="block text-sm text-gray-600 mb-1">所属部门 *</label>
@@ -4384,12 +4456,12 @@
                         ))}
                       </select>
                     </div>
-                    {objectiveForm.department && (() => {
+                    {objectiveForm.level === '组别级' && objectiveForm.department && (() => {
                       const deptGroups = [...new Set(members.filter(m => m.department === objectiveForm.department).map(m => m.group).filter(g => g && g !== objectiveForm.department))];
                       if (deptGroups.length === 0) return null;
                       return (
                         <div>
-                          <label className="block text-sm text-gray-600 mb-1">所属组别</label>
+                          <label className="block text-sm text-gray-600 mb-1">所属组别 *</label>
                           <select
                             value={objectiveForm.group || ''}
                             onChange={e => {
@@ -4400,7 +4472,7 @@
                             }}
                             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-300 outline-none"
                           >
-                            <option value="">部门整体</option>
+                            <option value="">请选择组别</option>
                             {deptGroups.sort().map(g => (
                               <option key={g} value={g}>{g}</option>
                             ))}
@@ -4445,6 +4517,7 @@
             const levels = [
               { key: '公司级', label: '公司级', gradient: ['#8b5cf6', '#6366f1'], bg: 'bg-purple-50' },
               { key: '部门级', label: '部门级', gradient: ['#3b82f6', '#06b6d4'], bg: 'bg-blue-50' },
+              { key: '组别级', label: '组别级', gradient: ['#f59e0b', '#f97316'], bg: 'bg-amber-50' },
               { key: '个人级', label: '个人级', gradient: ['#10b981', '#14b8a6'], bg: 'bg-green-50' }
             ];
             
@@ -4521,6 +4594,7 @@
                 const levelConfig = [
                   { key: '公司级', icon: 'building', color: 'from-purple-600 to-indigo-600', bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' },
                   { key: '部门级', icon: 'dept', color: 'from-blue-600 to-cyan-600', bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+                  { key: '组别级', icon: 'group', color: 'from-amber-600 to-orange-600', bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700' },
                   { key: '个人级', icon: 'user', color: 'from-green-600 to-teal-600', bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-700' }
                 ];
                 
@@ -7088,7 +7162,7 @@
         // 5. 过滤数据
         if (isAdmin) {
           // 管理员看全部
-          return { ...data, _allMembers: data.members, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me, _linkedGroups: [] };
+          return { ...data, _allMembers: data.members, _allObjectives: data.objectives, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me, _linkedGroups: [] };
         }
         
         const filteredMembers = data.members.filter(m => visibleMembers.has(m.id));
@@ -7145,7 +7219,7 @@
           if (o.level === '个人级') {
             return filteredMembers.some(m => m.name === o.ownerName || m.id === o.ownerId);
           }
-          // 部门级：检查目标所属部门是否匹配用户的部门或组别
+          // 部门级/组别级：检查目标所属部门是否匹配用户的部门或组别
           if (isDeptHead) {
             const deptGroups = data.members.filter(m => m.department === myDept).map(m => m.group);
             return o.department === myDept || deptGroups.includes(o.department);
@@ -7167,6 +7241,7 @@
           products: filteredProducts,
           objectives: filteredObjectives,
           keyResults: filteredKRs,
+          _allObjectives: data.objectives,
           _role: roleName,
           _scope: isDeptHead ? myDept : myGroup,
           _isAdmin: false,
@@ -7444,12 +7519,15 @@
               {activeTab === 'okr' && (
                 <OKROverview
                   objectives={permissionData.objectives}
+                  allObjectives={permissionData._allObjectives || permissionData.objectives}
                   keyResults={permissionData.keyResults}
                   products={permissionData.products}
                   tasks={permissionData.tasks}
                   nodes={permissionData.processNodes}
                   templates={permissionData.templates}
                   members={permissionData.members}
+                  permRole={permissionData._role}
+                  permScope={permissionData._scope}
                   onRefresh={fetchData}
                 />
               )}
