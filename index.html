@@ -1384,7 +1384,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, isProjectOwner = false, templates = {}, currentUser = null, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, isProjectOwner = false, templates = {}, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       // === 任务显示：直接使用 propTasks，不做乐观更新 ===
@@ -3432,7 +3432,6 @@
               pipelineBlocked={pipelineBlocked}
               isProjectOwner={isProjectOwner}
               templates={templates}
-              currentUser={currentUser}
               onClose={() => setSelectedNode(null)}
               onTaskCreated={onRefresh}
             />
@@ -7335,7 +7334,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            微铸@2026
+            飞书多维表格 · 每5分钟自动同步
           </div>
         </div>
         </UserContext.Provider>
