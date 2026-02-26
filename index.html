@@ -4029,35 +4029,59 @@
       // 计算目标进度和状态（基于 KR 进度加权平均）
       const calculateObjectiveProgressAndStatus = (objectiveId) => {
         const krs = getKRsForObjective(objectiveId);
-        if (krs.length === 0) {
-          return { progress: 0, autoStatus: '未开始' };
+        
+        // 计算自身KR进度
+        let krProgress = -1; // -1 表示没有KR
+        let allKRCompleted = true;
+        let hasKRInProgress = false;
+        
+        if (krs.length > 0) {
+          const totalWeight = krs.reduce((sum, kr) => sum + (kr.weight || 1), 0);
+          const weightedProgress = krs.reduce((sum, kr) => {
+            const krAuto = getKRAutoProgress(kr);
+            if (krAuto.autoStatus === '已完成') { /* ok */ }
+            else if (krAuto.autoStatus === '进行中') { allKRCompleted = false; hasKRInProgress = true; }
+            else { allKRCompleted = false; }
+            return sum + krAuto.progress * (kr.weight || 1);
+          }, 0);
+          krProgress = Math.round(weightedProgress / totalWeight);
         }
         
-        const totalWeight = krs.reduce((sum, kr) => sum + (kr.weight || 1), 0);
-        let allCompleted = true;
-        let hasInProgress = false;
+        // 计算子目标进度
+        const childObjs = (allObjectives.length > 0 ? allObjectives : objectives)
+          .filter(o => o.parentObjectiveId === objectiveId);
+        let childProgress = -1; // -1 表示没有子目标
+        let allChildCompleted = true;
+        let hasChildInProgress = false;
         
-        const weightedProgress = krs.reduce((sum, kr) => {
-          const krAuto = getKRAutoProgress(kr);
-          
-          // 检查 KR 状态
-          if (krAuto.autoStatus === '已完成') {
-            // 已完成
-          } else if (krAuto.autoStatus === '进行中') {
-            allCompleted = false;
-            hasInProgress = true;
-          } else {
-            allCompleted = false;
-          }
-          
-          return sum + krAuto.progress * (kr.weight || 1);
-        }, 0);
+        if (childObjs.length > 0) {
+          const childProgresses = childObjs.map(co => {
+            const cp = calculateObjectiveProgressAndStatus(co.id);
+            if (cp.autoStatus === '已完成') { /* ok */ }
+            else if (cp.autoStatus === '进行中') { allChildCompleted = false; hasChildInProgress = true; }
+            else { allChildCompleted = false; }
+            return cp.progress;
+          });
+          childProgress = Math.round(childProgresses.reduce((a, b) => a + b, 0) / childProgresses.length);
+        }
         
-        const progress = Math.round(weightedProgress / totalWeight);
+        // 综合进度：KR + 子目标
+        let progress = 0;
+        if (krProgress >= 0 && childProgress >= 0) {
+          // 有KR也有子目标：各占50%
+          progress = Math.round((krProgress + childProgress) / 2);
+        } else if (krProgress >= 0) {
+          progress = krProgress;
+        } else if (childProgress >= 0) {
+          progress = childProgress;
+        }
         
-        // 自动计算目标状态
+        // 综合状态
+        const allCompleted = (krs.length === 0 || allKRCompleted) && (childObjs.length === 0 || allChildCompleted) && (krs.length > 0 || childObjs.length > 0);
+        const hasInProgress = hasKRInProgress || hasChildInProgress || progress > 0;
+        
         let autoStatus = '未开始';
-        if (allCompleted && krs.length > 0) {
+        if (allCompleted) {
           autoStatus = '已完成';
         } else if (hasInProgress) {
           autoStatus = '进行中';
@@ -7730,7 +7754,7 @@
                           <li>点击目标卡片展开详情</li>
                           <li>点击「+ 添加 KR」</li>
                           <li>填写 KR 名称、目标值、当前值、负责人</li>
-                          <li>目标进度会根据所有 KR 的平均完成率自动更新</li>
+                          <li>目标进度自动更新：综合自身 KR 平均进度和子目标平均进度</li>
                         </ol>
                       </div>
 
@@ -7876,7 +7900,7 @@
                       {[
                         ['为什么看不到某些项目/目标？', '权限系统会根据角色自动过滤数据。如需查看更多内容，请联系管理员调整权限设置。'],
                         ['为什么节点显示 🔒 无法操作？', '前置节点或前置子线的任务尚未完成。需要先完成前置工作。'],
-                        ['目标进度为什么不更新？', '目标进度 = 所有 KR 的平均完成率。请确认已更新 KR 的「当前值」字段。'],
+                        ['目标进度为什么不更新？', '目标进度 = 自身KR平均进度 + 子目标平均进度的综合值。有KR无子目标取KR进度，有子目标无KR取子目标进度，两者都有则各占50%。请确认已更新KR的「当前值」。'],
                         ['子目标创建后看不到？', '需在飞书多维表格中正确设置「父目标」双向关联字段，刷新后自动同步。'],
                         ['数据多久更新一次？', '系统每 5 分钟自动后台刷新。也可点击 🔄 手动刷新。'],
                       ].map(([q, a], i) => (
