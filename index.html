@@ -4653,6 +4653,8 @@
                     childObjectiveMap[o.parentObjectiveId].push(o);
                   }
                 });
+                console.log('[DEBUG] childObjectiveMap:', JSON.stringify(Object.keys(childObjectiveMap).map(k => ({ parent: k, children: childObjectiveMap[k].map(c => c.name) }))));
+                console.log('[DEBUG] filteredObjectives parentIds:', filteredObjectives.filter(o => o.parentObjectiveId).map(o => ({ name: o.name, parentId: o.parentObjectiveId })));
                 filteredObjectives.forEach(o => {
                   // 有父目标且父目标也在可见列表中 → 不单独分组，嵌套在父目标下
                   if (o.parentObjectiveId && filteredObjectives.some(p => p.id === o.parentObjectiveId)) return;
