@@ -7065,6 +7065,7 @@
       const [currentUser, setCurrentUser] = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
       const [showOverduePopup, setShowOverduePopup] = useState(false);
+      const [showGuide, setShowGuide] = useState(false);
       const [chinaTime, setChinaTime] = useState('');
       const [chinaDate, setChinaDate] = useState('');
       const [weatherInfo, setWeatherInfo] = useState(null);
@@ -7423,6 +7424,14 @@
                 >
                   <span className="text-base">🔄</span>
                 </button>
+                {/* 操作手册按钮 */}
+                <button 
+                  onClick={() => setShowGuide(true)}
+                  className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl flex items-center justify-center backdrop-blur-md border border-white/15 transition-all hover:shadow-lg hover:shadow-white/5"
+                  title="操作手册"
+                >
+                  <span className="text-base">📖</span>
+                </button>
                 
                 {/* 用户信息 */}
                 <div className="flex items-center gap-2 bg-white/10 rounded-2xl px-3 py-2 backdrop-blur-md border border-white/15">
@@ -7652,8 +7661,267 @@
             </div>
           )}
 
+          {/* 操作手册弹窗 */}
+          {showGuide && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowGuide(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* 头部 */}
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-t-2xl">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📖</span>
+                    <div>
+                      <h2 className="text-lg font-bold">系统操作手册</h2>
+                      <p className="text-xs text-white/60">OKR 项目管理系统使用指南</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">✕</button>
+                </div>
+                {/* 内容 */}
+                <div className="overflow-y-auto flex-1 px-6 py-5 text-sm text-gray-700 leading-relaxed space-y-6" style={{scrollBehavior:'smooth'}}>
+                  
+                  {/* 一、角色与权限 */}
+                  <section>
+                    <h3 className="text-base font-bold text-purple-700 mb-2 flex items-center gap-2">🔐 一、角色与权限</h3>
+                    <p className="mb-2">系统根据成员表中「权限设置」字段自动识别你的角色，不同角色看到的数据范围不同：</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead><tr className="bg-purple-50">
+                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">角色</th>
+                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">可见数据范围</th>
+                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">可创建的目标层级</th>
+                        </tr></thead>
+                        <tbody>
+                          {[
+                            ['管理员 / 总经理', '全公司所有数据', '公司级 / 部门级 / 组别级 / 个人级'],
+                            ['部门管理', '本部门所有组别', '部门级 / 组别级 / 个人级'],
+                            ['组别管理', '本组别数据', '组别级 / 个人级'],
+                            ['组员', '本组别数据', '个人级'],
+                          ].map(([role, scope, levels], i) => (
+                            <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
+                              <td className="border border-gray-100 px-3 py-1.5 font-medium">{role}</td>
+                              <td className="border border-gray-100 px-3 py-1.5">{scope}</td>
+                              <td className="border border-gray-100 px-3 py-1.5">{levels}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  {/* 二、OKR视图 */}
+                  <section>
+                    <h3 className="text-base font-bold text-blue-700 mb-2 flex items-center gap-2">🎯 二、OKR 视图操作</h3>
+                    
+                    <div className="space-y-3">
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-blue-800 mb-1">创建目标</h4>
+                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
+                          <li>点击右上角「+ 新建目标」</li>
+                          <li>选择目标层级（根据角色限定可选范围）</li>
+                          <li>部门级/组别级需选择所属部门和组别</li>
+                          <li>填写周期、产品代号、行动目标、量化指标 → 系统自动拼接名称</li>
+                          <li>选择负责人，点击「创建目标」</li>
+                        </ol>
+                      </div>
+
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-blue-800 mb-1">添加关键结果（KR）</h4>
+                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
+                          <li>点击目标卡片展开详情</li>
+                          <li>点击「+ 添加 KR」</li>
+                          <li>填写 KR 名称、目标值、当前值、负责人</li>
+                          <li>目标进度会根据所有 KR 的平均完成率自动更新</li>
+                        </ol>
+                      </div>
+
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-blue-800 mb-1">从 KR 创建关联项目</h4>
+                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
+                          <li>展开目标 → 找到对应 KR</li>
+                          <li>点击「📋 创建项目」按钮</li>
+                          <li>系统自动创建父项目和子项目（按流程模板）</li>
+                        </ol>
+                      </div>
+
+                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                        <h4 className="font-semibold text-amber-800 mb-1">🔗 父子目标</h4>
+                        <p className="text-xs text-gray-600">展开父目标后，KR 列表下方会显示「🔗 子目标」区域。子目标卡片支持完整操作：点击展开查看 KR、添加 KR、创建项目，和独立目标一样。</p>
+                        <p className="text-xs text-gray-500 mt-1">💡 父子关系通过飞书「父目标」双向关联字段设置。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* 三、项目管理 */}
+                  <section>
+                    <h3 className="text-base font-bold text-green-700 mb-2 flex items-center gap-2">📋 三、项目管理操作</h3>
+                    
+                    <div className="space-y-3">
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">流水线视图</h4>
+                        <p className="text-xs text-gray-600 mb-1">每个子项目有独立的节点流水线。点击节点圆圈可查看/管理该节点下的任务。</p>
+                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
+                          <li>• 节点进度 = 节点内已完成任务 / 总任务数</li>
+                          <li>• 子项目进度 = 所有节点平均进度</li>
+                          <li>• 父项目进度 = 所有子项目平均进度</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">新增任务</h4>
+                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
+                          <li>点击流水线中的节点圆圈</li>
+                          <li>在弹出面板中点击「新增任务」</li>
+                          <li>填写名称、优先级、负责人（当前登录用户排在最前）</li>
+                          <li>可选：添加协作者、开始日期、描述</li>
+                        </ol>
+                      </div>
+
+                      <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                        <h4 className="font-semibold text-orange-800 mb-1">⚡ 节点跳过（仅项目负责人）</h4>
+                        <p className="text-xs text-gray-600 mb-1">如果某个节点不需要执行，PO 可以跳过它（标记为 100% 完成）。</p>
+                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
+                          <li>• 跳过前会校验前置子线是否完成</li>
+                          <li>• 前置未完成 → 无法跳过，提示「前置子线尚未完成」</li>
+                          <li>• 取消跳过不受限制</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                        <h4 className="font-semibold text-red-800 mb-1">🔒 前置依赖锁定</h4>
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <p><strong>子线级：</strong>如「运营落地线」依赖「运营计划线」。前置子线未完成 → 当前子线所有节点锁定。</p>
+                          <p><strong>节点级：</strong>同一子线内，前置节点任务未完成 → 后续节点锁定。</p>
+                          <p className="text-gray-400">锁定的节点显示 🔒 标识，无法接受新任务。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* 四、子线权限 */}
+                  <section>
+                    <h3 className="text-base font-bold text-indigo-700 mb-2 flex items-center gap-2">👥 四、子线查看权限</h3>
+                    <p className="text-xs text-gray-600 mb-2">每条子线（子项目）的查看权限由流程模板的「参与角色」配置决定：</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead><tr className="bg-indigo-50">
+                          <th className="border border-indigo-100 px-3 py-2 text-left font-semibold text-indigo-700">参与角色</th>
+                          <th className="border border-indigo-100 px-3 py-2 text-left font-semibold text-indigo-700">谁能看到任务详情</th>
+                        </tr></thead>
+                        <tbody>
+                          {[
+                            ['发起组', '发起该项目的运营组成员'],
+                            ['对应产品组', '关联该运营组的产品中心成员'],
+                            ['中枢部', '中枢部成员'],
+                            ['营销推广部', '营销推广部成员'],
+                            ['设计部', '设计部成员'],
+                            ['财务部', '财务部成员'],
+                          ].map(([role, who], i) => (
+                            <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
+                              <td className="border border-gray-100 px-3 py-1.5 font-medium">{role}</td>
+                              <td className="border border-gray-100 px-3 py-1.5">{who}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">💡 管理员/总经理、父项目负责人始终可查看所有子线。无权限时可看到卡片但无法进入详情。</p>
+                  </section>
+
+                  {/* 五、团队视图 */}
+                  <section>
+                    <h3 className="text-base font-bold text-teal-700 mb-2 flex items-center gap-2">👥 五、团队视图</h3>
+                    <p className="text-xs text-gray-600">进入「人员任务」Tab，可以看到每位成员的任务看板和负荷指标。</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5 ml-3 mt-1">
+                      <li>• 绿色 = 正常负荷</li>
+                      <li>• 黄色 = 较忙</li>
+                      <li>• 红色 = 超负荷</li>
+                    </ul>
+                    <p className="text-xs text-gray-600 mt-1">可直接在成员卡片内修改任务状态和优先级。</p>
+                  </section>
+
+                  {/* 六、速查表 */}
+                  <section>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">⚡ 六、常用操作速查</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead><tr className="bg-gray-100">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">操作</th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">路径</th>
+                        </tr></thead>
+                        <tbody>
+                          {[
+                            ['创建目标', 'OKR 视图 → 「+ 新建目标」'],
+                            ['添加 KR', '展开目标 → 「+ 添加 KR」'],
+                            ['编辑目标/KR', '展开目标 → 点击 ✏️ 按钮'],
+                            ['从 KR 创建项目', '展开目标 → KR → 「📋 创建项目」'],
+                            ['查看子目标', '展开父目标 → 滚动到「🔗 子目标」'],
+                            ['管理节点任务', '项目管理 → 点击项目 → 点击节点圆圈'],
+                            ['跳过节点', '项目详情 → 节点 → 「跳过」（仅PO）'],
+                            ['刷新数据', '右上角 🔄 按钮'],
+                          ].map(([action, path], i) => (
+                            <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
+                              <td className="border border-gray-100 px-3 py-1.5 font-medium">{action}</td>
+                              <td className="border border-gray-100 px-3 py-1.5 text-gray-500">{path}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  {/* 七、FAQ */}
+                  <section>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">❓ 七、常见问题</h3>
+                    <div className="space-y-2">
+                      {[
+                        ['为什么看不到某些项目/目标？', '权限系统会根据角色自动过滤数据。如需查看更多内容，请联系管理员调整权限设置。'],
+                        ['为什么节点显示 🔒 无法操作？', '前置节点或前置子线的任务尚未完成。需要先完成前置工作。'],
+                        ['目标进度为什么不更新？', '目标进度 = 所有 KR 的平均完成率。请确认已更新 KR 的「当前值」字段。'],
+                        ['子目标创建后看不到？', '需在飞书多维表格中正确设置「父目标」双向关联字段，刷新后自动同步。'],
+                        ['数据多久更新一次？', '系统每 5 分钟自动后台刷新。也可点击 🔄 手动刷新。'],
+                      ].map(([q, a], i) => (
+                        <div key={i} className="bg-gray-50 rounded-lg p-2.5">
+                          <p className="text-xs font-semibold text-gray-700">Q: {q}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">A: {a}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* 八、飞书配合 */}
+                  <section>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">📋 八、需在飞书中操作的事项</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead><tr className="bg-gray-100">
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">操作</th>
+                          <th className="border border-gray-200 px-3 py-2 text-left font-semibold">在飞书中做什么</th>
+                        </tr></thead>
+                        <tbody>
+                          {[
+                            ['设置父子目标关系', '编辑「目标」表的「父目标」双向关联字段'],
+                            ['配置流程模板', '在「流程模板」表中创建/编辑模板、节点、前置关系'],
+                            ['设置参与角色', '编辑「流程模板」表的「参与角色」多选字段'],
+                            ['调整成员权限', '修改「成员」表的「权限设置」字段'],
+                            ['配置关联组别', '编辑「成员」表的「关联组别」字段'],
+                          ].map(([action, desc], i) => (
+                            <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
+                              <td className="border border-gray-100 px-3 py-1.5 font-medium">{action}</td>
+                              <td className="border border-gray-100 px-3 py-1.5 text-gray-500">{desc}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            飞书多维表格 · 每5分钟自动同步
+            微铸@2026
           </div>
         </div>
         </UserContext.Provider>
