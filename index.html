@@ -1384,7 +1384,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, isProjectOwner = false, templates = {}, currentUser = null, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       // === 任务显示：直接使用 propTasks，不做乐观更新 ===
@@ -1846,6 +1846,35 @@
                 
                 const assignableMembers = (() => {
                   if (viewerRole === '管理员' || viewerRole === '总经理') return members;
+                  
+                  // 项目负责人（含父项目负责人）：能看到所有相关部门/组的成员
+                  if (isProjectOwner) {
+                    // 收集该子项目涉及的所有角色对应的部门
+                    const roleMap = { '发起组': null, '对应产品组': '产品中心', '中枢部': '中枢部', '营销推广部': '营销推广部', '设计部': '设计部', '财务部': '财务部' };
+                    const matchTpl = product.templateType ? Object.values(templates).find(t => t.type === product.templateType) : null;
+                    const roles = matchTpl?.participantRoles || [];
+                    const relevantDepts = new Set();
+                    const relevantGroups = new Set();
+                    
+                    roles.forEach(role => {
+                      if (role === '发起组' && initiatorGroup) {
+                        relevantGroups.add(initiatorGroup);
+                      } else if (roleMap[role]) {
+                        relevantDepts.add(roleMap[role]);
+                      }
+                    });
+                    // 也包含负责人自己的部门
+                    if (viewerDept) relevantDepts.add(viewerDept);
+                    if (viewerGroup) relevantGroups.add(viewerGroup);
+                    
+                    if (relevantDepts.size > 0 || relevantGroups.size > 0) {
+                      return members.filter(m => 
+                        relevantDepts.has(m.department) || relevantGroups.has(m.group)
+                      );
+                    }
+                    return members; // fallback: 没有模板信息时显示所有人
+                  }
+                  
                   if (viewerRole === '部门管理') {
                     return members.filter(m => m.department === viewerDept || (initiatorGroup && m.group === initiatorGroup));
                   }
@@ -1853,6 +1882,7 @@
                     const myLinkedGroups = viewerMember?.linkedGroups || [];
                     return members.filter(m => m.group === viewerGroup || (initiatorGroup && m.group === initiatorGroup) || myLinkedGroups.includes(m.group));
                   }
+                  // 普通成员：能看到自己组内的成员
                   return members.filter(m => m.group === viewerGroup);
                 })();
                 const selectableMembers = assignableMembers.length > 0 ? assignableMembers : members;
@@ -3400,6 +3430,9 @@
               nodes={nodes}
               skippedNodes={skippedNodes}
               pipelineBlocked={pipelineBlocked}
+              isProjectOwner={isProjectOwner}
+              templates={templates}
+              currentUser={currentUser}
               onClose={() => setSelectedNode(null)}
               onTaskCreated={onRefresh}
             />
@@ -7302,7 +7335,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            飞书多维表格 · 每5分钟自动同步
+            微铸@2026
           </div>
         </div>
         </UserContext.Provider>
