@@ -1384,7 +1384,7 @@
     };
 
     // 节点任务详情弹窗 - 支持新增任务和任务流程管理
-    const NodeTaskModal = ({ node, tasks: propTasks, members, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, isProjectOwner = false, templates = {}, onClose, onTaskCreated }) => {
+    const NodeTaskModal = ({ node, tasks: propTasks, members, allMembers, product, products = [], timelineMap = {}, nodeRecordId, nodes, skippedNodes = new Set(), pipelineBlocked = null, isProjectOwner = false, templates = {}, onClose, onTaskCreated }) => {
       const currentUser = useContext(UserContext);
       const showToast = useToast();
       // === 任务显示：直接使用 propTasks，不做乐观更新 ===
@@ -1854,41 +1854,28 @@
                   });
                   if (viewerRole === '管理员' || viewerRole === '总经理') return members;
                   
-                  // 项目负责人（含父项目负责人）：能看到所有参与组/部门的成员
+                  // 项目负责人（含父项目负责人）：从全量成员列表中筛选所有参与组/部门的成员
                   if (isProjectOwner) {
+                    // 使用全量成员列表（未被权限过滤的）
+                    const fullMembers = allMembers || members;
                     const relevantDepts = new Set();
                     const relevantGroups = new Set();
                     
-                    // === 收集所有参与角色（多来源合并） ===
+                    // 收集所有参与角色
                     const allRoles = new Set();
-                    
-                    // 来源1: 当前子项目自身模板的参与角色
                     const matchTpl = product.templateType ? Object.values(templates).find(t => t.type === product.templateType) : null;
                     (matchTpl?.participantRoles || []).forEach(r => allRoles.add(r));
                     
-                    // 来源2: 如果是子项目，收集同一父项目下所有兄弟子项目模板的参与角色
+                    // 子项目：也从兄弟子项目模板收集角色
                     if (parentProduct) {
                       const siblingProducts = products.filter(p => p.parentId === parentProduct.id);
                       siblingProducts.forEach(sp => {
                         const spTpl = sp.templateType ? Object.values(templates).find(t => t.type === sp.templateType) : null;
                         (spTpl?.participantRoles || []).forEach(r => allRoles.add(r));
                       });
-                      
-                      // 来源3: 父项目模板下所有子模板的参与角色
-                      const parentTplEntry = parentProduct.templateType
-                        ? Object.entries(templates).find(([_, t]) => t.type === parentProduct.templateType && t.ownership === '父项目')
-                        : null;
-                      if (parentTplEntry) {
-                        const parentTplName = parentTplEntry[1].name;
-                        Object.values(templates).forEach(tpl => {
-                          if (tpl.parentTemplate === parentTplName) {
-                            (tpl.participantRoles || []).forEach(r => allRoles.add(r));
-                          }
-                        });
-                      }
                     }
                     
-                    // 将角色映射到部门和组别
+                    // 角色 → 部门/组别映射
                     const roleToDept = { 
                       '对应产品组': '产品中心', '中枢部': '中枢部', 
                       '营销推广部': '营销推广部', '设计部': '设计部', '财务部': '财务部' 
@@ -1899,36 +1886,31 @@
                         relevantGroups.add(initiatorGroup);
                       } else if (roleToDept[role]) {
                         relevantDepts.add(roleToDept[role]);
-                        relevantGroups.add(role);
+                        relevantGroups.add(role); // 角色名也作为组别匹配
                       }
                     });
                     
-                    // 子项目自身的负责部门
-                    if (product.responsibleDept) {
-                      relevantDepts.add(product.responsibleDept);
-                      relevantGroups.add(product.responsibleDept);
-                    }
-                    
+                    // 子项目的负责部门
+                    if (product.responsibleDept) relevantDepts.add(product.responsibleDept);
                     // 负责人自己的部门/组
                     if (viewerDept) relevantDepts.add(viewerDept);
                     if (viewerGroup) relevantGroups.add(viewerGroup);
                     
-                    // === 诊断日志：打印所有成员的分组信息 ===
-                    const allMemberInfo = members.map(m => ({ name: m.name, dept: m.department, group: m.group }));
-                    const matched = members.filter(m => relevantDepts.has(m.department) || relevantGroups.has(m.group));
-                    console.log('[Assign Owner Detail]', {
-                      allRoles: [...allRoles],
-                      relevantDepts: [...relevantDepts],
+                    const matched = fullMembers.filter(m => 
+                      relevantDepts.has(m.department) || relevantGroups.has(m.group)
+                    );
+                    
+                    console.log('[Assign Owner]', { 
+                      allRoles: [...allRoles], 
+                      relevantDepts: [...relevantDepts], 
                       relevantGroups: [...relevantGroups],
+                      fullMembersCount: fullMembers.length,
+                      filteredMembersCount: members.length,
                       matchedCount: matched.length,
-                      matchedMembers: matched.map(m => `${m.name}(dept=${m.department}, grp=${m.group})`),
-                      allMembers: allMemberInfo
+                      matchedNames: matched.map(m => m.name)
                     });
                     
-                    if (matched.length > 0) {
-                      return matched;
-                    }
-                    return members; // fallback: 没有匹配时显示所有人
+                    return matched.length > 0 ? matched : fullMembers;
                   }
                   
                   if (viewerRole === '部门管理') {
@@ -2344,7 +2326,7 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer }) => {
+    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, allMembers, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer }) => {
       // 子线权限：当前用户是否可查看该子项目任务详情
       // 先从成员表匹配当前用户的部门/组别/角色信息
       const viewerMember = viewer ? members.find(m => 
@@ -3479,6 +3461,7 @@
               node={selectedNode}
               tasks={productTasks}
               members={members}
+              allMembers={allMembers || members}
               product={product}
               products={products}
               timelineMap={timelineMap}
@@ -5211,7 +5194,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, tasks, onRefresh, currentUser }) => {
+    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, allMembers, tasks, onRefresh, currentUser }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
@@ -5766,6 +5749,7 @@
               nodeToLayer={nodeToLayer}
               templates={templates}
               members={members}
+              allMembers={allMembers || members}
               tasks={tasks}
               skippedNodes={getSkippedNodes(selectedProduct?.id)}
               onSkippedNodesChange={(updater) => setSkippedNodes(selectedProduct?.id, updater)}
@@ -6991,7 +6975,7 @@
         // 5. 过滤数据
         if (isAdmin) {
           // 管理员看全部
-          return { ...data, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me, _linkedGroups: [] };
+          return { ...data, _allMembers: data.members, _role: roleName, _scope: '全公司', _isAdmin: true, _isDeptHead: false, _me: me, _linkedGroups: [] };
         }
         
         const filteredMembers = data.members.filter(m => visibleMembers.has(m.id));
@@ -7064,6 +7048,7 @@
         return {
           ...data,
           members: filteredMembers,
+          _allMembers: data.members, // 全量成员列表（供项目负责人指派任务用）
           groups: filteredGroups,
           tasks: filteredTasks,
           products: filteredProducts,
@@ -7367,6 +7352,7 @@
                   nodeToLayer={permissionData.nodeToLayer}
                   templates={permissionData.templates}
                   members={permissionData.members}
+                  allMembers={permissionData._allMembers || permissionData.members}
                   tasks={permissionData.tasks}
                   onRefresh={fetchData}
                   currentUser={currentUser}
