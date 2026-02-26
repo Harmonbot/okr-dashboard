@@ -3073,11 +3073,18 @@
                                       {lineInfos.map((line, li) => (
                                         <div key={li} 
                                           className={`border-2 rounded-xl p-3 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+                                            !line.child ? 'border-dashed border-orange-300 bg-orange-50/30' :
                                             line.status === 'done' ? 'border-green-400 bg-green-50' : 
                                             line.status === 'active' ? `${line.dc.border} ${line.dc.bg} ring-2 ${line.dc.ring}` : 
                                             'border-gray-200 bg-white'
                                           }`}
-                                          onClick={() => line.child && onSelectProduct?.(line.child)}>
+                                          onClick={() => {
+                                            if (line.child) {
+                                              onSelectProduct?.(line.child);
+                                            } else {
+                                              showToast?.(`${line.tpl.name} 尚未创建子项目，请先点击顶部"补建"按钮`, 'warning');
+                                            }
+                                          }}>
                                           {/* 头部：名称 + 进度 */}
                                           <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-1.5">
@@ -3085,6 +3092,7 @@
                                                 line.status === 'done' ? 'bg-green-500' : line.status === 'active' ? line.dc.dot : 'bg-gray-300'
                                               }`} />
                                               <span className="text-sm font-bold text-gray-800">{line.tpl.name}</span>
+                                              {!line.child && <span className="text-[9px] px-1 py-0.5 bg-orange-100 text-orange-600 rounded ml-1">未创建</span>}
                                             </div>
                                             <span className={`text-lg font-black ${
                                               line.progress >= 100 ? 'text-green-500' : line.progress > 0 ? 'text-blue-500' : 'text-gray-300'
@@ -7191,12 +7199,10 @@
             directVisibleProducts.add(p.parentId);
           }
         });
-        // 如果能看到父项目（有子项目的），也要把属于自己部门的子项目加进来
+        // 如果能看到父项目，就能看到其所有子项目（流水线视图需要完整展示）
         data.products.forEach(p => {
           if (p.parentId && directVisibleProducts.has(p.parentId)) {
-            if (p.responsibleDept === myDept || !p.responsibleDept) {
-              directVisibleProducts.add(p.id);
-            }
+            directVisibleProducts.add(p.id);
           }
         });
         
