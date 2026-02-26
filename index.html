@@ -1935,12 +1935,27 @@
                 })();
                 const nodeDateMax = nodeTimeline?.planEnd ? new Date(nodeTimeline.planEnd).toISOString().split('T')[0] : '';
                 
-                // 按组别分组
+                // 按组别分组，当前用户排在最前
                 const groupedMembers = {};
                 selectableMembers.forEach(m => {
                   const g = m.group || '未分组';
                   if (!groupedMembers[g]) groupedMembers[g] = [];
                   groupedMembers[g].push(m);
+                });
+                // 当前用户所在组排最前，组内当前用户排第一
+                const currentUserId = currentUser?.open_id;
+                Object.keys(groupedMembers).forEach(g => {
+                  groupedMembers[g].sort((a, b) => {
+                    const aIsMe = a.id === currentUserId ? -1 : 0;
+                    const bIsMe = b.id === currentUserId ? -1 : 0;
+                    return aIsMe - bIsMe;
+                  });
+                });
+                // 重排组顺序：当前用户所在组排最前
+                const sortedGroupEntries = Object.entries(groupedMembers).sort(([gA], [gB]) => {
+                  const aHasMe = groupedMembers[gA].some(m => m.id === currentUserId) ? -1 : 0;
+                  const bHasMe = groupedMembers[gB].some(m => m.id === currentUserId) ? -1 : 0;
+                  return aHasMe - bHasMe;
                 });
                 
                 return (
@@ -1992,9 +2007,9 @@
                     <div className="mb-2">
                       <div className="text-[10px] text-gray-400 mb-1">负责人 {formData.assignee && <span className="text-purple-500">✓</span>}</div>
                       <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
-                        {Object.entries(groupedMembers).map(([group, gMembers]) => (
+                        {sortedGroupEntries.map(([group, gMembers]) => (
                           <React.Fragment key={group}>
-                            {Object.keys(groupedMembers).length > 1 && (
+                            {sortedGroupEntries.length > 1 && (
                               <div className="w-full text-[9px] text-gray-300 mt-1 first:mt-0">{group}</div>
                             )}
                             {gMembers.map(m => {
