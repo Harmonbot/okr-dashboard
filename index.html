@@ -5185,6 +5185,7 @@
                                                 <option value="">模版类型 *</option>
                                                 {(() => {
                                                   const parentTpls = Object.values(templates).filter(t => t.ownership === '父项目' && t.type);
+                                                  parentTpls.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans'));
                                                   return parentTpls.map(t => <option key={t.type} value={t.type}>{t.name}</option>);
                                                 })()}
                                               </select>
@@ -7947,7 +7948,7 @@
           )}
 
           <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            飞书多维表格 · 每5分钟自动同步
+            微铸@2026
           </div>
         </div>
         </UserContext.Provider>
