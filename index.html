@@ -125,6 +125,14 @@
     /* 筛选按钮点击态 */
     .filter-btn { transition: all 0.15s ease; }
     .filter-btn:active { transform: scale(0.93); }
+    /* Tab 内容渐入 */
+    .tab-content { animation: tabFadeIn 0.2s ease-out; }
+    @keyframes tabFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    /* 弹窗进入 */
+    .modal-enter { animation: modalSlideUp 0.25s cubic-bezier(.4,0,.2,1); }
+    @keyframes modalSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    /* 选中态高亮 */
+    .tab-active { box-shadow: inset 0 -2px 0 var(--c-accent); }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -502,7 +510,11 @@
               try {
                 const coverField = r.fields['封面图片'];
                 if (coverField && Array.isArray(coverField) && coverField.length > 0) {
-                  const token = coverField[0]?.file_token;
+                  const item = coverField[0];
+                  // 优先用飞书临时下载URL（更快，不经过后端）
+                  if (item?.tmp_url) return item.tmp_url;
+                  // 回退到后端代理
+                  const token = item?.file_token;
                   if (token) return API_BASE + '/api/file?file_token=' + encodeURIComponent(token) + '&file_name=cover';
                 }
               } catch(e) { /* ignore */ }
@@ -521,6 +533,7 @@
             childIds: [], // 后面从 parentId 反推
             responsibleDept: r.fields['负责部门'] || '',
             initiatorGroup: r.fields['发起组'] || '', // 发起组别
+            visibleGroups: r.fields['可见组别'] || [], // 可见组别（多选）
             skippedNodes: (() => {
               try {
                 const v = r.fields['跳过节点'];
@@ -5814,6 +5827,7 @@
       const [createProjectDept, setCreateProjectDept] = useState('');
       const [createProjectGroup, setCreateProjectGroup] = useState('');
       const [createProjectOwner, setCreateProjectOwner] = useState('');
+      const [createVisibleGroups, setCreateVisibleGroups] = useState([]);
       const [createSaving, setCreateSaving] = useState(false);
       const showToast = useToast();
 
@@ -5849,6 +5863,7 @@
             '计划上线日期': new Date(createProjectDeadline).getTime(),
             '负责部门': createProjectDept,
             '发起组': createProjectGroup,
+            ...(createVisibleGroups.length > 0 ? { '可见组别': createVisibleGroups } : {}),
           };
           if (createProjectOwner) parentFields['项目负责人'] = [{ id: createProjectOwner }];
 
@@ -5946,6 +5961,7 @@
           setCreateProjectDept('');
           setCreateProjectGroup('');
           setCreateProjectOwner('');
+          setCreateVisibleGroups([]);
           // 刷新数据（不删缓存，让新数据覆盖旧缓存）
           setTimeout(() => onRefresh?.(), 2000);
         } catch (err) {
@@ -6018,7 +6034,7 @@
             console.error('[Skip Save Error]', res.status, errText);
             showToast?.('保存跳过状态失败: ' + res.status, 'error');
           } else {
-            console.log('[Skip Save OK]', productId, newArr);
+            // console.log('[Skip Save OK]', productId, newArr);
           }
         } catch (e) {
           console.error('[Skip Save Error]', e);
@@ -6528,6 +6544,32 @@
                   label="项目负责人 *"
                 />
               </div>
+              <div>
+                <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">可见组别 <span className="text-gray-400 font-normal">（哪些组/部门能看到此项目）</span></label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(() => {
+                    const deptOptions = ['运营中心', '产品中心', '中枢部', '营销推广部', '设计部', '财务部'];
+                    const groupOptions = [...new Set((allMembers || members).map(m => m.group).filter(Boolean))].sort();
+                    const allOptions = [...deptOptions, ...groupOptions.filter(g => !deptOptions.includes(g))];
+                    return allOptions.map(opt => {
+                      const isChecked = createVisibleGroups.includes(opt);
+                      const isDept = deptOptions.includes(opt);
+                      return (
+                        <button key={opt} type="button"
+                          onClick={() => setCreateVisibleGroups(isChecked ? createVisibleGroups.filter(g => g !== opt) : [...createVisibleGroups, opt])}
+                          className={`px-2 py-1 rounded-lg text-[10px] border transition-all ${
+                            isChecked 
+                              ? isDept ? 'bg-purple-100 border-purple-300 text-purple-700 font-semibold' : 'bg-blue-100 border-blue-300 text-blue-700 font-medium'
+                              : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                          }`}
+                        >
+                          {isChecked ? '✓ ' : ''}{opt}{isDept ? '(全部)' : ''}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
               <div className="flex justify-end gap-2 pt-1 mobile-sticky-bottom sm:static sm:bg-transparent sm:shadow-none sm:border-0 sm:p-0 sm:pt-1">
                 <button onClick={() => setShowCreateForm(false)} className="px-4 py-2 rounded-lg text-xs text-gray-500 hover:bg-gray-100">取消</button>
                 <button onClick={handleCreateProject} disabled={createSaving || !createProjectName.trim() || !createProjectType || !createProjectStart || !createProjectDeadline || !createProjectDept || !createProjectGroup || !createProjectOwner}
@@ -6547,7 +6589,7 @@
             按截止日期排序 · 最紧急的项目排在最前
           </div>
 
-          {/* 项目卡片 - 按大部门分组，部门内按 deadline 月份展示 */}
+          {/* 项目卡片 - 按发起组别分组，组内按 deadline 月份展示 */}
           {(() => {
             // 建立 组别→大部门 映射
             const groupToDeptMap = {};
@@ -6556,27 +6598,26 @@
               if (m.department) groupToDeptMap[m.department] = m.department;
             });
 
-            const deptMap = {}; // { 大部门名: [products] }
+            const deptMap = {}; // { 组别名或部门名: [products] }
             const noDeptProducts = [];
 
             sortedProducts.forEach(product => {
-              // 从 responsibleDept / initiatorGroup 推断大部门
-              let dept = product.responsibleDept || '';
-              if (!dept && product.initiatorGroup) {
-                dept = groupToDeptMap[product.initiatorGroup] || product.initiatorGroup;
+              // 优先用发起组（更细粒度），否则用负责部门
+              let groupLabel = product.initiatorGroup || product.responsibleDept || '';
+              if (!groupLabel) {
+                // 尝试从项目负责人推断组别
+                const ownerMem = members.find(m => m.id === product.ownerId || m.name === product.ownerName);
+                groupLabel = ownerMem?.group || ownerMem?.department || '';
               }
-              // 如果 dept 是组别名而非大部门，映射到大部门
-              if (dept && groupToDeptMap[dept] && groupToDeptMap[dept] !== dept) {
-                dept = groupToDeptMap[dept];
-              }
-              if (dept) {
-                if (!deptMap[dept]) deptMap[dept] = [];
-                deptMap[dept].push(product);
+              if (groupLabel) {
+                if (!deptMap[groupLabel]) deptMap[groupLabel] = [];
+                deptMap[groupLabel].push(product);
               } else {
                 noDeptProducts.push(product);
               }
             });
 
+            // 组别→部门颜色映射
             const deptColors = {
               '产品中心': { border: '#3B82F6', bg: '#EFF6FF', text: '#1D4ED8', icon: '🎨' },
               '运营中心': { border: '#10B981', bg: '#ECFDF5', text: '#047857', icon: '📊' },
@@ -6585,7 +6626,13 @@
               '营销推广部': { border: '#F97316', bg: '#FFF7ED', text: '#C2410C', icon: '📢' },
               '技术部': { border: '#06B6D4', bg: '#ECFEFF', text: '#0E7490', icon: '💻' },
             };
-            const defaultDeptColor = { border: '#6B7280', bg: '#F9FAFB', text: '#374151', icon: '📁' };
+            // 组别继承大部门的颜色
+            const getGroupColor = (groupName) => {
+              if (deptColors[groupName]) return deptColors[groupName];
+              const parentDept = groupToDeptMap[groupName];
+              if (parentDept && deptColors[parentDept]) return deptColors[parentDept];
+              return { border: '#6B7280', bg: '#F9FAFB', text: '#374151', icon: '📁' };
+            };
 
             // 月份分组渲染函数
             const renderMonthGroups = (productList) => {
@@ -6683,7 +6730,7 @@
             const deptKeys = Object.keys(deptMap).sort();
 
             deptKeys.forEach(dept => {
-              const dc = deptColors[dept] || defaultDeptColor;
+              const dc = getGroupColor(dept);
               allSections.push(
                 <div key={dept} className="mb-6">
                   <div className="dept-sticky flex items-center gap-2 mb-3 pb-2" style={{borderBottom: `2px solid ${dc.border}`}}>
@@ -6728,7 +6775,7 @@
             if (!editProduct) return null;
             return (
               <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center z-50" onClick={() => setEditingProductId(null)}>
-                <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-4 sm:p-5 space-y-3" onClick={e => e.stopPropagation()}>
+                <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-4 sm:p-5 space-y-3 modal-enter" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-semibold text-gray-700">编辑项目</span>
                     <button onClick={() => setEditingProductId(null)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
@@ -7368,7 +7415,7 @@
           {/* 完成任务弹窗 - 需要上传文件 */}
           {completeTask && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setCompleteTask(null); setOutputLink(''); }}>
-              <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 modal-enter" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-gray-800">✅ 完成任务</h3>
                   <button onClick={() => { setCompleteTask(null); setOutputLink(''); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
@@ -7929,7 +7976,7 @@
               setNewsData([{ title: '暂无新闻数据', summary: '稍后重试', source: '' }]);
             }
           } catch (e) {
-            console.log('News fetch failed:', e.message);
+            // silent
             setNewsData([{ title: '获取新闻失败', summary: '请检查网络连接', source: '' }]);
           }
         };
@@ -8117,9 +8164,9 @@
         data.products.forEach(p => {
           const ownerVisible = extendedVisibleIds.has(p.ownerId) ||
             [...filteredMembers, ...linkedMembers].some(m => m.name === p.ownerName || m.id === p.ownerId);
-          // 子项目按负责部门匹配（支持从模版类型推断）
+          // 子项目按负责部门匹配 — 仅对部门管理角色生效（组员/组别管理不通过部门扩展可见性）
           const inferredDept = inferDept(p);
-          const deptVisible = inferredDept && inferredDept === myDept;
+          const deptVisible = isDeptHead && inferredDept && inferredDept === myDept;
           // 子项目参与角色匹配：检查模版的参与角色配置是否包含当前用户的部门/组别
           const tplRoleVisible = (() => {
             if (!p.templateType) return false;
@@ -8140,6 +8187,21 @@
             return false;
           })();
           if (ownerVisible || deptVisible || tplRoleVisible) directVisibleProducts.add(p.id);
+          
+          // 可见组别匹配：项目的「可见组别」字段包含当前用户的组别或部门
+          if (!directVisibleProducts.has(p.id) && p.visibleGroups?.length > 0) {
+            // 展开「运营中心」→ 运营中心下所有组别
+            const expandedGroups = new Set(p.visibleGroups);
+            if (expandedGroups.has('运营中心')) {
+              data.members.forEach(m => { if (m.department === '运营中心' && m.group) expandedGroups.add(m.group); });
+            }
+            if (expandedGroups.has('产品中心')) {
+              data.members.forEach(m => { if (m.department === '产品中心' && m.group) expandedGroups.add(m.group); });
+            }
+            if (expandedGroups.has(myGroup) || expandedGroups.has(myDept)) {
+              directVisibleProducts.add(p.id);
+            }
+          }
         });
         
         // 如果能看到子项目，也要能看到其父项目
@@ -8391,7 +8453,7 @@
 
           {permissionData && (
             <div className="max-w-7xl mx-auto px-2 sm:px-8 py-3 sm:py-6">
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mb-4 sm:mb-6" onClick={() => { if (window.innerWidth < 640) fetchData(); }}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mb-4 sm:mb-6" onClick={() => { if (window.innerWidth < 640) fetchData(); }}>
                 {stats.isAdmin || stats.role === '部门管理' || stats.role === '组别管理' ? (
                   <>
                     <StatCard title="项目" value={stats.totalProducts} subtitle={`${stats.completedProducts}已完成 · ${stats.avgProgress}%`} color="text-indigo-600" iconKey="chart" accent="indigo" />
@@ -8500,6 +8562,7 @@
               </div>
 
               {activeTab === 'products' && (
+                <div className="tab-content">
                 <ErrorBoundary name="项目管理">
                 <ProductOverview
                   objectives={permissionData.objectives}
@@ -8517,9 +8580,11 @@
                   currentUser={currentUser}
                 />
                 </ErrorBoundary>
+                </div>
               )}
 
               {activeTab === 'team' && (
+                <div className="tab-content">
                 <ErrorBoundary name="人员任务">
                 <TeamTaskOverview
                   members={permissionData.members}
@@ -8533,6 +8598,7 @@
                   onRefresh={fetchData}
                 />
                 </ErrorBoundary>
+                </div>
               )}
             </div>
           )}
@@ -8540,7 +8606,7 @@
           {/* 跨境电商要闻面板 */}
           {showNews && (
             <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={() => setShowNews(false)}>
-              <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[80vh] modal-enter overflow-hidden" onClick={e => e.stopPropagation()}>
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-5 py-4 flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-base">跨境电商要闻</h3>
