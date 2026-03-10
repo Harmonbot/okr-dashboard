@@ -5765,7 +5765,8 @@
           setCreateProjectGroup('');
           setCreateProjectOwner('');
           try { localStorage.removeItem('wz_data_v1'); } catch(e) {}
-          onRefresh?.();
+          // 延迟2秒后台刷新，给飞书API同步时间，不触发loading界面
+          setTimeout(() => onRefresh?.(true), 2000);
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
         }
@@ -6022,7 +6023,7 @@
             });
             if (res.ok) {
               showToast?.('封面已上传', 'success');
-              onRefresh?.();
+              setTimeout(() => onRefresh?.(true), 1500);
             } else {
               const errData = await res.json().catch(() => ({}));
               showToast?.('上传失败: ' + (errData.error || res.status), 'error');
