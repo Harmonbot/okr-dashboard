@@ -5562,8 +5562,8 @@
         setCreateSaving(false);
       };
 
-      // 获取可用的模版类型
-      const templateTypes = [...new Set(Object.values(templates).map(t => t.type).filter(Boolean))].sort();
+      // 获取可用的模版类型（仅父项目级别）
+      const templateTypes = [...new Set(Object.values(templates).filter(t => t.ownership === '父项目').map(t => t.type).filter(Boolean))].sort();
       // 获取部门列表
       const deptList = [...new Set(members.map(m => m.department).filter(Boolean))].sort();
 
