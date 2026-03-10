@@ -41,8 +41,9 @@
     body { background: var(--c-bg); color: var(--c-text); font-size: 14px; line-height: 1.47059; letter-spacing: -0.022em; }
     .gradient-bg { background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 50%, #007aff 100%); }
     .card-shadow { box-shadow: var(--shadow-sm); }
-    .card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); transition: box-shadow 0.25s cubic-bezier(.4,0,.2,1), transform 0.25s cubic-bezier(.4,0,.2,1); }
+    .card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); transition: box-shadow 0.25s cubic-bezier(.4,0,.2,1), transform 0.15s cubic-bezier(.4,0,.2,1); }
     .card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+    .card:active { transform: scale(0.98); box-shadow: var(--shadow-sm); }
     .card-flat { background: var(--c-surface); border-radius: var(--radius); border: 1px solid var(--c-border); }
     .stat-card { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); border: 1px solid var(--c-border); padding: 12px 10px; position: relative; overflow: hidden; }
     @media (min-width: 640px) { .stat-card { padding: 18px 20px; } }
@@ -104,7 +105,26 @@
     @media (pointer: coarse) {
       button, select, input[type="date"] { min-height: 44px; }
       .badge { padding: 4px 12px; }
+      .card:active { transform: scale(0.97); }
     }
+    /* 进度条渐变色 */
+    .progress-gradient-red { background: linear-gradient(90deg, #ef4444, #f97316); }
+    .progress-gradient-orange { background: linear-gradient(90deg, #f97316, #eab308); }
+    .progress-gradient-green { background: linear-gradient(90deg, #22c55e, #10b981); }
+    .progress-gradient-blue { background: linear-gradient(90deg, #3b82f6, #6366f1); }
+    .progress-gradient-done { background: linear-gradient(90deg, #10b981, #059669); }
+    /* 部门标题吸顶 */
+    .dept-sticky { position: sticky; top: 0; z-index: 10; background: var(--c-bg); padding-top: 8px; padding-bottom: 4px; }
+    /* 月份分组折叠 */
+    .month-collapse-content { overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s ease; }
+    .month-collapse-content.collapsed { max-height: 0 !important; opacity: 0; }
+    /* 空状态 */
+    .empty-state { padding: 48px 24px; text-align: center; }
+    /* 数字跳动 */
+    .stat-number { display: inline-block; transition: all 0.4s cubic-bezier(.4,0,.2,1); }
+    /* 筛选按钮点击态 */
+    .filter-btn { transition: all 0.15s ease; }
+    .filter-btn:active { transform: scale(0.93); }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -6105,115 +6125,85 @@
           <div className={`card overflow-hidden relative ${isOverdue ? 'card-overdue' : ''} ${status === '已完成' && progress >= 100 ? 'card-done' : ''}`}
             style={{ borderLeftWidth: isOverdue ? '0' : '3px', borderLeftColor: isOverdue ? 'transparent' : status === '已完成' ? 'var(--c-success)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
           >
-            {/* 逾期倒计时条 */}
-            {isOverdue && (
-              <div className="h-1 w-full" style={{background:'linear-gradient(90deg, #ef4444, #f97316)'}} />
-            )}
-            {/* 封面图区域 */}
-            <div className="relative w-full h-14 sm:h-20 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden cursor-pointer group"
-              onClick={() => setSelectedProduct(product)}
-            >
-              {product.coverImage ? (
-                <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <span className="text-2xl opacity-30">{isParent ? '📂' : product.image}</span>
-                </div>
-              )}
-              {/* 上传封面按钮（仅负责人可见） */}
-              {canEdit && (
-                <button
-                  className="absolute bottom-2 right-2 bg-black/50 hover:bg-black/70 text-white text-[10px] px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
-                  onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}
-                  title="上传封面图片"
-                >
-                  {uploadingCover ? '上传中...' : '📷 换封面'}
-                </button>
-              )}
-              <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
-              {/* 状态 + 优先级 叠加层 */}
-              <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium backdrop-blur-sm ${
-                  status === '已完成' ? 'bg-green-500/80 text-white' : status === '进行中' ? 'bg-blue-500/80 text-white' : 'bg-gray-500/60 text-white'
-                }`}>{status}</span>
-                {product.priority && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold backdrop-blur-sm" style={{background: priColor.bg + 'dd', color: priColor.text}}>
-                    {product.priority}
-                  </span>
-                )}
-              </div>
-              {/* 进度圆环 */}
-              <div className="absolute top-1.5 right-1.5 w-8 h-8 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <span className={`text-[10px] font-bold ${progress >= 100 ? 'text-green-300' : 'text-white'}`}>{progress}%</span>
-              </div>
-            </div>
+            {isOverdue && <div className="h-0.5 w-full" style={{background:'linear-gradient(90deg, #ef4444, #f97316)'}} />}
+            <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
-            {/* 卡片信息区 */}
-            <div className="px-2.5 py-2 cursor-pointer" onClick={() => setSelectedProduct(product)}>
-              {/* 项目名称 */}
-              <div className="flex items-start justify-between gap-1.5 mb-1">
-                <div className="font-semibold text-xs text-gray-800 leading-tight line-clamp-2 flex-1">
-                  {isParent ? '📂 ' : ''}{product.name}
-                </div>
+            {/* 封面图（仅有图时显示，紧凑高度） */}
+            {product.coverImage && (
+              <div className="relative w-full h-16 sm:h-20 overflow-hidden cursor-pointer group" onClick={() => setSelectedProduct(product)}>
+                <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
                 {canEdit && (
-                  <button
-                    className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setEditingProductId(showEditPanel ? null : product.id); }}
-                    title="编辑项目信息"
-                  >
-                    <span className="text-xs">✏️</span>
+                  <button className="absolute bottom-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}>
+                    {uploadingCover ? '...' : '📷'}
                   </button>
                 )}
               </div>
-              {/* 标签 */}
-              <div className="flex items-center gap-1 flex-wrap mb-1.5">
-                <span className="badge badge-gray">{product.templateType || product.category || '未分类'}</span>
-                {isParent && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-50 text-violet-600">{childProducts.length} 子项目</span>
+            )}
+
+            {/* 主内容区 */}
+            <div className="px-3 py-2.5 cursor-pointer" onClick={() => setSelectedProduct(product)}>
+              {/* 第1行：状态 + 优先级 + deadline + 剩余天数 */}
+              <div className="flex items-center gap-1.5 mb-1.5 text-[10px]">
+                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                  status === '已完成' ? 'bg-green-100 text-green-700' : status === '进行中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                }`}>{status}</span>
+                {product.priority && (
+                  <span className="font-semibold" style={{color: priColor.text}}>{product.priority}</span>
+                )}
+                {product.targetDate && (
+                  <>
+                    <span className="text-gray-300">·</span>
+                    <span className="text-gray-400">{product.targetDate.substring(5)}</span>
+                    {status !== '已完成' && progress < 100 && daysRemaining !== null && (
+                      <span className={`font-medium ${isOverdue ? 'text-red-500' : daysRemaining <= 7 ? 'text-orange-500' : 'text-gray-400'}`}>
+                        {isOverdue ? `逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? '今天' : `${daysRemaining}天`}
+                      </span>
+                    )}
+                  </>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                  <span className={`font-bold text-xs ${progress >= 100 ? 'text-green-600' : progress >= 50 ? 'text-blue-600' : 'text-gray-500'}`}>{progress}%</span>
+                  {canEdit && !product.coverImage && (
+                    <button className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-gray-300 hover:text-gray-500 text-[10px]"
+                      onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }} title="上传封面">📷</button>
+                  )}
+                  {canEdit && (
+                    <button className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-gray-300 hover:text-gray-500 text-[10px]"
+                      onClick={(e) => { e.stopPropagation(); setEditingProductId(showEditPanel ? null : product.id); }} title="编辑">✏️</button>
+                  )}
+                </div>
+              </div>
+
+              {/* 第2行：项目名称 */}
+              <div className="font-semibold text-[13px] text-gray-800 leading-snug line-clamp-2 mb-1.5">
+                {isParent ? '📂 ' : ''}{product.name}
+              </div>
+
+              {/* 第3行：标签 + 负责人 */}
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mb-2">
+                <span className="px-1.5 py-0.5 rounded bg-gray-50 text-gray-500">{product.templateType || '未分类'}</span>
+                {isParent && <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-500">{childProducts.length}子项目</span>}
+                {product.ownerName && (
+                  <span className="flex items-center gap-0.5 ml-auto">
+                    {ownerMember?.avatarUrl ? (
+                      <img src={ownerMember.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] bg-purple-50 text-purple-500">{product.ownerName.charAt(0)}</span>
+                    )}
+                    <span>{product.ownerName}</span>
+                  </span>
                 )}
               </div>
-              {/* Deadline 日期 */}
-              {product.targetDate && (
-                <div className={`flex items-center gap-1 text-[10px] mb-1.5 ${
-                  isOverdue ? 'text-red-500 font-semibold' : daysRemaining !== null && daysRemaining <= 7 ? 'text-orange-500' : 'text-gray-400'
-                }`}>
-                  <span>📅</span>
-                  <span>{product.targetDate}</span>
-                  {status !== '已完成' && progress < 100 && daysRemaining !== null && (
-                    <span className={`ml-1 px-1.5 py-0 rounded-full text-[9px] ${
-                      isOverdue ? 'bg-red-100 text-red-600' : daysRemaining <= 3 ? 'bg-orange-100 text-orange-600' : daysRemaining <= 7 ? 'bg-amber-50 text-amber-600' : ''
-                    }`}>
-                      {isOverdue ? `逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? '今天截止' : `剩${daysRemaining}天`}
-                    </span>
-                  )}
+
+              {/* 第4行：进度条 */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{background:'var(--c-border)'}}>
+                  <div className={`h-full rounded-full progress-animate ${
+                    progress >= 100 ? 'progress-gradient-done' : progress >= 70 ? 'progress-gradient-green' : progress >= 30 ? 'progress-gradient-blue' : progress > 0 ? 'progress-gradient-orange' : 'bg-gray-200'
+                  }`} style={{ width: `${Math.max(progress, 2)}%` }} />
                 </div>
-              )}
-              {/* 进度条 */}
-              <div className="h-1 rounded-full overflow-hidden mb-2" style={{background:'var(--c-border)'}}>
-                <div className={`h-full rounded-full progress-animate ${progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }} />
-              </div>
-              {/* 底部信息 */}
-              <div className="flex items-center justify-between text-[11px]" style={{color:'var(--c-text-muted)'}}>
-                <div className="flex items-center gap-2">
-                  <span><Icon name="clipboard" size={11} /> {totalCompletedCount}/{totalTaskCount}</span>
-                  {product.ownerName && (
-                    <span className="flex items-center gap-1">
-                      {ownerMember?.avatarUrl ? (
-                        <img src={ownerMember.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
-                      ) : (
-                        <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px]" style={{background:'var(--c-accent-bg)', color:'var(--c-accent)'}}>{product.ownerName.charAt(0)}</span>
-                      )}
-                      {product.ownerName}
-                    </span>
-                  )}
-                </div>
-                {status === '已完成' ? (
-                  <span className="badge badge-green">✓ 完成</span>
-                ) : isOverdue ? (
-                  <span className="badge badge-red">逾期 {Math.abs(daysRemaining)}天</span>
-                ) : daysRemaining !== null ? (
-                  <span className="text-[11px]" style={{color:'var(--c-text-muted)'}}>剩余 {daysRemaining} 天</span>
-                ) : null}
+                <span className="text-[10px] text-gray-400 flex-shrink-0">{totalCompletedCount}/{totalTaskCount}任务</span>
               </div>
             </div>
 
@@ -6390,7 +6380,7 @@
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}
-                  className={`px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all ${
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium filter-btn ${
                     filterStatus === status ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                   }`}
                   style={filterStatus === status ? {background:'var(--c-accent)'} : {background:'var(--c-bg)'}}
@@ -6404,7 +6394,7 @@
                   <button
                     key={pri}
                     onClick={() => setFilterPriority(pri)}
-                    className={`px-2 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all ${
+                    className={`px-2 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium filter-btn ${
                       filterPriority === pri ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}
                     style={filterPriority === pri ? {background: pri === 'all' ? 'var(--c-accent)' : (priorityColorMap[pri]?.text || 'var(--c-accent)')} : {background:'var(--c-bg)'}}
@@ -6722,7 +6712,7 @@
               const dc = deptColors[dept] || defaultDeptColor;
               allSections.push(
                 <div key={dept} className="mb-6">
-                  <div className="flex items-center gap-2 mb-3 pb-2" style={{borderBottom: `2px solid ${dc.border}`}}>
+                  <div className="dept-sticky flex items-center gap-2 mb-3 pb-2" style={{borderBottom: `2px solid ${dc.border}`}}>
                     <span className="text-lg">{dc.icon}</span>
                     <span className="text-sm font-bold" style={{color: dc.text}}>{dept}</span>
                     <span className="badge" style={{background: dc.bg, color: dc.text}}>{deptMap[dept].length} 个项目</span>
@@ -6746,7 +6736,15 @@
             }
 
             return allSections.length > 0 ? allSections : (
-              <div className="text-center text-gray-400 py-12">暂无匹配的项目</div>
+              <div className="empty-state">
+                <div className="text-4xl mb-3 opacity-40">📋</div>
+                <div className="text-gray-400 text-sm mb-1">暂无匹配的项目</div>
+                <div className="text-gray-300 text-xs">
+                  {filterGroup !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' || searchProject
+                    ? '试试调整筛选条件'
+                    : '点击右上角「+ 新建项目」创建第一个项目'}
+                </div>
+              </div>
             );
           })()}
 
@@ -7730,14 +7728,14 @@
       const ac = accent || 'purple';
       const iconFn = StatIcons[iconKey] || StatIcons.target;
       return (
-        <div className={`stat-card ${ac} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`} onClick={onClick}>
+        <div className={`stat-card ${ac} ${onClick ? 'cursor-pointer hover:shadow-md active:scale-95 transition-all' : ''}`} onClick={onClick}>
           <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-wider" style={{color:'var(--c-text-muted)'}}>{title}</div>
-              <div className={`text-2xl font-bold mt-1.5 ${color}`}>{value}</div>
-              {subtitle && <div className="text-[11px] mt-0.5" style={{color:'var(--c-text-muted)'}}>{subtitle}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider truncate" style={{color:'var(--c-text-muted)'}}>{title}</div>
+              <div className={`text-xl sm:text-2xl font-bold mt-1 sm:mt-1.5 stat-number ${color}`}>{value}</div>
+              {subtitle && <div className="text-[10px] sm:text-[11px] mt-0.5 truncate" style={{color:'var(--c-text-muted)'}}>{subtitle}</div>}
             </div>
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background: iconBg[ac]}}>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 ml-2" style={{background: iconBg[ac]}}>
               {iconFn(iconColors[ac])}
             </div>
           </div>
@@ -8660,8 +8658,9 @@
             </div>
           )}
 
-          <div className="text-center py-5 text-xs" style={{color:'var(--c-text-muted)'}}>
-            微铸@2026
+          <div className="text-center py-5 text-[10px] space-y-0.5" style={{color:'var(--c-text-muted)'}}>
+            <div>微铸项目管理 © 2026</div>
+            {lastUpdate && <div className="opacity-60">数据更新: {lastUpdate} · 每5分钟自动刷新</div>}
           </div>
         </div>
         </UserContext.Provider>
