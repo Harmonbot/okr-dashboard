@@ -6121,21 +6121,21 @@
             {isOverdue && <div className="h-0.5 w-full" style={{background:'linear-gradient(90deg, #ef4444, #f97316)'}} />}
             <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
-            {/* 封面图（仅有图时显示，紧凑高度） */}
-            {product.coverImage && (
-              <div className="relative w-full h-16 sm:h-20 overflow-hidden cursor-pointer group" onClick={() => setSelectedProduct(product)}>
-                <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
-                {canEdit && (
-                  <button className="absolute bottom-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}>
-                    {uploadingCover ? '...' : '📷'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 主内容区 */}
-            <div className="px-3 py-2.5 cursor-pointer" onClick={() => setSelectedProduct(product)}>
+            {/* 主内容区：有封面时左图右文，无封面时纯文字 */}
+            <div className={`px-3 py-2.5 cursor-pointer ${product.coverImage ? 'flex gap-3' : ''}`} onClick={() => setSelectedProduct(product)}>
+              {/* 左侧封面缩略图 */}
+              {product.coverImage && (
+                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden flex-shrink-0 group">
+                  <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
+                  {canEdit && (
+                    <button className="absolute inset-0 bg-black/40 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}>
+                      {uploadingCover ? '...' : '📷'}
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
               {/* 第1行：状态 + 优先级 + deadline + 剩余天数 */}
               <div className="flex items-center gap-1.5 mb-1.5 text-[10px]">
                 <span className={`px-1.5 py-0.5 rounded font-medium ${
@@ -6201,6 +6201,7 @@
                   }`} style={{ width: `${Math.max(progress, 2)}%` }} />
                 </div>
                 <span className="text-[10px] text-gray-400 flex-shrink-0">{totalCompletedCount}/{totalTaskCount}任务</span>
+              </div>
               </div>
             </div>
 
