@@ -7869,41 +7869,78 @@
         const fetchNews = async () => {
           // 先检查缓存
           try {
-            const cached = localStorage.getItem('wz_news_v1');
+            const cached = localStorage.getItem('wz_news_v2');
             if (cached) {
               const { data: cachedNews, t: cachedTs } = JSON.parse(cached);
-              if (cachedNews && Date.now() - cachedTs < 2 * 60 * 60 * 1000) { // 2小时缓存
+              if (cachedNews?.length > 0 && Date.now() - cachedTs < 2 * 60 * 60 * 1000) {
                 setNewsData(cachedNews);
                 return;
               }
             }
           } catch(e) {}
           
+          const allNews = [];
+          
+          // 方案1：36kr 跨境电商 RSS
           try {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1000,
-                tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-                messages: [{
-                  role: 'user',
-                  content: '搜索今天的跨境电商行业要闻，包括亚马逊、TikTok Shop、Temu、SHEIN等平台动态，政策变化，物流更新等。返回JSON格式，不要Markdown：[{"title":"标题","summary":"一句话摘要","source":"来源"}]，最多6条，中文回复。只返回JSON数组，不要其他内容。'
-                }]
-              })
-            });
-            const data = await res.json();
-            const textContent = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-            // 尝试解析 JSON
-            const jsonMatch = textContent.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              const news = JSON.parse(jsonMatch[0]);
-              setNewsData(news.slice(0, 6));
-              try { localStorage.setItem('wz_news_v1', JSON.stringify({ data: news.slice(0, 6), t: Date.now() })); } catch(e) {}
+            const rssUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://36kr.com/newsflashes');
+            const res = await fetch(rssUrl, { signal: AbortSignal.timeout(8000) });
+            const html = await res.text();
+            // 提取快讯标题（简单正则）
+            const matches = [...html.matchAll(/<a[^>]*class="[^"]*newsflash-item[^"]*"[^>]*>[\s\S]*?<\/a>/gi)];
+            if (matches.length === 0) {
+              // 备用：提取所有看起来像新闻的标题
+              const titleMatches = [...html.matchAll(/"title":"([^"]{10,80})"/g)];
+              titleMatches.forEach(m => {
+                const t = m[1];
+                if (t.match(/跨境|电商|亚马逊|Amazon|TikTok|Temu|SHEIN|外贸|海外|出口|关税|物流|独立站/i)) {
+                  allNews.push({ title: t, summary: '', source: '36氪' });
+                }
+              });
             }
-          } catch (e) {
-            console.error('News fetch error:', e);
+          } catch(e) { console.log('36kr fetch failed:', e.message); }
+          
+          // 方案2：雨果跨境 RSS
+          try {
+            const rssUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.cifnews.com/');
+            const res2 = await fetch(rssUrl2, { signal: AbortSignal.timeout(8000) });
+            const html2 = await res2.text();
+            const titleMatches2 = [...html2.matchAll(/"title":"([^"]{8,100})"/g)];
+            titleMatches2.slice(0, 10).forEach(m => {
+              allNews.push({ title: m[1], summary: '', source: '雨果跨境' });
+            });
+          } catch(e) { console.log('cifnews fetch failed:', e.message); }
+
+          // 方案3：Google News 跨境电商 (via RSS)
+          try {
+            const gUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://news.google.com/rss/search?q=跨境电商&hl=zh-CN&gl=CN&ceid=CN:zh-Hans');
+            const res3 = await fetch(gUrl, { signal: AbortSignal.timeout(8000) });
+            const xml = await res3.text();
+            const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<\/item>/g)];
+            items.slice(0, 8).forEach(m => {
+              const title = m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+              const source = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+              if (title && title.length > 5) {
+                allNews.push({ title, summary: '', source });
+              }
+            });
+          } catch(e) { console.log('Google News fetch failed:', e.message); }
+          
+          // 去重 + 限制数量
+          const seen = new Set();
+          const unique = allNews.filter(n => {
+            const key = n.title.substring(0, 20);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }).slice(0, 8);
+          
+          if (unique.length > 0) {
+            setNewsData(unique);
+            try { localStorage.setItem('wz_news_v2', JSON.stringify({ data: unique, t: Date.now() })); } catch(e) {}
+          } else {
+            // 所有源都失败时显示提示
+            setNewsData([{ title: '暂无法获取新闻数据', summary: '请检查网络连接，或稍后重试', source: '' }]);
           }
         };
         fetchNews();
@@ -8543,7 +8580,7 @@
                     </div>
                   )}
                   <div className="text-center text-[10px] text-gray-300 mt-4 pt-3 border-t border-gray-100">
-                    由 AI 智能搜索生成 · 仅供参考 · 2小时缓存更新
+                    聚合自 Google News · 36氪 · 雨果跨境 · 2小时缓存更新
                   </div>
                 </div>
               </div>
