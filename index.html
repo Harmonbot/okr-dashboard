@@ -1771,10 +1771,14 @@
       // 检查当前用户是否是任务负责人
       const isTaskAssignee = (task) => {
         if (!currentUser) return false;
-        // 比较多种方式：open_id、中文名、英文名
-        return task.assignee === currentUser.open_id ||
-               task.assigneeName === currentUser.name ||
-               task.assigneeName === currentUser.en_name;
+        // 任务负责人
+        if (task.assignee === currentUser.open_id || task.assigneeName === currentUser.name || task.assigneeName === currentUser.en_name) return true;
+        // 管理员/总经理可以操作所有任务
+        const viewerMember = members?.find(m => m.id === currentUser.open_id || m.name === currentUser.name);
+        if (viewerMember?.permRole === '管理员' || viewerMember?.permRole === '总经理') return true;
+        // 项目负责人也可以操作该项目下的任务
+        if (task.productId && product?.ownerId === currentUser.open_id) return true;
+        return false;
       };
       
       // 筛选该节点的任务
@@ -7293,11 +7297,10 @@
                           <span className="truncate flex-1 text-gray-700">{task.name}</span>
                           {product && <span className="text-[10px] text-gray-400 truncate max-w-[60px]">{product.name}</span>}
                           {timeTag && <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap ${timeTag.cls}`}>{timeTag.text}</span>}
-                          {/* 快捷操作按钮（仅任务负责人或管理员） */}
+                          {/* 快捷操作按钮（严格仅任务负责人本人） */}
                           {(() => {
                             const isMyTask = currentUser && (task.assignee === currentUser.open_id || task.assigneeName === currentUser.name);
-                            const isAdminUser = currentUser && members.some(m => (m.id === currentUser.open_id || m.name === currentUser.name) && (m.permRole === '管理员' || m.permRole === '总经理'));
-                            if (!isMyTask && !isAdminUser) return null;
+                            if (!isMyTask) return null;
                             return (
                               <>
                                 {task.status === '待开始' && (
@@ -7364,11 +7367,11 @@
           
           {/* 完成任务弹窗 - 需要上传文件 */}
           {completeTask && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setCompleteTask(null); }}>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setCompleteTask(null); setOutputLink(''); }}>
               <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-gray-800">✅ 完成任务</h3>
-                  <button onClick={() => { setCompleteTask(null); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+                  <button onClick={() => { setCompleteTask(null); setOutputLink(''); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
                 </div>
                 
                 <div className="bg-gray-50 rounded-xl p-3 mb-4">
@@ -7379,27 +7382,46 @@
                   </div>
                 </div>
                 
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    🔗 粘贴交付链接
-                  </label>
-                  <input
-                    type="url"
-                    value={outputLink}
-                    onChange={e => setOutputLink(e.target.value)}
-                    className="w-full px-3 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-green-300 outline-none"
-                    placeholder="粘贴飞书文档链接、网盘地址等..."
-                    autoFocus
-                  />
-                </div>
-                
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => { setCompleteTask(null); setOutputLink(''); }}
-                    className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-colors"
-                  >
-                    取消
-                  </button>
+                {/* 权限验证：只有任务负责人本人可以完成 */}
+                {(() => {
+                  const isMyTask = currentUser && (completeTask.assignee === currentUser.open_id || completeTask.assigneeName === currentUser.name);
+                  if (!isMyTask) {
+                    return (
+                      <div className="text-center py-4">
+                        <div className="text-sm text-gray-500 mb-2">此任务只能由负责人本人完成</div>
+                        <div className="flex items-center justify-center gap-2 text-sm font-medium text-gray-700">
+                          仅 <span className="text-purple-600">{completeTask.assigneeName || '任务负责人'}</span> 可操作
+                        </div>
+                        <button onClick={() => { setCompleteTask(null); setOutputLink(''); }}
+                          className="mt-4 px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm">
+                          我知道了
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          🔗 粘贴交付链接
+                        </label>
+                        <input
+                          type="url"
+                          value={outputLink}
+                          onChange={e => setOutputLink(e.target.value)}
+                          className="w-full px-3 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-green-300 outline-none"
+                          placeholder="粘贴飞书文档链接、网盘地址等..."
+                          autoFocus
+                        />
+                      </div>
+                      
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => { setCompleteTask(null); setOutputLink(''); }}
+                          className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-colors"
+                        >
+                          取消
+                        </button>
                   <button
                     onClick={async () => {
                       if (!outputLink.trim()) {
@@ -7444,6 +7466,9 @@
                     )}
                   </button>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
