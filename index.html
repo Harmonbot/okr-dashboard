@@ -510,11 +510,7 @@
               try {
                 const coverField = r.fields['封面图片'];
                 if (coverField && Array.isArray(coverField) && coverField.length > 0) {
-                  const item = coverField[0];
-                  // 优先用飞书临时下载URL（更快，不经过后端）
-                  if (item?.tmp_url) return item.tmp_url;
-                  // 回退到后端代理
-                  const token = item?.file_token;
+                  const token = coverField[0]?.file_token;
                   if (token) return API_BASE + '/api/file?file_token=' + encodeURIComponent(token) + '&file_name=cover';
                 }
               } catch(e) { /* ignore */ }
@@ -2850,9 +2846,14 @@
                   const preTpl = Object.values(templates).find(t => t.name === preName);
                   if (!preTpl) return false;
                   const preChild = siblingProducts.find(s => s.templateType === preTpl.type);
-                  if (!preChild) return true;
+                  if (!preChild) return false; // 找不到对应子项目 → 不阻止跳过
+                  // 如果前置子线没有任何任务 → 不阻止（可能该子线不需要执行）
+                  const preChildTasks = tasks.filter(t => t.productId === preChild.id);
+                  if (preChildTasks.length === 0) return false;
+                  // 有任务但未全部完成 → 阻止
                   const preProgress = calcProjectProgress(preChild, allNodes, templates, tasks);
-                  return preChild.status !== '已完成' && preProgress < 100;
+                  const preStatus = calcProjectStatus(preChild, tasks, allNodes, templates, products);
+                  return preStatus !== '已完成' && preProgress < 100;
                 });
                 if (unfinishedPrereqs.length > 0) {
                   showToast?.(`前置子线「${unfinishedPrereqs.join('、')}」尚未完成，无法跳过当前节点`, 'error');
@@ -3772,9 +3773,12 @@
                     const preTpl = Object.values(templates).find(t => t.name === preName);
                     if (!preTpl) return false;
                     const preChild = siblingProducts.find(s => s.templateType === preTpl.type);
-                    if (!preChild) return true; // 前置子线未创建
+                    if (!preChild) return false; // 前置子线未创建 → 不阻止
+                    const preChildTasks = tasks.filter(t => t.productId === preChild.id);
+                    if (preChildTasks.length === 0) return false; // 无任务 → 不阻止
                     const preProgress = calcProjectProgress(preChild, allNodes, templates, tasks);
-                    return preChild.status !== '已完成' && preProgress < 100;
+                    const preStatus = calcProjectStatus(preChild, tasks, allNodes, templates, products);
+                    return preStatus !== '已完成' && preProgress < 100;
                   });
                   if (unfinishedPrereqs.length > 0) {
                     pipelineBlocked = { message: `前置子线「${unfinishedPrereqs.join('、')}」尚未完成`, prereqs: unfinishedPrereqs };
@@ -6224,7 +6228,7 @@
               {/* 左侧封面缩略图 */}
               {product.coverImage && (
                 <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden flex-shrink-0 group bg-gray-100">
-                  <img src={product.coverImage} alt="" className="w-full h-full object-contain" />
+                  <img src={product.coverImage} alt="" loading="lazy" className="w-full h-full object-contain" />
                   {canEdit && (
                     <button className="absolute inset-0 bg-black/40 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}>
