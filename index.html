@@ -5862,17 +5862,20 @@
         if (filterPriority !== 'all') {
           list = list.filter(p => p.priority === filterPriority);
         }
-        if (filterStatus !== 'all') {
-          if (filterStatus === '逾期') {
-            list = list.filter(p => {
-              if (getAutoStatus(p) === '已完成') return false;
-              if (getAutoProgress(p) >= 100) return false;
-              if (!p.targetDate) return false;
-              return new Date(p.targetDate) < new Date();
-            });
-          } else {
-            list = list.filter(p => getAutoStatus(p) === filterStatus);
-          }
+        if (filterStatus === 'all') {
+          // 默认隐藏已完成项目（进度>=100 或状态=已完成）
+          list = list.filter(p => getAutoStatus(p) !== '已完成' && getAutoProgress(p) < 100);
+        } else if (filterStatus === '逾期') {
+          list = list.filter(p => {
+            if (getAutoStatus(p) === '已完成') return false;
+            if (getAutoProgress(p) >= 100) return false;
+            if (!p.targetDate) return false;
+            return new Date(p.targetDate) < new Date();
+          });
+        } else if (filterStatus === '已完成') {
+          list = list.filter(p => getAutoStatus(p) === '已完成' || getAutoProgress(p) >= 100);
+        } else {
+          list = list.filter(p => getAutoStatus(p) === filterStatus);
         }
         return list;
       })();
@@ -6312,7 +6315,7 @@
                   }`}
                   style={filterStatus === status ? {background:'var(--c-accent)'} : {background:'var(--c-bg)'}}
                 >
-                  {status === 'all' ? `全部(${products.length})` : status}
+                  {status === 'all' ? `进行中(${products.filter(p => !p.parentId && getAutoStatus(p) !== '已完成' && getAutoProgress(p) < 100).length})` : status}
                 </button>
               ))}
               <span className="w-px h-4 bg-gray-200 mx-0.5 hidden sm:block" />
