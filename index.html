@@ -759,7 +759,8 @@
             parentTemplate: parentTpl || '',
             cycleDays: r.fields['预计周期(天)'] || 0,
             prerequisiteNames: prereqNames.filter(Boolean),
-            participantRoles: r.fields['参与角色'] || []
+            participantRoles: r.fields['参与角色'] || [],
+            allowedDepts: r.fields['模版使用部门'] || []
           };
         });
         // 将 prerequisiteNames 中的 record_id 转换为模板名称
@@ -5949,8 +5950,25 @@
         setCreateSaving(false);
       };
 
-      // 获取可用的模版类型（仅父项目级别）
-      const templateTypes = [...new Set(Object.values(templates).filter(t => t.ownership === '父项目').map(t => t.type).filter(Boolean))].sort();
+      // 获取可用的模版类型（仅父项目级别，按用户部门过滤）
+      const currentMember = members.find(m => m.id === currentUser?.open_id || m.name === currentUser?.name);
+      const myDeptForTpl = currentMember?.department || '';
+      const myPermRoleForTpl = currentMember?.permRole || '组员';
+      const isAdminForTpl = myPermRoleForTpl === '管理员' || myPermRoleForTpl === '总经理';
+      const templateTypes = [...new Set(
+        Object.values(templates)
+          .filter(t => {
+            if (t.ownership !== '父项目') return false;
+            if (!t.type) return false;
+            // 管理员/总经理可以看到所有模板
+            if (isAdminForTpl) return true;
+            // 没有设置使用部门的模板，所有人都能用
+            if (!t.allowedDepts || t.allowedDepts.length === 0) return true;
+            // 匹配当前用户部门
+            return t.allowedDepts.includes(myDeptForTpl);
+          })
+          .map(t => t.type)
+      )].sort();
       // 获取部门列表和部门→组别映射
       const deptList = [...new Set(members.map(m => m.department).filter(Boolean))].sort();
       const deptGroupMap = {};
