@@ -1,7 +1,11 @@
-// api/lark.js - 优化版：并行获取 + 自动分页 + Token缓存
+// api/lark.js - 优化版：并行获取 + 自动分页 + Token缓存 + 新闻聚合
 
 // Token 缓存（Vercel 同实例复用）
 let tokenCache = { token: null, expiresAt: 0 };
+
+// 新闻缓存（2小时）
+let newsCache = { data: null, ts: 0 };
+const NEWS_CACHE_TTL = 2 * 60 * 60 * 1000;
 
 async function getTenantToken(appId, appSecret) {
   if (tokenCache.token && Date.now() < tokenCache.expiresAt) {
@@ -51,6 +55,67 @@ async function getAllRecords(token, appToken, tableId) {
   return allRecords;
 }
 
+// ===== 新闻聚合功能 =====
+async function fetchNews() {
+  // 返回缓存
+  if (newsCache.data && Date.now() - newsCache.ts < NEWS_CACHE_TTL) {
+    return { data: newsCache.data, cached: true };
+  }
+
+  const allNews = [];
+  const queries = [
+    { q: '跨境电商', label: '跨境电商' },
+    { q: '亚马逊+卖家', label: '亚马逊' },
+    { q: 'TikTok+Shop+OR+Temu+OR+SHEIN+电商', label: 'TikTok/Temu/SHEIN' },
+  ];
+
+  for (const { q } of queries) {
+    try {
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+      const gRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const xml = await gRes.text();
+      const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/g)];
+      items.slice(0, 6).forEach(m => {
+        const title = m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const source = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const pubDate = m[3]?.trim() || '';
+        if (title && title.length > 5) {
+          allNews.push({ title, summary: '', source, time: pubDate });
+        }
+      });
+    } catch (e) {
+      console.log(`News query "${q}" failed:`, e.message);
+    }
+  }
+
+  // 去重
+  const seen = new Set();
+  const unique = allNews.filter(n => {
+    const key = n.title.substring(0, 25);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10);
+
+  // 格式化相对时间
+  const now = new Date();
+  unique.forEach(n => {
+    if (n.time) {
+      try {
+        const d = new Date(n.time);
+        const diffH = Math.floor((now - d) / (1000 * 60 * 60));
+        n.timeAgo = diffH < 1 ? '刚刚' : diffH < 24 ? `${diffH}小时前` : `${Math.floor(diffH / 24)}天前`;
+      } catch (e) { n.timeAgo = ''; }
+    }
+  });
+
+  if (unique.length > 0) {
+    newsCache = { data: unique, ts: Date.now() };
+  }
+
+  return { data: unique, cached: false };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -59,6 +124,18 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // ===== 新闻路由：?action=news =====
+  if (req.query.action === 'news') {
+    try {
+      const result = await fetchNews();
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200');
+      return res.status(200).json({ success: true, ...result, count: result.data.length });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message, data: [] });
+    }
+  }
+
+  // ===== 原有飞书数据路由 =====
   const { LARK_APP_ID, LARK_APP_SECRET } = process.env;
   if (!LARK_APP_ID || !LARK_APP_SECRET) {
     return res.status(500).json({ error: '缺少飞书应用配置' });
