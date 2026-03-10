@@ -919,6 +919,63 @@
       return count;
     };
 
+    // 工期健康度：关键路径剩余工期 vs 剩余可用工作日
+    // 返回 { health: 'ok'|'tight'|'risk'|'overdue', criticalDays, remainingDays, ratio }
+    const calcWorkloadHealth = (product, templates, products, tasks) => {
+      if (!product.targetDate || !product.childIds?.length) return null;
+      
+      const childProducts = products.filter(p => product.childIds.includes(p.id));
+      if (childProducts.length === 0) return null;
+      
+      // 找到父模板名
+      const parentTplId = Object.keys(templates).find(id => templates[id].type === product.templateType && templates[id].ownership === '父项目');
+      const parentTplName = parentTplId ? templates[parentTplId].name : '';
+      const childTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
+      if (childTpls.length === 0) return null;
+      
+      // 拓扑排序计算关键路径（考虑并行取最大值）
+      const prereqMap = {};
+      childTpls.forEach(t => { prereqMap[t.name] = t.prerequisiteNames || []; });
+      const getDepth = (name, visited = new Set()) => {
+        if (visited.has(name)) return 0; visited.add(name);
+        const deps = prereqMap[name] || [];
+        return deps.length === 0 ? 0 : 1 + Math.max(...deps.map(d => getDepth(d, new Set(visited))));
+      };
+      const lineDepths = {};
+      childTpls.forEach(t => { lineDepths[t.name] = getDepth(t.name); });
+      const maxDepth = Math.max(...Object.values(lineDepths), 0);
+      
+      // 按层计算关键路径总工期（每层取最大 cycleDays，考虑已完成的扣减）
+      let totalCriticalDays = 0;
+      for (let d = 0; d <= maxDepth; d++) {
+        const linesAtDepth = childTpls.filter(t => lineDepths[t.name] === d);
+        // 找到该层各子线对应的子项目，计算剩余工期
+        const layerMaxDays = Math.max(...linesAtDepth.map(tpl => {
+          const childProd = childProducts.find(cp => cp.templateType === tpl.type);
+          const childProgress = childProd ? calcProjectProgress(childProd, [], templates, tasks) : 0;
+          const fullDays = tpl.cycleDays || 0;
+          // 已完成的比例扣减
+          const remainDays = Math.ceil(fullDays * (1 - childProgress / 100));
+          return remainDays;
+        }), 0);
+        totalCriticalDays += layerMaxDays;
+      }
+      
+      // 剩余可用工作日
+      const remainingWorkDays = getWorkingDaysBetween(new Date(), new Date(product.targetDate));
+      
+      if (remainingWorkDays <= 0 && totalCriticalDays > 0) {
+        return { health: 'overdue', criticalDays: totalCriticalDays, remainingDays: remainingWorkDays, ratio: 0 };
+      }
+      if (totalCriticalDays <= 0) {
+        return { health: 'ok', criticalDays: 0, remainingDays: remainingWorkDays, ratio: 999 };
+      }
+      
+      const ratio = remainingWorkDays / totalCriticalDays;
+      const health = ratio >= 1.2 ? 'ok' : ratio >= 0.8 ? 'tight' : 'risk';
+      return { health, criticalDays: totalCriticalDays, remainingDays: remainingWorkDays, ratio };
+    };
+
     // 计算子项目的时间线：每个节点的预计开始/截止日期
     // 起点 = 父项目的开始日期（产品立项完成即T=0）
     const calcSubProjectTimeline = (child, parentStartDate, allNodes, templates) => {
@@ -6070,6 +6127,9 @@
           return me && (me.permRole === '管理员' || me.permRole === '总经理');
         })();
         const canEdit = isOwner || isAdmin;
+        
+        // 工期健康度（仅父项目）
+        const workloadHealth = isParent ? calcWorkloadHealth(product, templates, products, tasks) : null;
 
         // 上传封面
         const [uploadingCover, setUploadingCover] = React.useState(false);
@@ -6146,13 +6206,12 @@
                 )}
                 {product.targetDate && (
                   <>
-                    <span className="text-gray-300">·</span>
-                    <span className={`px-1.5 py-0.5 rounded font-medium ${
-                      isOverdue ? 'bg-red-50 text-red-600' : daysRemaining !== null && daysRemaining <= 3 ? 'bg-red-50 text-red-500' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-orange-50 text-orange-600' : daysRemaining !== null && daysRemaining <= 14 ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-500'
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                      isOverdue ? 'bg-red-500 text-white' : daysRemaining !== null && daysRemaining <= 3 ? 'bg-red-100 text-red-700' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-orange-100 text-orange-700' : daysRemaining !== null && daysRemaining <= 14 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
                     }`}>
                       {product.targetDate.substring(5)}
                       {status !== '已完成' && progress < 100 && daysRemaining !== null && (
-                        <span className="ml-0.5 font-semibold">
+                        <span className="ml-0.5">
                           {isOverdue ? ` 逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? ' 今天截止' : ` 剩${daysRemaining}天`}
                         </span>
                       )}
@@ -6160,6 +6219,17 @@
                   </>
                 )}
                 <div className="ml-auto flex items-center gap-1">
+                  {/* 工期健康度（父项目） */}
+                  {workloadHealth && status !== '已完成' && progress < 100 && (
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                      workloadHealth.health === 'ok' ? 'bg-emerald-100 text-emerald-700' :
+                      workloadHealth.health === 'tight' ? 'bg-yellow-100 text-yellow-700' :
+                      workloadHealth.health === 'risk' ? 'bg-red-100 text-red-700' :
+                      'bg-red-500 text-white'
+                    }`} title={`关键路径剩余${workloadHealth.criticalDays}工作日 / 可用${workloadHealth.remainingDays}工作日`}>
+                      {workloadHealth.health === 'ok' ? '充裕' : workloadHealth.health === 'tight' ? '紧张' : workloadHealth.health === 'risk' ? '风险' : '超期'}
+                    </span>
+                  )}
                   <span className={`font-bold text-xs ${progress >= 100 ? 'text-green-600' : progress >= 50 ? 'text-blue-600' : 'text-gray-500'}`}>{progress}%</span>
                   {canEdit && !product.coverImage && (
                     <button className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-gray-300 hover:text-gray-500 text-[10px]"
@@ -8551,7 +8621,7 @@
                     <span className="text-2xl">📖</span>
                     <div>
                       <h2 className="text-lg font-bold">系统操作手册</h2>
-                      <p className="text-xs text-white/60">微铸项目管理系统使用指南 v2.0</p>
+                      <p className="text-xs text-white/60">微铸项目管理系统使用指南 v3.0</p>
                     </div>
                   </div>
                   <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">✕</button>
@@ -8611,13 +8681,26 @@
 
                       <div className="bg-green-50 rounded-lg p-3">
                         <h4 className="font-semibold text-green-800 mb-1">项目卡片</h4>
-                        <p className="text-xs text-gray-600 mb-1">卡片显示：状态、优先级、截止日期（带倒计时）、进度、负责人。</p>
+                        <p className="text-xs text-gray-600 mb-1">卡片显示：状态、优先级、截止日期（带倒计时）、工期健康度、进度、负责人。</p>
                         <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
                           <li>• 点击卡片 → 进入项目详情（流水线视图）</li>
                           <li>• 点击 ✏️ → 弹出编辑面板（修改名称、日期）</li>
                           <li>• 点击 📷 → 上传产品封面图（仅负责人可见）</li>
-                          <li>• 截止日期按紧急程度变色：红色(≤3天)、橙色(≤7天)、琥珀色(≤14天)</li>
+                          <li>• 截止日期按紧急程度变色：红底白字(逾期)、红色(≤3天)、橙色(≤7天)、琥珀色(≤14天)</li>
+                          <li>• 有封面图时以左侧缩略图+右侧信息的紧凑布局显示</li>
                         </ul>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">工期健康度</h4>
+                        <p className="text-xs text-gray-600 mb-1">父项目卡片右上角显示工期健康度标签，对比关键路径剩余工期和实际剩余可用工作日：</p>
+                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
+                          <li>• <span className="text-emerald-700 font-bold">充裕</span> — 剩余时间 ≥ 所需工期 × 120%</li>
+                          <li>• <span className="text-yellow-700 font-bold">紧张</span> — 剩余时间在所需工期的 80%-120%</li>
+                          <li>• <span className="text-red-700 font-bold">风险</span> — 剩余时间 &lt; 所需工期 × 80%</li>
+                          <li>• <span className="text-red-600 font-bold">超期</span> — 已过截止日期且有未完成工作</li>
+                        </ul>
+                        <p className="text-xs text-gray-400 mt-1">鼠标悬停可查看具体数值（关键路径剩余X工作日 / 可用Y工作日）。已完成的子线按进度扣减。</p>
                       </div>
 
                       <div className="bg-green-50 rounded-lg p-3">
@@ -8727,6 +8810,7 @@
                             ['管理节点任务', '项目详情 → 点击流水线节点'],
                             ['跳过节点', '项目详情 → 节点 → 「跳过」（仅负责人）'],
                             ['刷新数据', '桌面端右上角 🔄 / 手机端点击统计卡片区域'],
+                            ['查看跨境电商要闻', '桌面端右上角 📰 图标 → 弹出今日要闻面板'],
                           ].map(([action, path], i) => (
                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                               <td className="border border-gray-100 px-3 py-1.5 font-medium">{action}</td>
