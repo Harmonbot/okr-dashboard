@@ -5518,6 +5518,7 @@
       const [createProjectStart, setCreateProjectStart] = useState('');
       const [createProjectDeadline, setCreateProjectDeadline] = useState('');
       const [createProjectDept, setCreateProjectDept] = useState('');
+      const [createProjectGroup, setCreateProjectGroup] = useState('');
       const [createSaving, setCreateSaving] = useState(false);
       const showToast = useToast();
 
@@ -5535,6 +5536,7 @@
           if (createProjectStart) fields['开始日期'] = new Date(createProjectStart).getTime();
           if (createProjectDeadline) fields['计划上线日期'] = new Date(createProjectDeadline).getTime();
           if (createProjectDept) fields['负责部门'] = createProjectDept;
+          if (createProjectGroup) fields['发起组'] = createProjectGroup;
           // 负责人设为当前用户
           if (currentUser?.open_id) fields['负责人'] = [{ id: currentUser.open_id }];
 
@@ -5552,6 +5554,7 @@
             setCreateProjectStart('');
             setCreateProjectDeadline('');
             setCreateProjectDept('');
+            setCreateProjectGroup('');
             onRefresh?.();
           } else {
             const errData = await res.json().catch(() => ({}));
@@ -5565,8 +5568,19 @@
 
       // 获取可用的模版类型（仅父项目级别）
       const templateTypes = [...new Set(Object.values(templates).filter(t => t.ownership === '父项目').map(t => t.type).filter(Boolean))].sort();
-      // 获取部门列表
+      // 获取部门列表和部门→组别映射
       const deptList = [...new Set(members.map(m => m.department).filter(Boolean))].sort();
+      const deptGroupMap = {};
+      members.forEach(m => {
+        if (m.department && m.group) {
+          if (!deptGroupMap[m.department]) deptGroupMap[m.department] = new Set();
+          deptGroupMap[m.department].add(m.group);
+        }
+      });
+      // 当前选择部门下的组别列表
+      const groupsInDept = createProjectDept && deptGroupMap[createProjectDept]
+        ? [...deptGroupMap[createProjectDept]].sort()
+        : [];
 
       // 跳过节点状态 - 从项目数据读取，保存到飞书
       const getSkippedNodes = (productId) => {
@@ -6135,14 +6149,26 @@
                   />
                 </div>
               </div>
-              <div>
-                <label className="text-[11px] font-medium text-gray-500 mb-1 block">负责部门</label>
-                <select value={createProjectDept} onChange={e => setCreateProjectDept(e.target.value)}
-                  className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
-                >
-                  <option value="">选择部门</option>
-                  {deptList.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">负责部门</label>
+                  <select value={createProjectDept} onChange={e => { setCreateProjectDept(e.target.value); setCreateProjectGroup(''); }}
+                    className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
+                  >
+                    <option value="">选择部门</option>
+                    {deptList.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">所属组别</label>
+                  <select value={createProjectGroup} onChange={e => setCreateProjectGroup(e.target.value)}
+                    className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
+                    disabled={!createProjectDept || groupsInDept.length === 0}
+                  >
+                    <option value="">{!createProjectDept ? '请先选择部门' : '选择组别'}</option>
+                    {groupsInDept.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setShowCreateForm(false)} className="px-4 py-2 rounded-lg text-xs text-gray-500 hover:bg-gray-100">取消</button>
