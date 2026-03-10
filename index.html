@@ -6147,12 +6147,16 @@
                 {product.targetDate && (
                   <>
                     <span className="text-gray-300">·</span>
-                    <span className="text-gray-400">{product.targetDate.substring(5)}</span>
-                    {status !== '已完成' && progress < 100 && daysRemaining !== null && (
-                      <span className={`font-medium ${isOverdue ? 'text-red-500' : daysRemaining <= 7 ? 'text-orange-500' : 'text-gray-400'}`}>
-                        {isOverdue ? `逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? '今天' : `${daysRemaining}天`}
-                      </span>
-                    )}
+                    <span className={`px-1.5 py-0.5 rounded font-medium ${
+                      isOverdue ? 'bg-red-50 text-red-600' : daysRemaining !== null && daysRemaining <= 3 ? 'bg-red-50 text-red-500' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-orange-50 text-orange-600' : daysRemaining !== null && daysRemaining <= 14 ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-500'
+                    }`}>
+                      {product.targetDate.substring(5)}
+                      {status !== '已完成' && progress < 100 && daysRemaining !== null && (
+                        <span className="ml-0.5 font-semibold">
+                          {isOverdue ? ` 逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? ' 今天截止' : ` 剩${daysRemaining}天`}
+                        </span>
+                      )}
+                    </span>
                   </>
                 )}
                 <div className="ml-auto flex items-center gap-1">
