@@ -70,6 +70,28 @@
     .animate-pulse-subtle { animation: pulseSubtle 2s ease-in-out infinite; }
     .loading-spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    /* 卡片进入动画 */
+    .card-enter { animation: cardSlideIn 0.3s ease-out both; }
+    .card-enter:nth-child(2) { animation-delay: 40ms; }
+    .card-enter:nth-child(3) { animation-delay: 80ms; }
+    .card-enter:nth-child(4) { animation-delay: 120ms; }
+    .card-enter:nth-child(5) { animation-delay: 160ms; }
+    .card-enter:nth-child(6) { animation-delay: 200ms; }
+    @keyframes cardSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    /* 编辑面板展开 */
+    .edit-slide { animation: editSlide 0.2s ease-out; }
+    @keyframes editSlide { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { opacity: 1; max-height: 300px; } }
+    /* 骨架屏闪烁 */
+    .skeleton { background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%); background-size: 200% 100%; animation: skeletonShimmer 1.5s ease-in-out infinite; border-radius: 8px; }
+    @keyframes skeletonShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    /* 逾期卡片强化 */
+    .card-overdue { background: linear-gradient(135deg, rgba(254,226,226,0.3) 0%, rgba(255,255,255,1) 40%); border-color: #fca5a5 !important; }
+    .card-overdue::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: linear-gradient(to bottom, #ef4444, #f97316); border-radius: 12px 0 0 12px; }
+    /* 已完成项目降透明度 */
+    .card-done { opacity: 0.55; }
+    .card-done:hover { opacity: 0.85; }
+    /* 进度条动画 */
+    .progress-animate { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
     .toast-enter { animation: toastIn 0.3s ease-out; }
     .toast-exit { animation: toastOut 0.3s ease-in forwards; }
     @keyframes toastIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -1069,12 +1091,67 @@
       }
     }
 
-    // 加载中组件
+    // 加载中组件 — 骨架屏
     const LoadingScreen = () => (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full loading-spinner mx-auto mb-4"></div>
-          <div className="text-gray-600">正在从飞书加载数据...</div>
+      <div className="min-h-screen bg-gray-50">
+        {/* 顶部栏骨架 */}
+        <div className="gradient-bg text-white py-3 px-3 sm:py-4 sm:px-8">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-white/20" />
+              <div>
+                <div className="skeleton w-28 h-4 mb-1" style={{background:'rgba(255,255,255,0.15)'}} />
+                <div className="skeleton w-20 h-2.5" style={{background:'rgba(255,255,255,0.1)'}} />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-white/10" />
+              <div className="w-9 h-9 rounded-xl bg-white/10" />
+              <div className="w-24 h-9 rounded-2xl bg-white/10" />
+            </div>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-3 sm:px-8 py-4 sm:py-6">
+          {/* Stat cards 骨架 */}
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mb-6">
+            {[1,2,3].map(i => (
+              <div key={i} className="card-flat p-4">
+                <div className="skeleton w-16 h-3 mb-3" />
+                <div className="skeleton w-12 h-6 mb-2" />
+                <div className="skeleton w-24 h-2.5" />
+              </div>
+            ))}
+          </div>
+          {/* Tab bar 骨架 */}
+          <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{background:'var(--c-border)'}}>
+            <div className="flex-1 py-2 rounded-lg bg-white shadow-sm flex items-center justify-center">
+              <div className="skeleton w-16 h-3" />
+            </div>
+            <div className="flex-1 py-2 rounded-lg flex items-center justify-center">
+              <div className="skeleton w-16 h-3" style={{opacity:0.4}} />
+            </div>
+          </div>
+          {/* 卡片网格骨架 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+            {[1,2,3,4,5,6,7,8].map(i => (
+              <div key={i} className="card-flat overflow-hidden" style={{animationDelay: `${i * 60}ms`}}>
+                <div className="skeleton w-full h-20" style={{borderRadius:0}} />
+                <div className="p-2.5">
+                  <div className="skeleton w-3/4 h-3.5 mb-2" />
+                  <div className="flex gap-1.5 mb-2">
+                    <div className="skeleton w-12 h-4 rounded-full" />
+                    <div className="skeleton w-8 h-4 rounded-full" />
+                  </div>
+                  <div className="skeleton w-full h-1 mb-2" />
+                  <div className="flex justify-between">
+                    <div className="skeleton w-16 h-2.5" />
+                    <div className="skeleton w-12 h-2.5" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-center text-gray-400 text-sm mt-6">正在从飞书加载数据...</div>
         </div>
       </div>
     );
@@ -5606,6 +5683,8 @@
             setCreateProjectDeadline('');
             setCreateProjectDept('');
             setCreateProjectGroup('');
+            // 清除缓存确保下次拉到最新
+            try { localStorage.removeItem('wz_data_v1'); } catch(e) {}
             onRefresh?.();
           } else {
             const errData = await res.json().catch(() => ({}));
@@ -5813,20 +5892,28 @@
               fields['计划上线日期'] = editTargetDate ? new Date(editTargetDate).getTime() : null;
             }
             if (Object.keys(fields).length === 0) { setEditingProductId(null); setEditSaving(false); return; }
+            
+            // 乐观更新 — 立即反映到UI
+            if (editName !== product.name) product.name = editName;
+            if (editStartDate !== (product.startDate || '')) product.startDate = editStartDate;
+            if (editTargetDate !== (product.targetDate || '')) product.targetDate = editTargetDate;
+            setEditingProductId(null);
+            
             const res = await fetch(API_BASE + '/api/update-task', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', record_id: product.id, fields })
             });
             if (res.ok) {
-              showToast?.('项目信息已更新', 'success');
-              setEditingProductId(null);
-              onRefresh?.();
+              showToast?.('已保存', 'success');
+              onRefresh?.(true); // 静默刷新确保一致性
             } else {
-              showToast?.('保存失败: ' + res.status, 'error');
+              showToast?.('保存失败，数据将在刷新后恢复', 'error');
+              onRefresh?.(); // 失败时强制刷新恢复
             }
           } catch (err) {
             showToast?.('保存失败: ' + err.message, 'error');
+            onRefresh?.();
           }
           setEditSaving(false);
         };
@@ -5871,9 +5958,13 @@
         };
 
         return (
-          <div className={`card overflow-hidden ${isOverdue ? 'ring-2 ring-red-300' : ''}`}
-            style={{ borderLeftWidth: '3px', borderLeftColor: status === '已完成' ? 'var(--c-success)' : isOverdue ? 'var(--c-danger)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
+          <div className={`card overflow-hidden card-enter relative ${isOverdue ? 'card-overdue' : ''} ${status === '已完成' && progress >= 100 ? 'card-done' : ''}`}
+            style={{ borderLeftWidth: isOverdue ? '0' : '3px', borderLeftColor: isOverdue ? 'transparent' : status === '已完成' ? 'var(--c-success)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
           >
+            {/* 逾期倒计时条 */}
+            {isOverdue && (
+              <div className="h-1 w-full" style={{background:'linear-gradient(90deg, #ef4444, #f97316)'}} />
+            )}
             {/* 封面图区域 */}
             <div className="relative w-full h-20 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden cursor-pointer group"
               onClick={() => setSelectedProduct(product)}
@@ -5939,7 +6030,7 @@
               </div>
               {/* 进度条 */}
               <div className="h-1 rounded-full overflow-hidden mb-2" style={{background:'var(--c-border)'}}>
-                <div className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }} />
+                <div className={`h-full rounded-full progress-animate ${progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progress}%` }} />
               </div>
               {/* 底部信息 */}
               <div className="flex items-center justify-between text-[11px]" style={{color:'var(--c-text-muted)'}}>
@@ -5968,7 +6059,7 @@
 
             {/* 编辑面板（展开） */}
             {showEditPanel && (
-              <div className="border-t px-2.5 py-2.5 space-y-2" style={{borderColor:'var(--c-border)', background:'var(--c-bg)'}} onClick={e => e.stopPropagation()}>
+              <div className="border-t px-2.5 py-2.5 space-y-2 edit-slide" style={{borderColor:'var(--c-border)', background:'var(--c-bg)'}} onClick={e => e.stopPropagation()}>
                 <div>
                   <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">项目名称</label>
                   <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
