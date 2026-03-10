@@ -6293,129 +6293,48 @@
               </div>
             </div>
 
-            {/* 子项目流程图摘要（父项目） */}
+            {/* 子项目流程摘要（父项目）— 紧凑单行 */}
             {isParent && childProducts.length > 0 && (
-              <div className="border-t px-4 py-3 cursor-pointer" style={{borderColor:'var(--c-border)'}} onClick={() => setSelectedProduct(product)}>
+              <div className="border-t px-3 py-2 cursor-pointer" style={{borderColor:'var(--c-border)'}} onClick={() => setSelectedProduct(product)}>
                 {(() => {
-                  // 从模板构建阶段
                   const parentTplName = Object.values(templates).find(t => t.type === product.templateType && t.ownership === '父项目')?.name || '';
                   const cTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
+                  if (cTpls.length === 0) return null;
                   
-                  const prereqMap = {};
-                  cTpls.forEach(t => { prereqMap[t.name] = t.prerequisiteNames || []; });
-                  
-                  const getDepth = (name, v = new Set()) => {
-                    if (v.has(name)) return 0; v.add(name);
-                    const deps = prereqMap[name] || [];
-                    return deps.length === 0 ? 0 : 1 + Math.max(...deps.map(d => getDepth(d, new Set(v))));
-                  };
-                  
-                  const lineDepths = {};
-                  cTpls.forEach(t => { lineDepths[t.name] = getDepth(t.name); });
-                  const maxDepth = Math.max(...Object.values(lineDepths), 0);
-                  
-                  const stages = [];
-                  for (let d = 0; d <= maxDepth; d++) {
-                    const linesAtDepth = cTpls.filter(t => lineDepths[t.name] === d);
-                    if (linesAtDepth.length === 0) continue;
-                    stages.push(linesAtDepth);
-                  }
-                  
-                  if (stages.length === 0) return null;
-                  
+                  // 每个子线的完成状态
                   const getChild = (tpl) => childProducts.find(c => c.templateType === tpl.type);
-                  const stageLabels = ['启动', '执行', '落地', '收尾'];
-                  const deptDots = { '产品中心': 'bg-blue-500', '运营中心': 'bg-green-500', '设计部': 'bg-pink-500', '中枢部': 'bg-purple-500', '营销推广部': 'bg-orange-500' };
+                  const lines = cTpls.map(tpl => {
+                    const child = getChild(tpl);
+                    const prog = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
+                    const done = child?.status === '已完成' || prog >= 100;
+                    const active = prog > 0 && !done;
+                    return { name: tpl.name.replace(/阶段$|线$/, ''), done, active, prog };
+                  });
                   
-                  // 找出当前活跃阶段
-                  let activeStageIdx = 0;
-                  for (let si = 0; si < stages.length; si++) {
-                    const allDone = stages[si].every(tpl => {
-                      const c = getChild(tpl);
-                      return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
-                    });
-                    if (allDone) activeStageIdx = si + 1;
-                  }
-                  if (activeStageIdx >= stages.length) activeStageIdx = stages.length - 1;
+                  const doneCount = lines.filter(l => l.done).length;
+                  const activeLine = lines.find(l => l.active);
                   
                   return (
-                    <div>
-                      {/* 阶段进度指示器 */}
-                      <div className="flex items-center gap-1 mb-2">
-                        {stages.map((stg, si) => {
-                          const allDone = stg.every(tpl => {
-                            const c = getChild(tpl);
-                            return c ? (c.status === '已完成' || calcProjectProgress(c, nodes, templates, tasks) >= 100) : false;
-                          });
-                          const isActive = si === activeStageIdx;
-                          return (
-                            <React.Fragment key={si}>
-                              <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${
-                                allDone ? 'bg-green-50' : isActive ? 'bg-blue-50' : ''
-                              }`}>
-                                <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                                  allDone ? 'bg-green-500 text-white' :
-                                  isActive ? 'bg-blue-500 text-white' :
-                                  'bg-gray-200 text-gray-400'
-                                }`}>{allDone ? '✓' : si + 1}</div>
-                                <span className={`text-[10px] font-medium ${
-                                  allDone ? 'text-green-600' : isActive ? 'text-blue-600' : 'text-gray-400'
-                                }`}>{stageLabels[si] || `S${si+1}`}</span>
-                              </div>
-                              {si < stages.length - 1 && (
-                                <div className={`flex-1 h-px ${allDone ? 'bg-green-300' : 'bg-gray-200'}`} />
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
+                    <div className="flex items-center gap-1.5">
+                      {/* 进度点 */}
+                      <div className="flex items-center gap-0.5">
+                        {lines.map((l, i) => (
+                          <div key={i} className={`w-2 h-2 rounded-full transition-all ${
+                            l.done ? 'bg-green-500' : l.active ? 'bg-blue-500 ring-2 ring-blue-200' : 'bg-gray-200'
+                          }`} title={`${l.name} ${l.done ? '✓' : l.prog + '%'}`} />
+                        ))}
                       </div>
-                      
-                      {/* 当前活跃子线明细（显示进行中和下一批待开始的） */}
-                      <div className="flex gap-1.5 flex-wrap">
-                        {(() => {
-                          // 收集所有未完成的子线，按阶段顺序
-                          const activeLines = [];
-                          for (let si = 0; si < stages.length; si++) {
-                            for (const tpl of stages[si]) {
-                              const child = getChild(tpl);
-                              const progress = child ? calcProjectProgress(child, nodes, templates, tasks) : 0;
-                              const isDone = child?.status === '已完成' || progress >= 100;
-                              if (!isDone) activeLines.push({ tpl, child, progress, stageIdx: si });
-                            }
-                          }
-                          // 如果全部完成，显示最后阶段
-                          if (activeLines.length === 0) {
-                            const lastStage = stages[stages.length - 1];
-                            return lastStage.map((tpl, li) => {
-                              const child = getChild(tpl);
-                              const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
-                              return (
-                                <div key={li} className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] bg-green-50 border-green-200">
-                                  <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
-                                  <span className="font-medium text-gray-700">{tpl.name}</span>
-                                  <span className="font-bold text-green-500">100%</span>
-                                </div>
-                              );
-                            });
-                          }
-                          // 显示最靠前阶段的未完成子线（同一阶段的都显示）
-                          const firstActiveStage = activeLines[0].stageIdx;
-                          const showLines = activeLines.filter(l => l.stageIdx === firstActiveStage);
-                          return showLines.map(({ tpl, child, progress }, li) => {
-                            const dc = deptDots[child?.responsibleDept] || 'bg-gray-400';
-                            const isInProgress = progress > 0;
-                            return (
-                              <div key={li} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
-                                isInProgress ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'
-                              }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${dc}`} />
-                                <span className="font-medium text-gray-700">{tpl.name}</span>
-                                <span className={`font-bold ${isInProgress ? 'text-blue-500' : 'text-gray-300'}`}>{progress}%</span>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
+                      {/* 当前阶段文字 */}
+                      <span className="text-[10px] text-gray-400 truncate">
+                        {doneCount === lines.length ? (
+                          <span className="text-green-500">全部完成</span>
+                        ) : activeLine ? (
+                          <span>{activeLine.name} <span className="text-blue-500">{activeLine.prog}%</span></span>
+                        ) : (
+                          <span>{lines.find(l => !l.done)?.name || '待启动'}</span>
+                        )}
+                      </span>
+                      <span className="text-[9px] text-gray-300 ml-auto">{doneCount}/{lines.length}</span>
                     </div>
                   );
                 })()}
