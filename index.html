@@ -5633,6 +5633,7 @@
           if (filterStatus === '逾期') {
             list = list.filter(p => {
               if (getAutoStatus(p) === '已完成') return false;
+              if (getAutoProgress(p) >= 100) return false;
               if (!p.targetDate) return false;
               return new Date(p.targetDate) < new Date();
             });
@@ -5683,7 +5684,7 @@
         const daysRemaining = product.targetDate 
           ? Math.ceil((new Date(product.targetDate) - new Date()) / (1000 * 60 * 60 * 24))
           : null;
-        const isOverdue = daysRemaining !== null && daysRemaining < 0 && status !== '已完成';
+        const isOverdue = daysRemaining !== null && daysRemaining < 0 && status !== '已完成' && progress < 100;
         const ownerMember = members.find(m => m.id === product.ownerId || m.name === product.ownerName || m.larkName === product.ownerName);
         const importance = getProjectImportance(product);
         const priColor = priorityColorMap[product.priority] || priorityColorMap['P3'];
@@ -6222,7 +6223,9 @@
               if (overdueMonths.length > 0) {
                 const overdueProducts = overdueMonths.flatMap(k => monthMap[k]).filter(p => {
                   const s = getAutoStatus(p);
-                  return s !== '已完成';
+                  if (s === '已完成') return false;
+                  if (getAutoProgress(p) >= 100) return false;
+                  return true;
                 });
                 if (overdueProducts.length > 0) {
                   sections.push(
@@ -7662,6 +7665,8 @@
         const overdueProjects = topLevelProducts.filter(p => {
           const pStatus = calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products);
           if (pStatus === '已完成') return false;
+          const pProgress = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
+          if (pProgress >= 100) return false;
           if (!p.targetDate) return false;
           return new Date(p.targetDate) < now;
         }).length;
@@ -7827,6 +7832,8 @@
                   if (p.parentId) return false; // 只看顶级项目
                   const pStatus = calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products);
                   if (pStatus === '已完成') return false;
+                  const pProgress = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
+                  if (pProgress >= 100) return false;
                   if (!p.targetDate) return false;
                   return new Date(p.targetDate) < now;
                 }).map(p => {
