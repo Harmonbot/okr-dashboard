@@ -5508,6 +5508,7 @@
     // 产品总览
     const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, allMembers, tasks, onRefresh, currentUser }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
+      const [editingProductId, setEditingProductId] = useState(null); // 当前正在编辑的项目ID
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
@@ -5524,19 +5525,27 @@
 
       // 直接创建项目
       const handleCreateProject = async () => {
-        if (!createProjectName.trim()) { showToast?.('请输入项目名称', 'error'); return; }
+        const missing = [];
+        if (!createProjectName.trim()) missing.push('项目名称');
+        if (!createProjectType) missing.push('模版类型');
+        if (!createProjectPriority) missing.push('优先级');
+        if (!createProjectStart) missing.push('开始日期');
+        if (!createProjectDeadline) missing.push('截止日期');
+        if (!createProjectDept) missing.push('负责部门');
+        if (!createProjectGroup) missing.push('所属组别');
+        if (missing.length > 0) { showToast?.('请填写: ' + missing.join('、'), 'error'); return; }
         setCreateSaving(true);
         try {
           const fields = {
             '项目名称': createProjectName.trim(),
             '项目状态': '进行中',
+            '模版类型': createProjectType,
+            '重要程度': createProjectPriority,
+            '开始日期': new Date(createProjectStart).getTime(),
+            '计划上线日期': new Date(createProjectDeadline).getTime(),
+            '负责部门': createProjectDept,
+            '发起组': createProjectGroup,
           };
-          if (createProjectType) fields['模版类型'] = createProjectType;
-          if (createProjectPriority) fields['重要程度'] = createProjectPriority;
-          if (createProjectStart) fields['开始日期'] = new Date(createProjectStart).getTime();
-          if (createProjectDeadline) fields['计划上线日期'] = new Date(createProjectDeadline).getTime();
-          if (createProjectDept) fields['负责部门'] = createProjectDept;
-          if (createProjectGroup) fields['发起组'] = createProjectGroup;
           // 负责人设为当前用户
           if (currentUser?.open_id) fields['负责人'] = [{ id: currentUser.open_id }];
 
@@ -5719,8 +5728,8 @@
         })();
         const canEdit = isOwner || isAdmin;
 
-        // 编辑状态
-        const [showEditPanel, setShowEditPanel] = React.useState(false);
+        // 编辑状态 — 由父组件 editingProductId 控制
+        const showEditPanel = editingProductId === product.id;
         const [editName, setEditName] = React.useState(product.name);
         const [editStartDate, setEditStartDate] = React.useState(product.startDate || '');
         const [editTargetDate, setEditTargetDate] = React.useState(product.targetDate || '');
@@ -5728,6 +5737,15 @@
         // 上传封面
         const [uploadingCover, setUploadingCover] = React.useState(false);
         const coverInputRef = React.useRef(null);
+
+        // 同步 props 到本地编辑 state（当切换编辑目标时）
+        React.useEffect(() => {
+          if (showEditPanel) {
+            setEditName(product.name);
+            setEditStartDate(product.startDate || '');
+            setEditTargetDate(product.targetDate || '');
+          }
+        }, [showEditPanel]);
 
         const handleSaveEdit = async (e) => {
           e.stopPropagation();
@@ -5741,7 +5759,7 @@
             if (editTargetDate !== (product.targetDate || '')) {
               fields['计划上线日期'] = editTargetDate ? new Date(editTargetDate).getTime() : null;
             }
-            if (Object.keys(fields).length === 0) { setShowEditPanel(false); setEditSaving(false); return; }
+            if (Object.keys(fields).length === 0) { setEditingProductId(null); setEditSaving(false); return; }
             const res = await fetch(API_BASE + '/api/update-task', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -5749,7 +5767,7 @@
             });
             if (res.ok) {
               showToast?.('项目信息已更新', 'success');
-              setShowEditPanel(false);
+              setEditingProductId(null);
               onRefresh?.();
             } else {
               showToast?.('保存失败: ' + res.status, 'error');
@@ -5852,7 +5870,7 @@
                 {canEdit && (
                   <button
                     className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setShowEditPanel(!showEditPanel); setEditName(product.name); setEditStartDate(product.startDate || ''); setEditTargetDate(product.targetDate || ''); }}
+                    onClick={(e) => { e.stopPropagation(); setEditingProductId(showEditPanel ? null : product.id); }}
                     title="编辑项目信息"
                   >
                     <span className="text-xs">✏️</span>
@@ -5906,20 +5924,20 @@
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">开始日期</label>
+                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">开始日期 *</label>
                     <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)}
                       className="w-full px-2 py-1.5 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-blue-300" style={{borderColor:'var(--c-border)'}}
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">截止日期</label>
+                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">截止日期 *</label>
                     <input type="date" value={editTargetDate} onChange={e => setEditTargetDate(e.target.value)}
                       className="w-full px-2 py-1.5 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-blue-300" style={{borderColor:'var(--c-border)'}}
                     />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={(e) => { e.stopPropagation(); setShowEditPanel(false); }} className="px-3 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-200 transition-colors">取消</button>
+                  <button onClick={(e) => { e.stopPropagation(); setEditingProductId(null); }} className="px-3 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-200 transition-colors">取消</button>
                   <button onClick={handleSaveEdit} disabled={editSaving} className="px-3 py-1 rounded-lg text-xs text-white font-medium transition-colors disabled:opacity-50" style={{background:'var(--c-accent)'}}>
                     {editSaving ? '保存中...' : '保存'}
                   </button>
@@ -6120,7 +6138,7 @@
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">模版类型</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">模版类型 *</label>
                   <select value={createProjectType} onChange={e => setCreateProjectType(e.target.value)}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   >
@@ -6129,7 +6147,7 @@
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">优先级</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">优先级 *</label>
                   <select value={createProjectPriority} onChange={e => setCreateProjectPriority(e.target.value)}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   >
@@ -6137,13 +6155,13 @@
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">开始日期</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">开始日期 *</label>
                   <input type="date" value={createProjectStart} onChange={e => setCreateProjectStart(e.target.value)}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">截止日期</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">截止日期 *</label>
                   <input type="date" value={createProjectDeadline} onChange={e => setCreateProjectDeadline(e.target.value)}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   />
@@ -6151,7 +6169,7 @@
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">负责部门</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">负责部门 *</label>
                   <select value={createProjectDept} onChange={e => { setCreateProjectDept(e.target.value); setCreateProjectGroup(''); }}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   >
@@ -6160,7 +6178,7 @@
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">所属组别</label>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">所属组别 *</label>
                   <select value={createProjectGroup} onChange={e => setCreateProjectGroup(e.target.value)}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                     disabled={!createProjectDept || groupsInDept.length === 0}
@@ -6172,7 +6190,7 @@
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setShowCreateForm(false)} className="px-4 py-2 rounded-lg text-xs text-gray-500 hover:bg-gray-100">取消</button>
-                <button onClick={handleCreateProject} disabled={createSaving || !createProjectName.trim()}
+                <button onClick={handleCreateProject} disabled={createSaving || !createProjectName.trim() || !createProjectType || !createProjectStart || !createProjectDeadline || !createProjectDept || !createProjectGroup}
                   className="px-4 py-2 rounded-lg text-xs text-white font-medium disabled:opacity-50 transition-all hover:opacity-90"
                   style={{background:'var(--c-accent)'}}
                 >
