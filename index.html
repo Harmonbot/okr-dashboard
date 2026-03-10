@@ -8021,13 +8021,51 @@
         
         // 过滤项目：负责人在扩展可见范围内（本组 + 关联组别）
         // 同时支持父子项目：子项目按负责部门过滤，父项目在有可见子项目时显示
+        // 模版类型→部门推断表（当子项目 responsibleDept 为空时用）
+        const tplToDeptMap = {
+          '中枢协助阶段': '中枢部', '中枢协助线': '中枢部', '需求审批线': '中枢部', '需求审批阶段': '中枢部',
+          '运营计划阶段': '运营中心', '运营计划线': '运营中心', '运营落地线': '运营中心', '计划落地阶段': '运营中心',
+          '视觉设计阶段': '设计部', '设计需求线': '设计部',
+          '站外推广阶段': '营销推广部', '站外推广线': '营销推广部',
+          '产品开发线': '产品中心', '产品立项线': '产品中心', '需求确定线': '产品中心', '需求评审阶段': '产品中心',
+          '概念设计阶段': '设计部', '系统制作线': '产品中心',
+          'T1样机阶段': '产品中心', '试产阶段': '产品中心', '产品采购阶段': '产品中心',
+        };
+        const inferDept = (product) => {
+          if (product.responsibleDept) return product.responsibleDept;
+          // 从模版类型推断：取最后一个 '-' 后面的部分匹配
+          const tplType = product.templateType || '';
+          const suffix = tplType.includes('-') ? tplType.split('-').pop() : '';
+          return tplToDeptMap[suffix] || '';
+        };
+        
         const directVisibleProducts = new Set();
         data.products.forEach(p => {
           const ownerVisible = extendedVisibleIds.has(p.ownerId) ||
             [...filteredMembers, ...linkedMembers].some(m => m.name === p.ownerName || m.id === p.ownerId);
-          // 子项目按负责部门匹配
-          const deptVisible = p.responsibleDept && p.responsibleDept === myDept;
-          if (ownerVisible || deptVisible) directVisibleProducts.add(p.id);
+          // 子项目按负责部门匹配（支持从模版类型推断）
+          const inferredDept = inferDept(p);
+          const deptVisible = inferredDept && inferredDept === myDept;
+          // 子项目参与角色匹配：检查模版的参与角色配置是否包含当前用户的部门/组别
+          const tplRoleVisible = (() => {
+            if (!p.templateType) return false;
+            const matchTpl = Object.values(data.templates || {}).find(t => t.type === p.templateType);
+            const roles = matchTpl?.participantRoles || [];
+            if (roles.length === 0) return false;
+            // 找到父项目获取发起组
+            const parent = p.parentId ? data.products.find(pp => pp.childIds?.includes(p.id)) : null;
+            const initiatorGroup = parent?.initiatorGroup || p.initiatorGroup || '';
+            for (const role of roles) {
+              if (role === '中枢部' && myDept === '中枢部') return true;
+              if (role === '营销推广部' && myDept === '营销推广部') return true;
+              if (role === '设计部' && (myDept === '设计部' || myGroup === '设计部')) return true;
+              if (role === '财务部' && myDept === '财务部') return true;
+              if (role === '发起组' && initiatorGroup && initiatorGroup === myGroup) return true;
+              if (role === '对应产品组' && myDept === '产品中心' && initiatorGroup && myLinkedGroups.includes(initiatorGroup)) return true;
+            }
+            return false;
+          })();
+          if (ownerVisible || deptVisible || tplRoleVisible) directVisibleProducts.add(p.id);
         });
         
         // 如果能看到子项目，也要能看到其父项目
