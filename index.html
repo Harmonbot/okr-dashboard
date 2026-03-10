@@ -4,11 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>微铸项目管理</title>
+  <!-- DNS预连接 — 提前建立TCP连接，省200-500ms -->
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- 字体：swap策略，不阻塞首屏渲染 -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <style>
     :root {
       --c-bg: #f5f5f7;
@@ -1026,6 +1032,42 @@
       const composite = projectScore * 0.30 + taskPriorityScore * 0.30 + timeScore * 0.40;
       return { composite: Math.round(composite * 10) / 10, projectScore: Math.round(projectScore), taskPriorityScore, timeScore };
     };
+
+    // ===== 错误边界 — 防止单个组件崩溃导致白屏 =====
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      componentDidCatch(error, errorInfo) {
+        console.error('[ErrorBoundary]', this.props.name || 'Unknown', error, errorInfo);
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div style={{padding:'40px 20px', textAlign:'center', color:'#6B7280'}}>
+              <div style={{fontSize:'36px', marginBottom:'12px'}}>⚠️</div>
+              <div style={{fontSize:'14px', fontWeight:600, marginBottom:'8px', color:'#374151'}}>
+                {this.props.name || '模块'}加载异常
+              </div>
+              <div style={{fontSize:'12px', marginBottom:'16px', color:'#9CA3AF'}}>
+                {this.state.error?.message || '发生了未知错误'}
+              </div>
+              <button
+                onClick={() => this.setState({ hasError: false, error: null })}
+                style={{padding:'6px 16px', borderRadius:'8px', fontSize:'12px', fontWeight:500, color:'white', background:'#6c5ce7', border:'none', cursor:'pointer'}}
+              >
+                重试
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
 
     // 加载中组件
     const LoadingScreen = () => (
@@ -5630,9 +5672,20 @@
         }
       };
 
-      // 自动计算项目进度（全局函数已处理父项目聚合）
-      const getAutoProgress = (product) => calcProjectProgress(product, nodes, templates, tasks, products);
-      const getAutoStatus = (product) => calcProjectStatus(product, tasks, nodes, templates, products);
+      // 自动计算项目进度和状态 — useMemo批量预计算，避免143张卡片各自重算
+      const projectMetrics = useMemo(() => {
+        const map = {};
+        products.forEach(p => {
+          map[p.id] = {
+            progress: calcProjectProgress(p, nodes, templates, tasks, products),
+            status: calcProjectStatus(p, tasks, nodes, templates, products),
+          };
+        });
+        return map;
+      }, [products, tasks, nodes, templates]);
+
+      const getAutoProgress = (product) => projectMetrics[product.id]?.progress ?? 0;
+      const getAutoStatus = (product) => projectMetrics[product.id]?.status ?? '未开始';
 
       // === 复合重要性评分 - 使用全局函数 ===
       const priorityColorMap = { 'P0': { bg: '#FEE2E2', text: '#DC2626', dot: '🔴' }, 'P1': { bg: '#FFF7ED', text: '#EA580C', dot: '🟠' }, 'P2': { bg: '#EFF6FF', text: '#2563EB', dot: '🔵' }, 'P3': { bg: '#F3F4F6', text: '#6B7280', dot: '⚪' } };
@@ -7510,24 +7563,40 @@
           setError(null);
         }
         try {
+          // === localStorage 缓存层：二次访问秒开 ===
+          const CACHE_KEY = 'wz_data_v1';
+          const CACHE_TTL = 90 * 1000; // 90秒缓存有效期
+          if (!background && !data) {
+            // 首次加载：先用缓存渲染（瞬间出内容）
+            try {
+              const cached = localStorage.getItem(CACHE_KEY);
+              if (cached) {
+                const { d: cachedRaw, t: cachedTs } = JSON.parse(cached);
+                if (cachedRaw && Date.now() - cachedTs < 10 * 60 * 1000) { // 缓存10分钟内有效
+                  const transformed = transformData(cachedRaw);
+                  setData(transformed);
+                  setLastUpdate('缓存 ' + new Date(cachedTs).toLocaleTimeString());
+                  if (Date.now() - cachedTs < CACHE_TTL) {
+                    setLoading(false);
+                    return; // 缓存90秒内，不请求
+                  }
+                  // 缓存超过90秒但不到10分钟 — 已渲染缓存，继续后台拉最新
+                }
+              }
+            } catch(e) { /* ignore cache errors */ }
+          }
+
           const res = await fetch(API_BASE + '/api/lark?app_token=' + APP_TOKEN);
           const json = await res.json();
           
           if (json.success) {
             const transformed = transformData(json.data);
-            // 检查链条是否完整
-            transformed.products?.filter(p => p.krId).forEach(p => {
-              const kr = transformed.keyResults.find(k => k.id === p.krId);
-              const obj = kr ? transformed.objectives.find(o => o.id === kr.objectiveId) : null;
-            });
-            // 列出所有 KR ids 和 objectiveIds
-            transformed.keyResults?.forEach(kr => {
-            });
-            // 列出所有 Objective ids
-            transformed.objectives?.forEach(o => {
-            });
             setData(transformed);
             setLastUpdate(new Date().toLocaleTimeString());
+            // 写入缓存
+            try {
+              localStorage.setItem(CACHE_KEY, JSON.stringify({ d: json.data, t: Date.now() }));
+            } catch(e) { /* ignore quota errors */ }
           } else {
             throw new Error(json.error || '数据加载失败');
           }
@@ -7554,9 +7623,8 @@
       // 数据加载中
       if (loading && !data) return <LoadingScreen />;
 
-      // ===== 权限系统 =====
-      // 根据「权限设置」字段判断角色，过滤可见数据
-      const permissionData = data ? (() => {
+      // ===== 权限系统（useMemo缓存 — 仅 data/currentUser 变化时重算）=====
+      const permissionData = useMemo(() => data ? (() => {
         // 1. 找到当前登录用户在成员表中的记录
         const me = data.members.find(m => 
           m.id === currentUser.open_id || 
@@ -7695,9 +7763,9 @@
           _me: me,
           _linkedGroups: myLinkedGroups
         };
-      })() : null;
+      })() : null, [data, currentUser]);
 
-      const stats = permissionData ? (() => {
+      const stats = useMemo(() => permissionData ? (() => {
         // 目标达成
         const totalObjectives = permissionData.objectives.length;
         const completedObjectives = permissionData.objectives.filter(o => o.status === '已完成').length;
@@ -7738,7 +7806,7 @@
           totalProducts: topLevelProducts.length,
           completedProducts: topLevelProducts.filter(p => calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products) === '已完成').length
         };
-      })() : {};
+      })() : {}, [permissionData]);
 
       return (
         <UserContext.Provider value={currentUser}>
@@ -7972,6 +8040,7 @@
               </div>
 
               {activeTab === 'products' && (
+                <ErrorBoundary name="项目管理">
                 <ProductOverview
                   objectives={permissionData.objectives}
                   keyResults={permissionData.keyResults}
@@ -7987,9 +8056,11 @@
                   onRefresh={fetchData}
                   currentUser={currentUser}
                 />
+                </ErrorBoundary>
               )}
 
               {activeTab === 'team' && (
+                <ErrorBoundary name="人员任务">
                 <TeamTaskOverview
                   members={permissionData.members}
                   tasks={permissionData.tasks}
@@ -8001,6 +8072,7 @@
                   templates={permissionData.templates}
                   onRefresh={fetchData}
                 />
+                </ErrorBoundary>
               )}
             </div>
           )}
