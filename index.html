@@ -5822,14 +5822,14 @@
             style={{ borderLeftWidth: '3px', borderLeftColor: status === '已完成' ? 'var(--c-success)' : isOverdue ? 'var(--c-danger)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
           >
             {/* 封面图区域 */}
-            <div className="relative w-full h-32 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden cursor-pointer group"
+            <div className="relative w-full h-20 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden cursor-pointer group"
               onClick={() => setSelectedProduct(product)}
             >
               {product.coverImage ? (
                 <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <span className="text-4xl opacity-30">{isParent ? '📂' : product.image}</span>
+                  <span className="text-2xl opacity-30">{isParent ? '📂' : product.image}</span>
                 </div>
               )}
               {/* 上传封面按钮（仅负责人可见） */}
@@ -5844,7 +5844,7 @@
               )}
               <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
               {/* 状态 + 优先级 叠加层 */}
-              <div className="absolute top-2 left-2 flex items-center gap-1">
+              <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium backdrop-blur-sm ${
                   status === '已完成' ? 'bg-green-500/80 text-white' : status === '进行中' ? 'bg-blue-500/80 text-white' : 'bg-gray-500/60 text-white'
                 }`}>{status}</span>
@@ -5855,16 +5855,16 @@
                 )}
               </div>
               {/* 进度圆环 */}
-              <div className="absolute top-2 right-2 w-10 h-10 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <span className={`text-xs font-bold ${progress >= 100 ? 'text-green-300' : 'text-white'}`}>{progress}%</span>
+              <div className="absolute top-1.5 right-1.5 w-8 h-8 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <span className={`text-[10px] font-bold ${progress >= 100 ? 'text-green-300' : 'text-white'}`}>{progress}%</span>
               </div>
             </div>
 
             {/* 卡片信息区 */}
-            <div className="p-3 cursor-pointer" onClick={() => setSelectedProduct(product)}>
+            <div className="px-2.5 py-2 cursor-pointer" onClick={() => setSelectedProduct(product)}>
               {/* 项目名称 */}
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <div className="font-semibold text-sm text-gray-800 leading-tight line-clamp-2 flex-1">
+              <div className="flex items-start justify-between gap-1.5 mb-1">
+                <div className="font-semibold text-xs text-gray-800 leading-tight line-clamp-2 flex-1">
                   {isParent ? '📂 ' : ''}{product.name}
                 </div>
                 {canEdit && (
@@ -5915,7 +5915,7 @@
 
             {/* 编辑面板（展开） */}
             {showEditPanel && (
-              <div className="border-t px-3 py-3 space-y-2" style={{borderColor:'var(--c-border)', background:'var(--c-bg)'}} onClick={e => e.stopPropagation()}>
+              <div className="border-t px-2.5 py-2.5 space-y-2" style={{borderColor:'var(--c-border)', background:'var(--c-bg)'}} onClick={e => e.stopPropagation()}>
                 <div>
                   <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">项目名称</label>
                   <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
@@ -6206,14 +6206,28 @@
             按截止日期排序 · 最紧急的项目排在最前
           </div>
 
-          {/* 项目卡片 - 按部门分组，部门内按 deadline 月份展示 */}
+          {/* 项目卡片 - 按大部门分组，部门内按 deadline 月份展示 */}
           {(() => {
-            // 建立 部门映射
-            const deptMap = {}; // { 部门名: [products] }
+            // 建立 组别→大部门 映射
+            const groupToDeptMap = {};
+            members.forEach(m => {
+              if (m.group && m.department) groupToDeptMap[m.group] = m.department;
+              if (m.department) groupToDeptMap[m.department] = m.department;
+            });
+
+            const deptMap = {}; // { 大部门名: [products] }
             const noDeptProducts = [];
 
             sortedProducts.forEach(product => {
-              const dept = product.responsibleDept || product.initiatorGroup || '';
+              // 从 responsibleDept / initiatorGroup 推断大部门
+              let dept = product.responsibleDept || '';
+              if (!dept && product.initiatorGroup) {
+                dept = groupToDeptMap[product.initiatorGroup] || product.initiatorGroup;
+              }
+              // 如果 dept 是组别名而非大部门，映射到大部门
+              if (dept && groupToDeptMap[dept] && groupToDeptMap[dept] !== dept) {
+                dept = groupToDeptMap[dept];
+              }
               if (dept) {
                 if (!deptMap[dept]) deptMap[dept] = [];
                 deptMap[dept].push(product);
@@ -6278,7 +6292,7 @@
                         <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">⚠️ 已逾期</span>
                         <span className="text-[10px] text-gray-400">{overdueProducts.length} 个项目</span>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                         {overdueProducts.map(p => { rank++; return <ProjectCard key={p.id} product={p} rank={rank} />; })}
                       </div>
                     </div>
@@ -6299,7 +6313,7 @@
                       {isCurrent && <span className="text-[10px] text-blue-500 font-medium">本月</span>}
                       <span className="text-[10px] text-gray-400">{monthProducts.length} 个项目</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                       {monthProducts.map(p => { rank++; return <ProjectCard key={p.id} product={p} rank={rank} />; })}
                     </div>
                   </div>
@@ -6314,7 +6328,7 @@
                       <span className="text-xs font-medium text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">未设截止日期</span>
                       <span className="text-[10px] text-gray-400">{noDateProducts.length} 个项目</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                       {noDateProducts.map(p => { rank++; return <ProjectCard key={p.id} product={p} rank={rank} />; })}
                     </div>
                   </div>
