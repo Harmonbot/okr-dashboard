@@ -2936,10 +2936,11 @@
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   {product.coverImage ? (
-                    <img src={product.coverImage} alt="" className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl object-cover flex-shrink-0 ring-2 ring-white/30" />
+                    <img src={product.coverImage} alt="" className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover flex-shrink-0 ring-2 ring-white/30" />
                   ) : (
-                    <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0 text-xl sm:text-2xl">
-                      {isParentProject(product) ? '📂' : '📦'}
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center flex-shrink-0 text-lg sm:text-2xl font-bold text-white"
+                      style={{background: 'linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1))'}}>
+                      {(product.name || '?').charAt(0)}
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
@@ -3251,7 +3252,7 @@
                           </div>
                           
                           {/* 流程图 */}
-                          <h3 className="text-lg font-semibold text-gray-800 mb-4">📐 项目流水线</h3>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4">项目流水线</h3>
                           <div className="relative">
                             {stages.map((stg, si) => {
                               const lineInfos = stg.lines.map(tpl => {
