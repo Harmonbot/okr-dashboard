@@ -70,14 +70,6 @@
     .animate-pulse-subtle { animation: pulseSubtle 2s ease-in-out infinite; }
     .loading-spinner { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    /* 卡片进入动画 */
-    .card-enter { animation: cardSlideIn 0.3s ease-out both; }
-    .card-enter:nth-child(2) { animation-delay: 40ms; }
-    .card-enter:nth-child(3) { animation-delay: 80ms; }
-    .card-enter:nth-child(4) { animation-delay: 120ms; }
-    .card-enter:nth-child(5) { animation-delay: 160ms; }
-    .card-enter:nth-child(6) { animation-delay: 200ms; }
-    @keyframes cardSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
     /* 编辑面板展开 */
     .edit-slide { animation: editSlide 0.2s ease-out; }
     @keyframes editSlide { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { opacity: 1; max-height: 300px; } }
@@ -953,6 +945,10 @@
 
     // 自动计算项目状态
     const calcProjectStatus = (product, tasks, allNodes, templates, allProducts) => {
+      // 先算进度 — progress >= 100 直接判定为已完成（最高优先级）
+      const progress = calcProjectProgress(product, allNodes, templates, tasks, allProducts);
+      if (progress >= 100) return '已完成';
+      
       // 父项目：聚合子项目状态（有parentId的是子项目，不走此分支）
       if (product.childIds?.length > 0 && !product.parentId && allProducts) {
         const children = allProducts.filter(p => product.childIds.includes(p.id));
@@ -962,16 +958,12 @@
           const anyProgress = childStatuses.some(s => s !== '未开始');
           if (allDone) return '已完成';
           if (anyProgress) return '进行中';
-          // 兜底：直接检查父项目总进度
-          const parentProgress = calcProjectProgress(product, allNodes, templates, tasks, allProducts);
-          return parentProgress > 0 ? '进行中' : '未开始';
+          return progress > 0 ? '进行中' : '未开始';
         }
       }
       const pTasks = tasks.filter(t => t.productId === product.id);
       if (pTasks.length === 0) {
-        // 无任务 → 基于进度判断
-        const progress = calcProjectProgress(product, allNodes, templates, tasks);
-        if (progress > 0) return progress >= 100 ? '已完成' : '进行中';
+        if (progress > 0) return '进行中';
         return '未开始';
       }
       const completed = pTasks.filter(t => t.status === '已完成').length;
@@ -5639,6 +5631,7 @@
       const [createProjectDeadline, setCreateProjectDeadline] = useState('');
       const [createProjectDept, setCreateProjectDept] = useState('');
       const [createProjectGroup, setCreateProjectGroup] = useState('');
+      const [createProjectOwner, setCreateProjectOwner] = useState('');
       const [createSaving, setCreateSaving] = useState(false);
       const showToast = useToast();
 
@@ -5652,44 +5645,127 @@
         if (!createProjectDeadline) missing.push('截止日期');
         if (!createProjectDept) missing.push('负责部门');
         if (!createProjectGroup) missing.push('所属组别');
+        if (!createProjectOwner) missing.push('项目负责人');
         if (missing.length > 0) { showToast?.('请填写: ' + missing.join('、'), 'error'); return; }
         setCreateSaving(true);
         try {
-          const fields = {
+          // 找到父模板和子模板
+          const parentTplId = Object.keys(templates).find(id => templates[id].type === createProjectType && templates[id].ownership === '父项目');
+          const parentTplName = parentTplId ? templates[parentTplId].name : '';
+          const childTpls = Object.entries(templates).filter(([id, t]) =>
+            t.ownership === '子项目' && t.parentTemplate === parentTplName
+          );
+
+          // 1. 创建父项目
+          const parentFields = {
             '项目名称': createProjectName.trim(),
-            '项目状态': '进行中',
+            '项目类型': '父项目',
             '模版类型': createProjectType,
+            '项目状态': '未开始',
             '重要程度': createProjectPriority,
             '开始日期': new Date(createProjectStart).getTime(),
             '计划上线日期': new Date(createProjectDeadline).getTime(),
             '负责部门': createProjectDept,
             '发起组': createProjectGroup,
           };
-          // 负责人设为当前用户
-          if (currentUser?.open_id) fields['负责人'] = [{ id: currentUser.open_id }];
+          if (createProjectOwner) parentFields['项目负责人'] = [{ id: createProjectOwner }];
 
-          const res = await fetch(API_BASE + '/api/create-record', {
+          const parentRes = await fetch(API_BASE + '/api/create-record', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields })
+            body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: parentFields })
           });
-          if (res.ok) {
-            showToast?.('项目创建成功', 'success');
-            setShowCreateForm(false);
-            setCreateProjectName('');
-            setCreateProjectType('');
-            setCreateProjectPriority('P2');
-            setCreateProjectStart('');
-            setCreateProjectDeadline('');
-            setCreateProjectDept('');
-            setCreateProjectGroup('');
-            // 清除缓存确保下次拉到最新
-            try { localStorage.removeItem('wz_data_v1'); } catch(e) {}
-            onRefresh?.();
+          const parentResult = await parentRes.json();
+          if (!parentResult.success) throw new Error(parentResult.error || '父项目创建失败');
+
+          const parentRecordId = parentResult.data?.record?.record_id;
+
+          // 2. 自动创建子项目（如果有子模板）
+          if (childTpls.length > 0 && parentRecordId) {
+            showToast?.(`父项目已创建，正在生成 ${childTpls.length} 个子项目...`, 'info');
+
+            // 子模板 → 负责部门映射
+            const deptMap = {
+              '产品立项线': '产品中心', '产品开发线': '产品中心', '运营计划线': '运营中心', '中枢协助线': '中枢部',
+              '运营落地线': '运营中心', '设计需求线': '设计部', '站外推广线': '营销推广部',
+              '需求确定线': '产品中心', '需求审批线': '中枢部', '系统制作线': '产品中心',
+              '运营计划阶段': '运营中心', '中枢协助阶段': '中枢部', '计划落地阶段': '运营中心',
+              '视觉设计阶段': '设计部', '站外推广阶段': '营销推广部',
+              '需求评审阶段': '产品中心', '概念设计阶段': '设计部',
+              'T1样机阶段': '产品中心', '试产阶段': '产品中心',
+              '产品采购阶段': '产品中心',
+            };
+
+            // 拓扑排序计算子线开始日期
+            const parentStartDate = new Date(createProjectStart);
+            const prereqMap = {};
+            for (const [_, tpl] of childTpls) { prereqMap[tpl.name] = tpl.prerequisiteNames || []; }
+            const getDepth = (name, visited = new Set()) => {
+              if (visited.has(name)) return 0; visited.add(name);
+              const deps = prereqMap[name] || [];
+              return deps.length === 0 ? 0 : 1 + Math.max(...deps.map(d => getDepth(d, new Set(visited))));
+            };
+            const lineDepths = {};
+            for (const [_, tpl] of childTpls) { lineDepths[tpl.name] = getDepth(tpl.name); }
+            const maxDepth = Math.max(...Object.values(lineDepths), 0);
+
+            const lineStartDates = {};
+            let cumulativeDays = 0;
+            for (let d = 0; d <= maxDepth; d++) {
+              const linesAtDepth = childTpls.filter(([_, t]) => lineDepths[t.name] === d);
+              const stageStart = addWorkingDays(new Date(parentStartDate), cumulativeDays);
+              for (const [_, tpl] of linesAtDepth) { lineStartDates[tpl.name] = new Date(stageStart); }
+              const maxCycle = Math.max(...linesAtDepth.map(([_, t]) => t.cycleDays || 0), 0);
+              cumulativeDays += maxCycle;
+            }
+
+            let created = 0;
+            const parentDeadline = new Date(createProjectDeadline + 'T23:59:59');
+            for (const [_, tpl] of childTpls) {
+              const childName = `${createProjectName.trim()}-${tpl.name}`;
+              const dept = deptMap[tpl.name] || createProjectDept;
+              const cycleDays = tpl.cycleDays || 0;
+              const childStart = lineStartDates[tpl.name] || parentStartDate;
+              let childEndDate = cycleDays > 0 ? addWorkingDays(new Date(childStart), cycleDays) : null;
+              if (childEndDate && childEndDate > parentDeadline) childEndDate = new Date(parentDeadline);
+
+              const childFields = {
+                '项目名称': childName,
+                '项目类型': '子项目',
+                '模版类型': tpl.type,
+                '项目状态': '未开始',
+                '负责部门': dept,
+                '开始日期': childStart.getTime(),
+                ...(childEndDate ? { '计划上线日期': childEndDate.getTime() } : {}),
+                '父项目': [parentRecordId],
+              };
+              try {
+                const childRes = await fetch(API_BASE + '/api/create-record', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', fields: childFields })
+                });
+                const childResult = await childRes.json();
+                if (childResult.success) created++;
+              } catch (e) { console.error(`子项目 ${tpl.name} 创建失败:`, e); }
+            }
+            showToast?.(`✅ 创建完成: 1个父项目 + ${created}个子项目`, 'success');
           } else {
-            const errData = await res.json().catch(() => ({}));
-            showToast?.('创建失败: ' + (errData.error || res.status), 'error');
+            showToast?.('父项目创建成功' + (childTpls.length === 0 ? '（该模版无子模板）' : ''), 'success');
           }
+
+          // 重置表单
+          setShowCreateForm(false);
+          setCreateProjectName('');
+          setCreateProjectType('');
+          setCreateProjectPriority('P2');
+          setCreateProjectStart('');
+          setCreateProjectDeadline('');
+          setCreateProjectDept('');
+          setCreateProjectGroup('');
+          setCreateProjectOwner('');
+          try { localStorage.removeItem('wz_data_v1'); } catch(e) {}
+          onRefresh?.();
         } catch (err) {
           showToast?.('创建失败: ' + err.message, 'error');
         }
@@ -5958,7 +6034,7 @@
         };
 
         return (
-          <div className={`card overflow-hidden card-enter relative ${isOverdue ? 'card-overdue' : ''} ${status === '已完成' && progress >= 100 ? 'card-done' : ''}`}
+          <div className={`card overflow-hidden relative ${isOverdue ? 'card-overdue' : ''} ${status === '已完成' && progress >= 100 ? 'card-done' : ''}`}
             style={{ borderLeftWidth: isOverdue ? '0' : '3px', borderLeftColor: isOverdue ? 'transparent' : status === '已完成' ? 'var(--c-success)' : status === '进行中' ? 'var(--c-info)' : 'var(--c-border)' }}
           >
             {/* 逾期倒计时条 */}
@@ -6257,7 +6333,7 @@
                 className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs w-28 sm:w-36 outline-none ml-0.5 sm:ml-1" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
               />
               <button
-                onClick={() => setShowCreateForm(!showCreateForm)}
+                onClick={() => { setShowCreateForm(!showCreateForm); if (!showCreateForm && currentUser?.open_id) setCreateProjectOwner(currentUser.open_id); }}
                 className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90 active:scale-95 flex items-center gap-1"
                 style={{background:'var(--c-accent)'}}
               >
@@ -6332,9 +6408,18 @@
                   </select>
                 </div>
               </div>
+              <div>
+                <MemberPicker
+                  members={allMembers || members}
+                  value={createProjectOwner}
+                  onChange={setCreateProjectOwner}
+                  currentUser={currentUser}
+                  label="项目负责人 *"
+                />
+              </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setShowCreateForm(false)} className="px-4 py-2 rounded-lg text-xs text-gray-500 hover:bg-gray-100">取消</button>
-                <button onClick={handleCreateProject} disabled={createSaving || !createProjectName.trim() || !createProjectType || !createProjectStart || !createProjectDeadline || !createProjectDept || !createProjectGroup}
+                <button onClick={handleCreateProject} disabled={createSaving || !createProjectName.trim() || !createProjectType || !createProjectStart || !createProjectDeadline || !createProjectDept || !createProjectGroup || !createProjectOwner}
                   className="px-4 py-2 rounded-lg text-xs text-white font-medium disabled:opacity-50 transition-all hover:opacity-90"
                   style={{background:'var(--c-accent)'}}
                 >
