@@ -5699,6 +5699,45 @@
         }
         setEditingProductId(productId);
       };
+
+      // 保存编辑（在 ProductOverview 层级，不受 ProjectCard 重建影响）
+      const handleSaveEdit = async () => {
+        const product = products.find(p => p.id === editingProductId);
+        if (!product) return;
+        setEditSaving(true);
+        try {
+          const fields = {};
+          if (editName !== product.name) fields['项目名称'] = editName;
+          if (editStartDate !== (product.startDate || '')) {
+            fields['开始日期'] = editStartDate ? new Date(editStartDate).getTime() : null;
+          }
+          if (editTargetDate !== (product.targetDate || '')) {
+            fields['计划上线日期'] = editTargetDate ? new Date(editTargetDate).getTime() : null;
+          }
+          if (Object.keys(fields).length === 0) { setEditingProductId(null); setEditSaving(false); return; }
+          // 乐观更新
+          if (editName !== product.name) product.name = editName;
+          if (editStartDate !== (product.startDate || '')) product.startDate = editStartDate;
+          if (editTargetDate !== (product.targetDate || '')) product.targetDate = editTargetDate;
+          setEditingProductId(null);
+          const res = await fetch(API_BASE + '/api/update-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', record_id: product.id, fields })
+          });
+          if (res.ok) {
+            showToast?.('已保存', 'success');
+            onRefresh?.(true);
+          } else {
+            showToast?.('保存失败', 'error');
+            onRefresh?.();
+          }
+        } catch (err) {
+          showToast?.('保存失败: ' + err.message, 'error');
+          onRefresh?.();
+        }
+        setEditSaving(false);
+      };
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
@@ -6031,50 +6070,9 @@
         })();
         const canEdit = isOwner || isAdmin;
 
-        // 编辑状态 — 由父组件控制
-        const showEditPanel = editingProductId === product.id;
         // 上传封面
         const [uploadingCover, setUploadingCover] = React.useState(false);
         const coverInputRef = React.useRef(null);
-
-        const handleSaveEdit = async (e) => {
-          e.stopPropagation();
-          setEditSaving(true);
-          try {
-            const fields = {};
-            if (editName !== product.name) fields['项目名称'] = editName;
-            if (editStartDate !== (product.startDate || '')) {
-              fields['开始日期'] = editStartDate ? new Date(editStartDate).getTime() : null;
-            }
-            if (editTargetDate !== (product.targetDate || '')) {
-              fields['计划上线日期'] = editTargetDate ? new Date(editTargetDate).getTime() : null;
-            }
-            if (Object.keys(fields).length === 0) { setEditingProductId(null); setEditSaving(false); return; }
-            
-            // 乐观更新 — 立即反映到UI
-            if (editName !== product.name) product.name = editName;
-            if (editStartDate !== (product.startDate || '')) product.startDate = editStartDate;
-            if (editTargetDate !== (product.targetDate || '')) product.targetDate = editTargetDate;
-            setEditingProductId(null);
-            
-            const res = await fetch(API_BASE + '/api/update-task', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ app_token: APP_TOKEN, table_id: 'tblYM02NyVj3rUkR', record_id: product.id, fields })
-            });
-            if (res.ok) {
-              showToast?.('已保存', 'success');
-              onRefresh?.(true); // 静默刷新确保一致性
-            } else {
-              showToast?.('保存失败，数据将在刷新后恢复', 'error');
-              onRefresh?.(); // 失败时强制刷新恢复
-            }
-          } catch (err) {
-            showToast?.('保存失败: ' + err.message, 'error');
-            onRefresh?.();
-          }
-          setEditSaving(false);
-        };
 
         const handleCoverUpload = async (e) => {
           e.stopPropagation();
@@ -6200,38 +6198,6 @@
                 <span className="text-[10px] text-gray-400 flex-shrink-0">{totalCompletedCount}/{totalTaskCount}任务</span>
               </div>
             </div>
-
-            {/* 编辑面板（展开） */}
-            {showEditPanel && (
-              <div className="border-t px-2.5 py-2.5 space-y-2 edit-slide" style={{borderColor:'var(--c-border)', background:'var(--c-bg)'}} onClick={e => e.stopPropagation()}>
-                <div>
-                  <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">项目名称</label>
-                  <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-blue-300" style={{borderColor:'var(--c-border)'}}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">开始日期 *</label>
-                    <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-blue-300" style={{borderColor:'var(--c-border)'}}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-gray-500 mb-0.5 block">截止日期 *</label>
-                    <input type="date" value={editTargetDate} onChange={e => setEditTargetDate(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-blue-300" style={{borderColor:'var(--c-border)'}}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={(e) => { e.stopPropagation(); setEditingProductId(null); }} className="px-3 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-200 transition-colors">取消</button>
-                  <button onClick={handleSaveEdit} disabled={editSaving} className="px-3 py-1 rounded-lg text-xs text-white font-medium transition-colors disabled:opacity-50" style={{background:'var(--c-accent)'}}>
-                    {editSaving ? '保存中...' : '保存'}
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* 子项目流程图摘要（父项目） */}
             {isParent && childProducts.length > 0 && (
@@ -6737,6 +6703,48 @@
                   {filterGroup !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' || searchProject
                     ? '试试调整筛选条件'
                     : '点击右上角「+ 新建项目」创建第一个项目'}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 编辑项目浮层 — 在 ProductOverview 层级渲染，不受 ProjectCard 重建影响 */}
+          {editingProductId && (() => {
+            const editProduct = products.find(p => p.id === editingProductId);
+            if (!editProduct) return null;
+            return (
+              <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center z-50" onClick={() => setEditingProductId(null)}>
+                <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-4 sm:p-5 space-y-3" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-semibold text-gray-700">编辑项目</span>
+                    <button onClick={() => setEditingProductId(null)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+                  </div>
+                  <div className="text-[10px] text-gray-400 -mt-2 mb-2">{editProduct.name}</div>
+                  <div>
+                    <label className="text-[11px] font-medium text-gray-500 mb-1 block">项目名称</label>
+                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-500 mb-1 block">开始日期</label>
+                      <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-500 mb-1 block">截止日期</label>
+                      <input type="date" value={editTargetDate} onChange={e => setEditTargetDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => setEditingProductId(null)} className="px-4 py-2 rounded-lg text-xs text-gray-500 hover:bg-gray-100">取消</button>
+                    <button onClick={handleSaveEdit} disabled={editSaving}
+                      className="px-4 py-2 rounded-lg text-xs text-white font-medium disabled:opacity-50 transition-all hover:opacity-90"
+                      style={{background:'var(--c-accent)'}}>
+                      {editSaving ? '保存中...' : '保存'}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
