@@ -7623,8 +7623,9 @@
       // 数据加载中
       if (loading && !data) return <LoadingScreen />;
 
-      // ===== 权限系统（useMemo缓存 — 仅 data/currentUser 变化时重算）=====
-      const permissionData = useMemo(() => data ? (() => {
+      // ===== 权限系统 =====
+      // 根据「权限设置」字段判断角色，过滤可见数据
+      const permissionData = data ? (() => {
         // 1. 找到当前登录用户在成员表中的记录
         const me = data.members.find(m => 
           m.id === currentUser.open_id || 
@@ -7763,9 +7764,9 @@
           _me: me,
           _linkedGroups: myLinkedGroups
         };
-      })() : null, [data, currentUser]);
+      })() : null;
 
-      const stats = useMemo(() => permissionData ? (() => {
+      const stats = permissionData ? (() => {
         // 目标达成
         const totalObjectives = permissionData.objectives.length;
         const completedObjectives = permissionData.objectives.filter(o => o.status === '已完成').length;
@@ -7806,7 +7807,7 @@
           totalProducts: topLevelProducts.length,
           completedProducts: topLevelProducts.filter(p => calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products) === '已完成').length
         };
-      })() : {}, [permissionData]);
+      })() : {};
 
       return (
         <UserContext.Provider value={currentUser}>
