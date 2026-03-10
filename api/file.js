@@ -1,7 +1,6 @@
 // api/file.js - 极速版
-// 优化：tenant_access_token 缓存（省500ms/次）
+// 支持 field_name 参数指定附件字段名（默认: 输出文件）
 
-// token 缓存（Vercel warm instance 复用）
 let cachedToken = null;
 let tokenExpiry = 0;
 
@@ -67,7 +66,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: '文件不能超过 20MB' });
       }
 
-      // token(缓存命中~0ms) 和 base64 解码并行
+      // 动态字段名：默认 '输出文件'，封面上传传 '封面图片'
+      const targetField = field_name || '输出文件';
+
       const [accessToken, fileBuffer] = await Promise.all([
         getAccessToken(),
         Promise.resolve(Buffer.from(file_data, 'base64'))
@@ -97,13 +98,13 @@ export default async function handler(req, res) {
       }
       const fileToken = uploadData.data.file_token;
 
-      // 更新记录附件
+      // 更新记录 — 使用动态字段名
       const updateRes = await fetch(
         `https://open.feishu.cn/open-apis/bitable/v1/apps/${app_token}/tables/${table_id}/records/${record_id}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-          body: JSON.stringify({ fields: { [field_name || '输出文件']: [{ file_token: fileToken }] } })
+          body: JSON.stringify({ fields: { [targetField]: [{ file_token: fileToken }] } })
         }
       );
       const updateData = await updateRes.json();
