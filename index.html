@@ -8095,45 +8095,44 @@
       })() : null;
 
       const stats = permissionData ? (() => {
-        // 目标达成
-        const totalObjectives = permissionData.objectives.length;
-        const completedObjectives = permissionData.objectives.filter(o => o.status === '已完成').length;
+        const now = new Date();
+        const today = new Date(); today.setHours(0,0,0,0);
+        const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
+        const myId = permissionData._me?.id || currentUser?.open_id;
+        const myName = permissionData._me?.name || currentUser?.name;
+        const role = permissionData._role || '组员';
+        const isAdmin = permissionData._isAdmin;
         
-        // KR 完成
-        const totalKRs = permissionData.keyResults.length;
-        const completedKRs = permissionData.keyResults.filter(kr => kr.status === '已完成').length;
-        
-        // 项目平均进度（只算顶级项目，父项目自动聚合子项目）
+        // 通用计算
         const topLevelProducts = permissionData.products.filter(p => !p.parentId);
         const avgProgress = topLevelProducts.length > 0 
-          ? Math.round(topLevelProducts.reduce((sum, p) => {
-              return sum + calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
-            }, 0) / topLevelProducts.length) 
+          ? Math.round(topLevelProducts.reduce((sum, p) => sum + calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products), 0) / topLevelProducts.length) 
           : 0;
-        
-        // 任务完成
-        const completedTasks = permissionData.tasks.filter(t => t.status === '已完成').length;
-        const totalTasks = permissionData.tasks.length;
-        
-        // 逾期预警：已过期且未完成的项目数（只看顶级）
-        const now = new Date();
+        const allTasks = permissionData.tasks;
+        const completedTasks = allTasks.filter(t => t.status === '已完成').length;
+        const totalTasks = allTasks.length;
         const overdueProjects = topLevelProducts.filter(p => {
-          const pStatus = calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products);
-          if (pStatus === '已完成') return false;
-          const pProgress = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
-          if (pProgress >= 100) return false;
-          if (!p.targetDate) return false;
-          return new Date(p.targetDate) < now;
+          const ps = calcProjectStatus(p, allTasks, permissionData.processNodes, permissionData.templates, permissionData.products);
+          if (ps === '已完成') return false;
+          const pp = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, allTasks, permissionData.products);
+          if (pp >= 100) return false;
+          return p.targetDate && new Date(p.targetDate) < now;
         }).length;
-        
+
+        // 我的任务（组员视角）
+        const myTasks = allTasks.filter(t => t.assignee === myId || t.assigneeName === myName);
+        const myInProgress = myTasks.filter(t => t.status === '进行中').length;
+        const myTotal = myTasks.length;
+        const myCompleted = myTasks.filter(t => t.status === '已完成').length;
+        const myOverdue = myTasks.filter(t => t.status !== '已完成' && t.dueDate && new Date(t.dueDate) < today).length;
+        const myDueThisWeek = myTasks.filter(t => t.status !== '已完成' && t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= weekEnd).length;
+
         return {
-          totalObjectives, completedObjectives,
-          totalKRs, completedKRs,
-          avgProgress,
-          completedTasks, totalTasks,
-          overdueProjects,
+          role, isAdmin, avgProgress,
+          completedTasks, totalTasks, overdueProjects,
           totalProducts: topLevelProducts.length,
-          completedProducts: topLevelProducts.filter(p => calcProjectStatus(p, permissionData.tasks, permissionData.processNodes, permissionData.templates, permissionData.products) === '已完成').length
+          completedProducts: topLevelProducts.filter(p => calcProjectStatus(p, allTasks, permissionData.processNodes, permissionData.templates, permissionData.products) === '已完成').length,
+          myInProgress, myTotal, myCompleted, myOverdue, myDueThisWeek,
         };
       })() : {};
 
@@ -8272,12 +8271,24 @@
 
           {permissionData && (
             <div className="max-w-7xl mx-auto px-2 sm:px-8 py-3 sm:py-6">
-              <div className="grid grid-cols-3 gap-1.5 sm:gap-4 mb-4 sm:mb-6" onClick={() => { if (window.innerWidth < 640) fetchData(); }}>
-                <StatCard title="项目进度" value={`${stats.avgProgress}%`} subtitle={`${stats.totalProducts}项目 · ${stats.completedProducts}完成`} color="text-indigo-600" iconKey="chart" accent="indigo" />
-                <StatCard title="任务完成" value={`${stats.completedTasks}/${stats.totalTasks}`} subtitle={stats.totalTasks > 0 ? `${Math.round(stats.completedTasks/stats.totalTasks*100)}% 完成率` : '暂无任务'} color="text-green-600" iconKey="check" accent="green" />
-                <StatCard title="逾期预警" value={stats.overdueProjects} subtitle={stats.overdueProjects > 0 ? '需要关注' : '一切正常'} color={stats.overdueProjects > 0 ? 'text-red-600' : 'text-green-600'} iconKey={stats.overdueProjects > 0 ? 'alert' : 'shield'} accent={stats.overdueProjects > 0 ? 'red' : 'green'}
-                  onClick={stats.overdueProjects > 0 ? () => setShowOverduePopup(true) : undefined}
-                />
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-3 mb-4 sm:mb-6" onClick={() => { if (window.innerWidth < 640) fetchData(); }}>
+                {stats.isAdmin || stats.role === '部门管理' || stats.role === '组别管理' ? (
+                  <>
+                    <StatCard title="项目" value={stats.totalProducts} subtitle={`${stats.completedProducts}已完成 · ${stats.avgProgress}%`} color="text-indigo-600" iconKey="chart" accent="indigo" />
+                    <StatCard title="任务" value={`${stats.completedTasks}/${stats.totalTasks}`} subtitle={stats.totalTasks > 0 ? `${Math.round(stats.completedTasks/stats.totalTasks*100)}%完成率` : '暂无'} color="text-green-600" iconKey="check" accent="green" />
+                    <StatCard title="我的任务" value={stats.myInProgress} subtitle={`${stats.myCompleted}已完成 · 共${stats.myTotal}个`} color="text-blue-600" iconKey="key" accent="blue" />
+                    <StatCard title="预警" value={stats.overdueProjects + stats.myOverdue} subtitle={stats.myDueThisWeek > 0 ? `本周${stats.myDueThisWeek}个到期` : '暂无紧急'} color={stats.overdueProjects + stats.myOverdue > 0 ? 'text-red-600' : 'text-green-600'} iconKey={stats.overdueProjects + stats.myOverdue > 0 ? 'alert' : 'shield'} accent={stats.overdueProjects + stats.myOverdue > 0 ? 'red' : 'green'}
+                      onClick={stats.overdueProjects > 0 ? () => setShowOverduePopup(true) : undefined}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <StatCard title="我的任务" value={`${stats.myInProgress}进行`} subtitle={`共${stats.myTotal}个 · ${stats.myCompleted}完成`} color="text-blue-600" iconKey="check" accent="blue" />
+                    <StatCard title="完成率" value={stats.myTotal > 0 ? `${Math.round(stats.myCompleted/stats.myTotal*100)}%` : '0%'} subtitle={`${stats.myCompleted}/${stats.myTotal}`} color="text-green-600" iconKey="chart" accent="green" />
+                    <StatCard title="本周到期" value={stats.myDueThisWeek} subtitle={stats.myDueThisWeek > 0 ? '需要跟进' : '暂无紧急'} color={stats.myDueThisWeek > 0 ? 'text-orange-600' : 'text-green-600'} iconKey={stats.myDueThisWeek > 0 ? 'alert' : 'shield'} accent={stats.myDueThisWeek > 0 ? 'red' : 'green'} />
+                    <StatCard title="已逾期" value={stats.myOverdue} subtitle={stats.myOverdue > 0 ? '尽快处理' : '一切正常'} color={stats.myOverdue > 0 ? 'text-red-600' : 'text-green-600'} iconKey={stats.myOverdue > 0 ? 'alert' : 'shield'} accent={stats.myOverdue > 0 ? 'red' : 'green'} />
+                  </>
+                )}
               </div>
 
               {/* 逾期项目弹窗 */}
