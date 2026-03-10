@@ -2935,48 +2935,39 @@
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-                  <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Icon name="folder" size={20} color="white" />
-                  </div>
+                  {product.coverImage ? (
+                    <img src={product.coverImage} alt="" className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl object-cover flex-shrink-0 ring-2 ring-white/30" />
+                  ) : (
+                    <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0 text-xl sm:text-2xl">
+                      {isParentProject(product) ? '📂' : '📦'}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <h2 className="text-lg sm:text-2xl font-bold truncate">{product.name}</h2>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-white/80 text-sm">{product.templateType || product.category}</span>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap text-xs sm:text-sm">
+                      <span className="text-white/70">{product.templateType || product.category}</span>
                       {product.childIds?.length > 0 && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white">📂 {product.childIds.length} 子项目</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/20 text-white text-xs">{product.childIds.length} 子项目</span>
                       )}
                       {product.parentId && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white/80">↳ 子项目</span>
-                      )}
-                      {product.responsibleDept && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-white/20 text-white/80">{product.responsibleDept}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/20 text-white/80 text-xs">子项目</span>
                       )}
                       {product.priority && (
-                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                        <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${
                           product.priority === 'P0' ? 'bg-red-500 text-white' :
                           product.priority === 'P1' ? 'bg-orange-500 text-white' :
                           product.priority === 'P2' ? 'bg-yellow-400 text-gray-800' :
                           'bg-white/20 text-white/80'
                         }`}>{product.priority}</span>
                       )}
-                      {autoCurrentStage && (
-                        <>
-                          <span className="text-white/40 text-sm">|</span>
-                          <span className="text-white/80 text-sm">📍 {autoCurrentStage}</span>
-                        </>
-                      )}
                       {product.ownerName && (
                         <>
-                          <span className="text-white/60 text-sm">|</span>
-                          <span className="flex items-center gap-1.5 text-sm text-white/90">
+                          <span className="text-white/40">|</span>
+                          <span className="flex items-center gap-1 text-white/90">
                             {ownerMember?.avatarUrl ? (
-                              <img src={ownerMember.avatarUrl} alt="" className="w-5 h-5 rounded-full border border-white/30" />
-                            ) : (
-                              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">
-                                {product.ownerName.charAt(0)}
-                              </span>
-                            )}
-                            👤 {product.ownerName}
+                              <img src={ownerMember.avatarUrl} alt="" className="w-4 h-4 sm:w-5 sm:h-5 rounded-full border border-white/30" />
+                            ) : null}
+                            {product.ownerName}
                           </span>
                         </>
                       )}
@@ -3140,19 +3131,19 @@
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 sm:p-4 text-center">
                         <div className="text-2xl sm:text-3xl font-bold text-violet-600">{childProducts.length}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">📂 子项目</div>
+                        <div className="text-xs sm:text-sm text-gray-500">子项目</div>
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 sm:p-4 text-center">
                         <div className="text-2xl sm:text-3xl font-bold text-green-600">{completedChildTasks.length}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">✅ 已完成</div>
+                        <div className="text-xs sm:text-sm text-gray-500">已完成</div>
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 sm:p-4 text-center">
                         <div className="text-2xl sm:text-3xl font-bold text-orange-600">{inProgressChildTasks.length}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">🔄 进行中</div>
+                        <div className="text-xs sm:text-sm text-gray-500">进行中</div>
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 sm:p-4 text-center">
                         <div className="text-2xl sm:text-3xl font-bold text-gray-500">{pendingChildTasks.length}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">⏳ 待开始</div>
+                        <div className="text-xs sm:text-sm text-gray-500">待开始</div>
                       </div>
                     </div>
                     
@@ -5691,7 +5682,23 @@
     // 产品总览
     const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, allMembers, tasks, onRefresh, currentUser }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
-      const [editingProductId, setEditingProductId] = useState(null); // 当前正在编辑的项目ID
+      const [editingProductId, setEditingProductId] = useState(null);
+      const [editName, setEditName] = useState('');
+      const [editStartDate, setEditStartDate] = useState('');
+      const [editTargetDate, setEditTargetDate] = useState('');
+      const [editSaving, setEditSaving] = useState(false);
+      
+      // 打开编辑面板时初始化值
+      const openEditPanel = (productId) => {
+        if (editingProductId === productId) { setEditingProductId(null); return; }
+        const p = products.find(pp => pp.id === productId);
+        if (p) {
+          setEditName(p.name);
+          setEditStartDate(p.startDate || '');
+          setEditTargetDate(p.targetDate || '');
+        }
+        setEditingProductId(productId);
+      };
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
@@ -6024,24 +6031,11 @@
         })();
         const canEdit = isOwner || isAdmin;
 
-        // 编辑状态 — 由父组件 editingProductId 控制
+        // 编辑状态 — 由父组件控制
         const showEditPanel = editingProductId === product.id;
-        const [editName, setEditName] = React.useState(product.name);
-        const [editStartDate, setEditStartDate] = React.useState(product.startDate || '');
-        const [editTargetDate, setEditTargetDate] = React.useState(product.targetDate || '');
-        const [editSaving, setEditSaving] = React.useState(false);
         // 上传封面
         const [uploadingCover, setUploadingCover] = React.useState(false);
         const coverInputRef = React.useRef(null);
-
-        // 同步 props 到本地编辑 state（当切换编辑目标时）
-        React.useEffect(() => {
-          if (showEditPanel) {
-            setEditName(product.name);
-            setEditStartDate(product.startDate || '');
-            setEditTargetDate(product.targetDate || '');
-          }
-        }, [showEditPanel]);
 
         const handleSaveEdit = async (e) => {
           e.stopPropagation();
@@ -6170,7 +6164,7 @@
                   )}
                   {canEdit && (
                     <button className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-gray-300 hover:text-gray-500 text-[10px]"
-                      onClick={(e) => { e.stopPropagation(); setEditingProductId(showEditPanel ? null : product.id); }} title="编辑">✏️</button>
+                      onClick={(e) => { e.stopPropagation(); openEditPanel(product.id); }} title="编辑">✏️</button>
                   )}
                 </div>
               </div>
