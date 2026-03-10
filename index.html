@@ -410,12 +410,13 @@
             templateType: r.fields['模版类型'] || '',
             image: projectEmojis[idx % projectEmojis.length],
             coverImage: (() => {
-              // 封面图片 - 附件字段，取第一张图片的 file_token 构造代理 URL
-              const coverField = r.fields['封面图片'];
-              if (coverField && Array.isArray(coverField) && coverField.length > 0) {
-                const token = coverField[0]?.file_token;
-                if (token) return API_BASE + '/api/file?file_token=' + encodeURIComponent(token) + '&file_name=cover';
-              }
+              try {
+                const coverField = r.fields['封面图片'];
+                if (coverField && Array.isArray(coverField) && coverField.length > 0) {
+                  const token = coverField[0]?.file_token;
+                  if (token) return API_BASE + '/api/file?file_token=' + encodeURIComponent(token) + '&file_name=cover';
+                }
+              } catch(e) { /* ignore */ }
               return '';
             })(),
             currentStage: r.fields['当前阶段'] || '',
@@ -5699,8 +5700,7 @@
         // 判断当前用户是否为项目负责人（可编辑）
         const isOwner = currentUser && (product.ownerId === currentUser.open_id || product.ownerName === currentUser.name);
         const isAdmin = currentUser && (() => {
-          // 查找当前用户在 members 表中的权限
-          const me = members.find(m => m.larkOpenId === currentUser.open_id || m.name === currentUser.name);
+          const me = members.find(m => m.id === currentUser.open_id || m.larkUserId === currentUser.open_id || m.name === currentUser.name);
           return me && (me.permRole === '管理员' || me.permRole === '总经理');
         })();
         const canEdit = isOwner || isAdmin;
