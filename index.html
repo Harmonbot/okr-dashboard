@@ -5675,6 +5675,7 @@
       const [filterStatus, setFilterStatus] = useState('all');
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
+      const [filterGroup, setFilterGroup] = useState('all');
       const [showCreateForm, setShowCreateForm] = useState(false);
       const [createProjectName, setCreateProjectName] = useState('');
       const [createProjectType, setCreateProjectType] = useState('');
@@ -5912,6 +5913,18 @@
         }
         if (filterPriority !== 'all') {
           list = list.filter(p => p.priority === filterPriority);
+        }
+        // 组别筛选：匹配发起组或负责部门
+        if (filterGroup !== 'all') {
+          list = list.filter(p => {
+            if (p.initiatorGroup === filterGroup) return true;
+            if (p.responsibleDept === filterGroup) return true;
+            // 也匹配子项目属于该组别的父项目
+            if (p.childIds?.length > 0) {
+              return products.some(cp => p.childIds.includes(cp.id) && (cp.initiatorGroup === filterGroup || cp.responsibleDept === filterGroup));
+            }
+            return false;
+          });
         }
         if (filterStatus === 'all') {
           // 默认隐藏已完成项目（进度>=100 或状态=已完成）
@@ -6408,12 +6421,22 @@
                 <span>＋</span> <span className="hidden sm:inline">新建项目</span>
               </button>
             </div>
-            {/* 手机端第二行：搜索 + 优先级 */}
+            {/* 手机端第二行：搜索 + 组别 + 优先级 */}
             <div className="flex gap-1.5 items-center mt-2 sm:hidden">
+              <select
+                value={filterGroup}
+                onChange={e => setFilterGroup(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-[11px] outline-none flex-shrink-0" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)', maxWidth:'100px'}}
+              >
+                <option value="all">全部组别</option>
+                {[...new Set(members.map(m => m.group).filter(Boolean))].sort().map(g => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
               <input 
                 type="text" value={searchProject} onChange={e => setSearchProject(e.target.value)}
-                placeholder="🔍 搜索项目..." 
-                className="flex-1 px-3 py-1.5 rounded-lg text-xs outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
+                placeholder="🔍 搜索..." 
+                className="flex-1 px-2 py-1.5 rounded-lg text-[11px] outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
               />
               {['P0', 'P1', 'P2', 'P3'].map(pri => (
                 <button
@@ -6428,12 +6451,41 @@
                 </button>
               ))}
             </div>
-            {/* 桌面端搜索框（在第一行内） */}
-            <input 
-              type="text" value={searchProject} onChange={e => setSearchProject(e.target.value)}
-              placeholder="🔍 搜索项目..." 
-              className="hidden sm:block px-3 py-1.5 rounded-lg text-xs w-36 outline-none mt-2" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
-            />
+            {/* 桌面端：搜索框 + 组别筛选 */}
+            <div className="hidden sm:flex gap-2 items-center mt-2">
+              <input 
+                type="text" value={searchProject} onChange={e => setSearchProject(e.target.value)}
+                placeholder="🔍 搜索项目..." 
+                className="px-3 py-1.5 rounded-lg text-xs w-36 outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
+              />
+              <select
+                value={filterGroup}
+                onChange={e => setFilterGroup(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}
+              >
+                <option value="all">全部组别</option>
+                {(() => {
+                  // 按部门分组显示组别
+                  const deptGroups = {};
+                  members.forEach(m => {
+                    if (m.department && m.group) {
+                      if (!deptGroups[m.department]) deptGroups[m.department] = new Set();
+                      deptGroups[m.department].add(m.group);
+                    }
+                  });
+                  return Object.keys(deptGroups).sort().map(dept => (
+                    <optgroup key={dept} label={dept}>
+                      {[...deptGroups[dept]].sort().map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
+              </select>
+              {filterGroup !== 'all' && (
+                <button onClick={() => setFilterGroup('all')} className="text-[10px] text-gray-400 hover:text-gray-600">✕ 清除</button>
+              )}
+            </div>
           </div>
 
           {/* 创建项目表单 */}
