@@ -6122,11 +6122,11 @@
             <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
             {/* 主内容区：有封面时左图右文，无封面时纯文字 */}
-            <div className={`px-3 py-2.5 cursor-pointer ${product.coverImage ? 'flex gap-3' : ''}`} onClick={() => setSelectedProduct(product)}>
+            <div className={`px-3 py-2.5 cursor-pointer ${product.coverImage ? 'flex gap-2.5' : ''}`} onClick={() => setSelectedProduct(product)}>
               {/* 左侧封面缩略图 */}
               {product.coverImage && (
-                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden flex-shrink-0 group">
-                  <img src={product.coverImage} alt="" className="w-full h-full object-cover" />
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden flex-shrink-0 group bg-gray-100">
+                  <img src={product.coverImage} alt="" className="w-full h-full object-contain" />
                   {canEdit && (
                     <button className="absolute inset-0 bg-black/40 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}>
