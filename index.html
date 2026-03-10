@@ -7807,6 +7807,8 @@
       const [authLoading, setAuthLoading] = useState(true);
       const [showOverduePopup, setShowOverduePopup] = useState(false);
       const [showGuide, setShowGuide] = useState(false);
+      const [showNews, setShowNews] = useState(false);
+      const [newsData, setNewsData] = useState([]);
       const [chinaTime, setChinaTime] = useState('');
       const [chinaDate, setChinaDate] = useState('');
       const [weatherInfo, setWeatherInfo] = useState(null);
@@ -7860,6 +7862,51 @@
         fetchWeather();
         const wTimer = setInterval(fetchWeather, 30 * 60 * 1000); // 30min refresh
         return () => clearInterval(wTimer);
+      }, []);
+
+      // 获取跨境电商要闻（使用 Anthropic API + web search）
+      useEffect(() => {
+        const fetchNews = async () => {
+          // 先检查缓存
+          try {
+            const cached = localStorage.getItem('wz_news_v1');
+            if (cached) {
+              const { data: cachedNews, t: cachedTs } = JSON.parse(cached);
+              if (cachedNews && Date.now() - cachedTs < 2 * 60 * 60 * 1000) { // 2小时缓存
+                setNewsData(cachedNews);
+                return;
+              }
+            }
+          } catch(e) {}
+          
+          try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1000,
+                tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+                messages: [{
+                  role: 'user',
+                  content: '搜索今天的跨境电商行业要闻，包括亚马逊、TikTok Shop、Temu、SHEIN等平台动态，政策变化，物流更新等。返回JSON格式，不要Markdown：[{"title":"标题","summary":"一句话摘要","source":"来源"}]，最多6条，中文回复。只返回JSON数组，不要其他内容。'
+                }]
+              })
+            });
+            const data = await res.json();
+            const textContent = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+            // 尝试解析 JSON
+            const jsonMatch = textContent.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const news = JSON.parse(jsonMatch[0]);
+              setNewsData(news.slice(0, 6));
+              try { localStorage.setItem('wz_news_v1', JSON.stringify({ data: news.slice(0, 6), t: Date.now() })); } catch(e) {}
+            }
+          } catch (e) {
+            console.error('News fetch error:', e);
+          }
+        };
+        fetchNews();
       }, []);
 
       // 处理登录状态
@@ -8211,21 +8258,29 @@
                   )}
                 </div>
                 
-                {/* 刷新按钮 - 手机隐藏 */}
+                {/* 刷新按钮 */}
                 <button 
                   onClick={fetchData}
-                  className="hidden sm:flex w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl items-center justify-center backdrop-blur-md border border-white/15 transition-all"
+                  className="hidden sm:flex w-10 h-10 bg-white/10 hover:bg-white/20 active:scale-95 rounded-2xl items-center justify-center backdrop-blur-md border border-white/15 transition-all"
                   title={lastUpdate ? `上次更新: ${lastUpdate}` : '刷新数据'}
                 >
-                  <span className="text-base">🔄</span>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
                 </button>
-                {/* 操作手册按钮 - 手机隐藏 */}
+                {/* 当日要闻按钮 */}
+                <button 
+                  onClick={() => setShowNews(!showNews)}
+                  className="hidden sm:flex w-10 h-10 bg-white/10 hover:bg-white/20 active:scale-95 rounded-2xl items-center justify-center backdrop-blur-md border border-white/15 transition-all"
+                  title="跨境电商要闻"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 1 1-4 0V7a1 1 0 0 1 1-1h1"/><path d="M10 10h6"/><path d="M10 14h6"/><path d="M10 18h4"/></svg>
+                </button>
+                {/* 操作手册按钮 */}
                 <button 
                   onClick={() => setShowGuide(true)}
-                  className="hidden sm:flex w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl items-center justify-center backdrop-blur-md border border-white/15 transition-all"
+                  className="hidden sm:flex w-10 h-10 bg-white/10 hover:bg-white/20 active:scale-95 rounded-2xl items-center justify-center backdrop-blur-md border border-white/15 transition-all"
                   title="操作手册"
                 >
-                  <span className="text-base">📖</span>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
                 </button>
                 
                 {/* 用户信息 */}
@@ -8455,6 +8510,46 @@
             </div>
           )}
 
+          {/* 跨境电商要闻面板 */}
+          {showNews && (
+            <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={() => setShowNews(false)}>
+              <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-5 py-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-base">跨境电商要闻</h3>
+                    <p className="text-white/60 text-xs mt-0.5">每日更新 · AI 智能摘要</p>
+                  </div>
+                  <button onClick={() => setShowNews(false)} className="text-white/70 hover:text-white text-xl">✕</button>
+                </div>
+                <div className="p-4 overflow-y-auto" style={{maxHeight:'calc(80vh - 80px)'}}>
+                  {newsData.length > 0 ? (
+                    <div className="space-y-3">
+                      {newsData.map((item, i) => (
+                        <div key={i} className="flex gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">{i + 1}</div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-800 leading-snug">{item.title}</div>
+                            <div className="text-xs text-gray-500 mt-1 leading-relaxed">{item.summary}</div>
+                            {item.source && <div className="text-[10px] text-gray-400 mt-1">{item.source}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-2xl mb-2 opacity-40">📰</div>
+                      <div className="text-sm text-gray-400">正在获取今日要闻...</div>
+                      <div className="text-xs text-gray-300 mt-1">AI 正在搜索最新跨境电商动态</div>
+                    </div>
+                  )}
+                  <div className="text-center text-[10px] text-gray-300 mt-4 pt-3 border-t border-gray-100">
+                    由 AI 智能搜索生成 · 仅供参考 · 2小时缓存更新
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 操作手册弹窗 */}
           {showGuide && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowGuide(false)}>
@@ -8465,7 +8560,7 @@
                     <span className="text-2xl">📖</span>
                     <div>
                       <h2 className="text-lg font-bold">系统操作手册</h2>
-                      <p className="text-xs text-white/60">OKR 项目管理系统使用指南</p>
+                      <p className="text-xs text-white/60">微铸项目管理系统使用指南 v2.0</p>
                     </div>
                   </div>
                   <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">✕</button>
@@ -8476,83 +8571,79 @@
                   {/* 一、角色与权限 */}
                   <section>
                     <h3 className="text-base font-bold text-purple-700 mb-2 flex items-center gap-2">🔐 一、角色与权限</h3>
-                    <p className="mb-2">系统根据成员表中「权限设置」字段自动识别你的角色，不同角色看到的数据范围不同：</p>
+                    <p className="mb-2">系统根据成员表中「权限设置」字段自动识别角色，不同角色看到的数据和统计指标不同：</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead><tr className="bg-purple-50">
                           <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">角色</th>
-                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">可见数据范围</th>
-                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">可创建的目标层级</th>
+                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">可见数据</th>
+                          <th className="border border-purple-100 px-3 py-2 text-left font-semibold text-purple-700">顶部统计卡片</th>
                         </tr></thead>
                         <tbody>
                           {[
-                            ['管理员 / 总经理', '全公司所有数据', '公司级 / 部门级 / 组别级 / 个人级'],
-                            ['部门管理', '本部门所有组别', '部门级 / 组别级 / 个人级'],
-                            ['组别管理', '本组别数据', '组别级 / 个人级'],
-                            ['组员', '本组别数据', '个人级'],
-                          ].map(([role, scope, levels], i) => (
+                            ['管理员 / 总经理', '全公司所有项目、任务、成员', '项目总览 · 任务完成 · 我的任务 · 预警'],
+                            ['部门管理', '本部门所有组别 + 跨部门协作项目', '项目总览 · 任务完成 · 我的任务 · 预警'],
+                            ['组别管理', '本组别 + 关联组别 + 参与角色匹配的项目', '项目总览 · 任务完成 · 我的任务 · 预警'],
+                            ['组员', '本组别 + 参与角色匹配的跨部门协作项目', '我的任务 · 完成率 · 本周到期 · 已逾期'],
+                          ].map(([role, scope, cards], i) => (
                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                               <td className="border border-gray-100 px-3 py-1.5 font-medium">{role}</td>
                               <td className="border border-gray-100 px-3 py-1.5">{scope}</td>
-                              <td className="border border-gray-100 px-3 py-1.5">{levels}</td>
+                              <td className="border border-gray-100 px-3 py-1.5">{cards}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  </section>
-
-                  {/* 二、OKR视图 */}
-                  <section>
-                    <h3 className="text-base font-bold text-blue-700 mb-2 flex items-center gap-2">🎯 二、OKR 视图操作</h3>
-                    
-                    <div className="space-y-3">
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <h4 className="font-semibold text-blue-800 mb-1">创建目标</h4>
-                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
-                          <li>点击右上角「+ 新建目标」</li>
-                          <li>选择目标层级（根据角色限定可选范围）</li>
-                          <li>部门级/组别级需选择所属部门和组别</li>
-                          <li>填写周期、产品代号、行动目标、量化指标 → 系统自动拼接名称</li>
-                          <li>选择负责人，点击「创建目标」</li>
-                        </ol>
-                      </div>
-
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <h4 className="font-semibold text-blue-800 mb-1">添加关键结果（KR）</h4>
-                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
-                          <li>点击目标卡片展开详情</li>
-                          <li>点击「+ 添加 KR」</li>
-                          <li>填写 KR 名称、目标值、当前值、负责人</li>
-                          <li>目标进度自动更新：综合自身 KR 平均进度和子目标平均进度</li>
-                        </ol>
-                      </div>
-
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <h4 className="font-semibold text-blue-800 mb-1">从 KR 创建关联项目</h4>
-                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
-                          <li>展开目标 → 找到对应 KR</li>
-                          <li>点击「📋 创建项目」按钮</li>
-                          <li>系统自动创建父项目和子项目（按流程模板）</li>
-                        </ol>
-                      </div>
-
-                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                        <h4 className="font-semibold text-amber-800 mb-1">🔗 父子目标</h4>
-                        <p className="text-xs text-gray-600">展开父目标后，KR 列表下方会显示「🔗 子目标」区域。子目标卡片支持完整操作：点击展开查看 KR、添加 KR、创建项目，和独立目标一样。</p>
-                        <p className="text-xs text-gray-500 mt-1">💡 父子关系通过飞书「父目标」双向关联字段设置。</p>
-                      </div>
+                    <div className="bg-purple-50 rounded-lg p-3 mt-2 border border-purple-100">
+                      <h4 className="font-semibold text-purple-800 mb-1 text-xs">跨部门协作权限</h4>
+                      <p className="text-xs text-gray-600">即使你不是项目负责人，只要流程模板的「参与角色」包含你的部门，你就能看到对应的子项目。例如中枢部成员可以看到所有「中枢协助阶段」子项目及其父项目。</p>
                     </div>
                   </section>
 
-                  {/* 三、项目管理 */}
+                  {/* 二、项目管理 */}
                   <section>
-                    <h3 className="text-base font-bold text-green-700 mb-2 flex items-center gap-2">📋 三、项目管理操作</h3>
+                    <h3 className="text-base font-bold text-green-700 mb-2 flex items-center gap-2">📋 二、项目管理</h3>
                     
                     <div className="space-y-3">
                       <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">新建项目</h4>
+                        <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
+                          <li>点击筛选栏右侧「+ 新建项目」按钮</li>
+                          <li>填写项目名称、模版类型、优先级、开始/截止日期</li>
+                          <li>选择负责部门 → 所属组别（二级联动）</li>
+                          <li>选择项目负责人（默认为当前登录用户）</li>
+                          <li>点击「创建项目」→ 自动创建父项目 + 对应子项目</li>
+                        </ol>
+                        <p className="text-xs text-gray-400 mt-1">子项目根据流程模板自动生成，开始日期按依赖关系拓扑排序计算。</p>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">项目卡片</h4>
+                        <p className="text-xs text-gray-600 mb-1">卡片显示：状态、优先级、截止日期（带倒计时）、进度、负责人。</p>
+                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
+                          <li>• 点击卡片 → 进入项目详情（流水线视图）</li>
+                          <li>• 点击 ✏️ → 弹出编辑面板（修改名称、日期）</li>
+                          <li>• 点击 📷 → 上传产品封面图（仅负责人可见）</li>
+                          <li>• 截止日期按紧急程度变色：红色(≤3天)、橙色(≤7天)、琥珀色(≤14天)</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <h4 className="font-semibold text-green-800 mb-1">筛选与排序</h4>
+                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
+                          <li>• 状态筛选：进行中（默认，隐藏已完成）、进行中、已完成、逾期</li>
+                          <li>• 优先级筛选：P0 ~ P3</li>
+                          <li>• 组别筛选：按部门分组的下拉菜单</li>
+                          <li>• 搜索：项目名称、模版类型、负责人模糊搜索</li>
+                          <li>• 排序：按截止日期升序（最紧急的排最前）</li>
+                          <li>• 分组：按部门 → 按月份分组展示</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3">
                         <h4 className="font-semibold text-green-800 mb-1">流水线视图</h4>
-                        <p className="text-xs text-gray-600 mb-1">每个子项目有独立的节点流水线。点击节点圆圈可查看/管理该节点下的任务。</p>
+                        <p className="text-xs text-gray-600 mb-1">点击项目卡片进入详情，查看子项目流水线。</p>
                         <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
                           <li>• 节点进度 = 节点内已完成任务 / 总任务数</li>
                           <li>• 子项目进度 = 所有节点平均进度</li>
@@ -8563,52 +8654,46 @@
                       <div className="bg-green-50 rounded-lg p-3">
                         <h4 className="font-semibold text-green-800 mb-1">新增任务</h4>
                         <ol className="list-decimal list-inside text-xs space-y-0.5 text-gray-600">
-                          <li>点击流水线中的节点圆圈</li>
+                          <li>进入项目详情 → 点击流水线中的节点</li>
                           <li>在弹出面板中点击「新增任务」</li>
-                          <li>填写名称、优先级、负责人（当前登录用户排在最前）</li>
-                          <li>可选：添加协作者、开始日期、描述</li>
+                          <li>填写名称、优先级、负责人、截止日期</li>
+                          <li>可选：添加协作者、描述</li>
                         </ol>
                       </div>
 
                       <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
-                        <h4 className="font-semibold text-orange-800 mb-1">⚡ 节点跳过（仅项目负责人）</h4>
-                        <p className="text-xs text-gray-600 mb-1">如果某个节点不需要执行，PO 可以跳过它（标记为 100% 完成）。</p>
-                        <ul className="text-xs text-gray-600 space-y-0.5 ml-3">
-                          <li>• 跳过前会校验前置子线是否完成</li>
-                          <li>• 前置未完成 → 无法跳过，提示「前置子线尚未完成」</li>
-                          <li>• 取消跳过不受限制</li>
-                        </ul>
+                        <h4 className="font-semibold text-orange-800 mb-1">节点跳过（仅项目负责人）</h4>
+                        <p className="text-xs text-gray-600">如果某个节点不需要执行，负责人可以跳过它。跳过前会校验前置子线是否完成。</p>
                       </div>
 
                       <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                        <h4 className="font-semibold text-red-800 mb-1">🔒 前置依赖锁定</h4>
+                        <h4 className="font-semibold text-red-800 mb-1">前置依赖锁定</h4>
                         <div className="text-xs text-gray-600 space-y-1">
-                          <p><strong>子线级：</strong>如「运营落地线」依赖「运营计划线」。前置子线未完成 → 当前子线所有节点锁定。</p>
+                          <p><strong>子线级：</strong>如「计划落地阶段」依赖「运营计划阶段」。前置子线未完成 → 当前子线锁定。</p>
                           <p><strong>节点级：</strong>同一子线内，前置节点任务未完成 → 后续节点锁定。</p>
-                          <p className="text-gray-400">锁定的节点显示 🔒 标识，无法接受新任务。</p>
                         </div>
                       </div>
                     </div>
                   </section>
 
-                  {/* 四、子线权限 */}
+                  {/* 三、子线权限 */}
                   <section>
-                    <h3 className="text-base font-bold text-indigo-700 mb-2 flex items-center gap-2">👥 四、子线查看权限</h3>
-                    <p className="text-xs text-gray-600 mb-2">每条子线（子项目）的查看权限由流程模板的「参与角色」配置决定：</p>
+                    <h3 className="text-base font-bold text-indigo-700 mb-2 flex items-center gap-2">👥 三、跨部门协作与子线权限</h3>
+                    <p className="text-xs text-gray-600 mb-2">每条子线（子项目）的查看权限由流程模板的「参与角色」配置决定。系统会自动匹配你的部门/组别：</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead><tr className="bg-indigo-50">
                           <th className="border border-indigo-100 px-3 py-2 text-left font-semibold text-indigo-700">参与角色</th>
-                          <th className="border border-indigo-100 px-3 py-2 text-left font-semibold text-indigo-700">谁能看到任务详情</th>
+                          <th className="border border-indigo-100 px-3 py-2 text-left font-semibold text-indigo-700">匹配规则</th>
                         </tr></thead>
                         <tbody>
                           {[
-                            ['发起组', '发起该项目的运营组成员'],
-                            ['对应产品组', '关联该运营组的产品中心成员'],
-                            ['中枢部', '中枢部成员'],
-                            ['营销推广部', '营销推广部成员'],
-                            ['设计部', '设计部成员'],
-                            ['财务部', '财务部成员'],
+                            ['发起组', '你的组别 = 项目的发起组别'],
+                            ['对应产品组', '你在产品中心 + 你的关联组别包含发起组'],
+                            ['中枢部', '你的部门 = 中枢部'],
+                            ['营销推广部', '你的部门 = 营销推广部'],
+                            ['设计部', '你的部门或组别 = 设计部'],
+                            ['财务部', '你的部门 = 财务部'],
                           ].map(([role, who], i) => (
                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                               <td className="border border-gray-100 px-3 py-1.5 font-medium">{role}</td>
@@ -8618,24 +8703,23 @@
                         </tbody>
                       </table>
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">💡 管理员/总经理、父项目负责人始终可查看所有子线。无权限时可看到卡片但无法进入详情。</p>
+                    <p className="text-xs text-gray-400 mt-2">管理员/总经理、父项目负责人始终可查看所有子线。匹配到子项目时，父项目也自动可见。</p>
                   </section>
 
-                  {/* 五、团队视图 */}
+                  {/* 四、人员任务视图 */}
                   <section>
-                    <h3 className="text-base font-bold text-teal-700 mb-2 flex items-center gap-2">👥 五、团队视图</h3>
-                    <p className="text-xs text-gray-600">进入「人员任务」Tab，可以看到每位成员的任务看板和负荷指标。</p>
+                    <h3 className="text-base font-bold text-teal-700 mb-2 flex items-center gap-2">👥 四、人员任务视图</h3>
+                    <p className="text-xs text-gray-600">进入「人员任务」Tab，查看团队成员任务看板和负荷情况：</p>
                     <ul className="text-xs text-gray-600 space-y-0.5 ml-3 mt-1">
-                      <li>• 绿色 = 正常负荷</li>
-                      <li>• 黄色 = 较忙</li>
-                      <li>• 红色 = 超负荷</li>
+                      <li>• 绿色 = 正常负荷，黄色 = 较忙，红色 = 超负荷</li>
+                      <li>• 可直接在成员卡片内修改任务状态和优先级</li>
+                      <li>• 点击成员查看个人任务详情</li>
                     </ul>
-                    <p className="text-xs text-gray-600 mt-1">可直接在成员卡片内修改任务状态和优先级。</p>
                   </section>
 
-                  {/* 六、速查表 */}
+                  {/* 五、常用操作速查 */}
                   <section>
-                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">⚡ 六、常用操作速查</h3>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">⚡ 五、常用操作速查</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead><tr className="bg-gray-100">
@@ -8644,14 +8728,14 @@
                         </tr></thead>
                         <tbody>
                           {[
-                            ['创建目标', 'OKR 视图 → 「+ 新建目标」'],
-                            ['添加 KR', '展开目标 → 「+ 添加 KR」'],
-                            ['编辑目标/KR', '展开目标 → 点击 ✏️ 按钮'],
-                            ['从 KR 创建项目', '展开目标 → KR → 「📋 创建项目」'],
-                            ['查看子目标', '展开父目标 → 滚动到「🔗 子目标」'],
-                            ['管理节点任务', '项目管理 → 点击项目 → 点击节点圆圈'],
-                            ['跳过节点', '项目详情 → 节点 → 「跳过」（仅PO）'],
-                            ['刷新数据', '右上角 🔄 按钮'],
+                            ['新建项目', '项目管理 → 「+ 新建项目」→ 填写表单 → 自动生成父+子项目'],
+                            ['编辑项目', '项目卡片 → 点击 ✏️ → 弹出编辑面板'],
+                            ['上传封面', '项目卡片 → 点击 📷 图标（仅负责人）'],
+                            ['筛选组别', '筛选栏第二行 → 组别下拉菜单'],
+                            ['查看项目详情', '项目管理 → 点击项目卡片'],
+                            ['管理节点任务', '项目详情 → 点击流水线节点'],
+                            ['跳过节点', '项目详情 → 节点 → 「跳过」（仅负责人）'],
+                            ['刷新数据', '桌面端右上角 🔄 / 手机端点击统计卡片区域'],
                           ].map(([action, path], i) => (
                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                               <td className="border border-gray-100 px-3 py-1.5 font-medium">{action}</td>
@@ -8663,16 +8747,17 @@
                     </div>
                   </section>
 
-                  {/* 七、FAQ */}
+                  {/* 六、FAQ */}
                   <section>
-                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">❓ 七、常见问题</h3>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">❓ 六、常见问题</h3>
                     <div className="space-y-2">
                       {[
-                        ['为什么看不到某些项目/目标？', '权限系统会根据角色自动过滤数据。如需查看更多内容，请联系管理员调整权限设置。'],
-                        ['为什么节点显示 🔒 无法操作？', '前置节点或前置子线的任务尚未完成。需要先完成前置工作。'],
-                        ['目标进度为什么不更新？', '目标进度 = 自身KR平均进度 + 子目标平均进度的综合值。有KR无子目标取KR进度，有子目标无KR取子目标进度，两者都有则各占50%。请确认已更新KR的「当前值」。'],
-                        ['子目标创建后看不到？', '需在飞书多维表格中正确设置「父目标」双向关联字段，刷新后自动同步。'],
-                        ['数据多久更新一次？', '系统每 5 分钟自动后台刷新。也可点击 🔄 手动刷新。'],
+                        ['为什么看不到某些项目？', '系统根据角色和流程模板的「参与角色」自动过滤。如果你的部门是某个子线的参与角色，你就能看到该子项目和父项目。如需更多权限，请联系管理员。'],
+                        ['为什么创建项目后看不到？', '创建后会延迟 2 秒自动刷新数据。如果还看不到，请手动刷新（桌面端点 🔄，手机端点击统计卡片区域）。'],
+                        ['已完成的项目去哪了？', '默认视图隐藏已完成项目以减少阅读量。点击筛选栏的「已完成」按钮可查看。'],
+                        ['节点显示锁定无法操作？', '前置节点或前置子线的任务尚未完成，需要先完成前置工作。'],
+                        ['统计卡片显示的数据不一样？', '管理层看到的是全局项目/任务统计，组员看到的是个人任务统计（我的任务、完成率、本周到期、已逾期）。'],
+                        ['数据多久更新？', '每 5 分钟自动后台刷新。手动刷新：桌面点 🔄，手机点统计卡片。'],
                       ].map(([q, a], i) => (
                         <div key={i} className="bg-gray-50 rounded-lg p-2.5">
                           <p className="text-xs font-semibold text-gray-700">Q: {q}</p>
@@ -8682,9 +8767,9 @@
                     </div>
                   </section>
 
-                  {/* 八、飞书配合 */}
+                  {/* 七、飞书配合 */}
                   <section>
-                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">📋 八、需在飞书中操作的事项</h3>
+                    <h3 className="text-base font-bold text-gray-700 mb-2 flex items-center gap-2">📋 七、需在飞书中操作的事项</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead><tr className="bg-gray-100">
@@ -8693,11 +8778,12 @@
                         </tr></thead>
                         <tbody>
                           {[
-                            ['设置父子目标关系', '编辑「目标」表的「父目标」双向关联字段'],
-                            ['配置流程模板', '在「流程模板」表中创建/编辑模板、节点、前置关系'],
-                            ['设置参与角色', '编辑「流程模板」表的「参与角色」多选字段'],
-                            ['调整成员权限', '修改「成员」表的「权限设置」字段'],
-                            ['配置关联组别', '编辑「成员」表的「关联组别」字段'],
+                            ['配置流程模板', '在「流程模板」表中创建/编辑模板、设置前置依赖'],
+                            ['设置参与角色', '编辑「流程模板」表的「参与角色」多选字段（决定跨部门可见性）'],
+                            ['调整成员权限', '修改「团队成员」表的「权限设置」字段'],
+                            ['配置关联组别', '编辑「团队成员」表的「关联组别」字段（产品部关联运营组）'],
+                            ['设置父子目标', '编辑「目标」表的「父目标」双向关联字段'],
+                            ['上传封面图', '也可在飞书「项目」表的「封面图片」附件字段直接上传'],
                           ].map(([action, desc], i) => (
                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                               <td className="border border-gray-100 px-3 py-1.5 font-medium">{action}</td>
