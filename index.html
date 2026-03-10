@@ -6214,41 +6214,38 @@
                 </div>
               )}
               <div className="flex-1 min-w-0">
-              {/* 第1行：状态 + 优先级 + deadline + 剩余天数 */}
-              <div className="flex items-center gap-1.5 mb-1.5 text-[10px]">
-                <span className={`px-1.5 py-0.5 rounded font-medium ${
+              {/* 第1行：状态 + 优先级 + 工期健康度 + 进度 + 工具按钮 */}
+              <div className="flex items-center gap-1 mb-1 text-[10px]">
+                <span className={`px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
                   status === '已完成' ? 'bg-green-100 text-green-700' : status === '进行中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                }`}>{status}</span>
+                }`}>{status === '未开始' ? '待启' : status === '进行中' ? '进行' : status === '已完成' ? '完成' : status}</span>
                 {product.priority && (
-                  <span className="font-semibold" style={{color: priColor.text}}>{product.priority}</span>
+                  <span className="font-bold flex-shrink-0" style={{color: priColor.text}}>{product.priority}</span>
                 )}
                 {product.targetDate && (
-                  <>
-                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                      isOverdue ? 'bg-red-500 text-white' : daysRemaining !== null && daysRemaining <= 3 ? 'bg-red-100 text-red-700' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-orange-100 text-orange-700' : daysRemaining !== null && daysRemaining <= 14 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {product.targetDate.substring(5)}
-                      {status !== '已完成' && progress < 100 && daysRemaining !== null && (
-                        <span className="ml-0.5">
-                          {isOverdue ? ` 逾期${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? ' 今天截止' : ` 剩${daysRemaining}天`}
-                        </span>
-                      )}
-                    </span>
-                  </>
+                  <span className={`px-1.5 py-0.5 rounded-md font-bold flex-shrink-0 whitespace-nowrap ${
+                    isOverdue ? 'bg-red-500 text-white' : daysRemaining !== null && daysRemaining <= 3 ? 'bg-red-100 text-red-700' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-orange-100 text-orange-700' : daysRemaining !== null && daysRemaining <= 14 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {product.targetDate.substring(5)}
+                    {status !== '已完成' && progress < 100 && daysRemaining !== null && (
+                      <span className="ml-0.5">
+                        {isOverdue ? ` 逾${Math.abs(daysRemaining)}天` : daysRemaining === 0 ? ' 今天' : ` ${daysRemaining}天`}
+                      </span>
+                    )}
+                  </span>
                 )}
-                <div className="ml-auto flex items-center gap-1">
-                  {/* 工期健康度（父项目） */}
-                  {workloadHealth && status !== '已完成' && progress < 100 && (
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                      workloadHealth.health === 'ok' ? 'bg-emerald-100 text-emerald-700' :
-                      workloadHealth.health === 'tight' ? 'bg-yellow-100 text-yellow-700' :
-                      workloadHealth.health === 'risk' ? 'bg-red-100 text-red-700' :
-                      'bg-red-500 text-white'
-                    }`} title={`关键路径剩余${workloadHealth.criticalDays}工作日 / 可用${workloadHealth.remainingDays}工作日`}>
-                      {workloadHealth.health === 'ok' ? '充裕' : workloadHealth.health === 'tight' ? '紧张' : workloadHealth.health === 'risk' ? '风险' : '超期'}
-                    </span>
-                  )}
-                  <span className={`font-bold text-xs ${progress >= 100 ? 'text-green-600' : progress >= 50 ? 'text-blue-600' : 'text-gray-500'}`}>{progress}%</span>
+                {workloadHealth && status !== '已完成' && progress < 100 && (
+                  <span className={`px-1 py-0.5 rounded text-[9px] font-bold flex-shrink-0 ${
+                    workloadHealth.health === 'ok' ? 'bg-emerald-100 text-emerald-700' :
+                    workloadHealth.health === 'tight' ? 'bg-yellow-100 text-yellow-700' :
+                    workloadHealth.health === 'risk' ? 'bg-red-100 text-red-700' :
+                    'bg-red-500 text-white'
+                  }`} title={`需${workloadHealth.criticalDays}天/剩${workloadHealth.remainingDays}天`}>
+                    {workloadHealth.health === 'ok' ? '充裕' : workloadHealth.health === 'tight' ? '紧张' : workloadHealth.health === 'risk' ? '风险' : '超期'}
+                  </span>
+                )}
+                <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
+                  <span className={`font-bold text-[11px] ${progress >= 100 ? 'text-green-600' : progress >= 50 ? 'text-blue-600' : 'text-gray-400'}`}>{progress}%</span>
                   {canEdit && !product.coverImage && (
                     <button className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-gray-300 hover:text-gray-500 text-[10px]"
                       onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }} title="上传封面">📷</button>
