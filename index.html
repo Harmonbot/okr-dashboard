@@ -2389,11 +2389,13 @@
                                 {task.priority}
                               </span>
                               
-                              {task.dueDate && (
-                                <span className="text-xs text-gray-400">
+                              {task.status === '已完成' && task.completeDate ? (
+                                <span className="text-xs text-green-500">✓ {task.completeDate}</span>
+                              ) : task.dueDate ? (
+                                <span className={`text-xs ${task.status !== '已完成' && new Date(task.dueDate) < new Date() ? 'text-red-500' : 'text-gray-400'}`}>
                                   {task.dueDate}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                             
                             {/* 操作按钮区域 */}
@@ -8012,51 +8014,63 @@
       }, []);
 
       const fetchData = async (background = false) => {
-        if (!background) {
+        if (!background && !data) {
           setLoading(true);
           setError(null);
         }
         try {
           // === localStorage 缓存层：二次访问秒开 ===
           const CACHE_KEY = 'wz_data_v1';
-          const CACHE_TTL = 90 * 1000; // 90秒缓存有效期
+          const CACHE_TTL = 90 * 1000;
           if (!background && !data) {
-            // 首次加载：先用缓存渲染（瞬间出内容）
+            // 首次加载：先用缓存渲染
             try {
               const cached = localStorage.getItem(CACHE_KEY);
               if (cached) {
                 const { d: cachedRaw, t: cachedTs } = JSON.parse(cached);
-                if (cachedRaw && Date.now() - cachedTs < 10 * 60 * 1000) { // 缓存10分钟内有效
+                if (cachedRaw && Date.now() - cachedTs < 30 * 60 * 1000) { // 缓存30分钟内有效（延长）
                   const transformed = transformData(cachedRaw);
                   setData(transformed);
                   setLastUpdate('缓存 ' + new Date(cachedTs).toLocaleTimeString());
+                  setLoading(false);
                   if (Date.now() - cachedTs < CACHE_TTL) {
-                    setLoading(false);
-                    return; // 缓存90秒内，不请求
+                    return; // 90秒内不请求
                   }
-                  // 缓存超过90秒但不到10分钟 — 已渲染缓存，继续后台拉最新
+                  // 超过90秒 → 继续后台拉最新（但已有数据展示）
                 }
               }
-            } catch(e) { /* ignore cache errors */ }
+            } catch(e) {}
           }
 
           const json = await api.fetchData();
           
-          if (json.success) {
+          if (json.success && json.data) {
             const transformed = transformData(json.data);
-            setData(transformed);
-            setLastUpdate(new Date().toLocaleTimeString());
+            // 只在新数据有效时才替换（防止空数据覆盖）
+            const newProducts = transformed.products || [];
+            if (newProducts.length > 0 || !data) {
+              setData(transformed);
+              setLastUpdate(new Date().toLocaleTimeString());
+            }
             // 写入缓存
             try {
               localStorage.setItem(CACHE_KEY, JSON.stringify({ d: json.data, t: Date.now() }));
-            } catch(e) { /* ignore quota errors */ }
-          } else {
+            } catch(e) {}
+          } else if (!data) {
+            // 只有在完全没有数据时才报错
             throw new Error(json.error || '数据加载失败');
           }
         } catch (err) {
-          if (!background) setError(err.message);
+          // 只有在没有任何数据时才显示错误
+          if (!data) {
+            if (!background) setError(err.message);
+          } else {
+            console.warn('数据刷新失败（保持旧数据）:', err.message);
+          }
         }
-        if (!background) setLoading(false);
+        if (!background && !data) setLoading(false);
+        // 有数据时确保 loading 关闭
+        if (data) setLoading(false);
       };
 
       useEffect(() => {
@@ -8079,12 +8093,17 @@
       // ===== 权限系统 =====
       // 根据「权限设置」字段判断角色，过滤可见数据
       const permissionData = data ? (() => {
-        // 1. 找到当前登录用户在成员表中的记录
+        // 1. 找到当前登录用户在成员表中的记录（多种匹配策略）
         const me = data.members.find(m => 
           m.id === currentUser.open_id || 
           m.name === currentUser.name || 
-          m.larkName === currentUser.name
+          m.larkName === currentUser.name ||
+          m.larkName === currentUser.en_name ||
+          m.name === currentUser.en_name
         );
+        if (!me) {
+          console.warn('[权限] 未找到当前用户匹配:', currentUser.name, currentUser.open_id, '成员列表:', data.members.length);
+        }
         
         const myPermRole = me?.permRole || '组员';
         const myGroup = me?.group || '';
