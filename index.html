@@ -7869,7 +7869,7 @@
         const fetchNews = async () => {
           // 先检查缓存
           try {
-            const cached = localStorage.getItem('wz_news_v2');
+            const cached = localStorage.getItem('wz_news_v3');
             if (cached) {
               const { data: cachedNews, t: cachedTs } = JSON.parse(cached);
               if (cachedNews?.length > 0 && Date.now() - cachedTs < 2 * 60 * 60 * 1000) {
@@ -7879,68 +7879,18 @@
             }
           } catch(e) {}
           
-          const allNews = [];
-          
-          // 方案1：36kr 跨境电商 RSS
           try {
-            const rssUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://36kr.com/newsflashes');
-            const res = await fetch(rssUrl, { signal: AbortSignal.timeout(8000) });
-            const html = await res.text();
-            // 提取快讯标题（简单正则）
-            const matches = [...html.matchAll(/<a[^>]*class="[^"]*newsflash-item[^"]*"[^>]*>[\s\S]*?<\/a>/gi)];
-            if (matches.length === 0) {
-              // 备用：提取所有看起来像新闻的标题
-              const titleMatches = [...html.matchAll(/"title":"([^"]{10,80})"/g)];
-              titleMatches.forEach(m => {
-                const t = m[1];
-                if (t.match(/跨境|电商|亚马逊|Amazon|TikTok|Temu|SHEIN|外贸|海外|出口|关税|物流|独立站/i)) {
-                  allNews.push({ title: t, summary: '', source: '36氪' });
-                }
-              });
+            const res = await fetch(API_BASE + '/api/lark?action=news', { signal: AbortSignal.timeout(15000) });
+            const json = await res.json();
+            if (json.success && json.data?.length > 0) {
+              setNewsData(json.data);
+              try { localStorage.setItem('wz_news_v3', JSON.stringify({ data: json.data, t: Date.now() })); } catch(e) {}
+            } else {
+              setNewsData([{ title: '暂无新闻数据', summary: '稍后重试', source: '' }]);
             }
-          } catch(e) { console.log('36kr fetch failed:', e.message); }
-          
-          // 方案2：雨果跨境 RSS
-          try {
-            const rssUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.cifnews.com/');
-            const res2 = await fetch(rssUrl2, { signal: AbortSignal.timeout(8000) });
-            const html2 = await res2.text();
-            const titleMatches2 = [...html2.matchAll(/"title":"([^"]{8,100})"/g)];
-            titleMatches2.slice(0, 10).forEach(m => {
-              allNews.push({ title: m[1], summary: '', source: '雨果跨境' });
-            });
-          } catch(e) { console.log('cifnews fetch failed:', e.message); }
-
-          // 方案3：Google News 跨境电商 (via RSS)
-          try {
-            const gUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://news.google.com/rss/search?q=跨境电商&hl=zh-CN&gl=CN&ceid=CN:zh-Hans');
-            const res3 = await fetch(gUrl, { signal: AbortSignal.timeout(8000) });
-            const xml = await res3.text();
-            const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<\/item>/g)];
-            items.slice(0, 8).forEach(m => {
-              const title = m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-              const source = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-              if (title && title.length > 5) {
-                allNews.push({ title, summary: '', source });
-              }
-            });
-          } catch(e) { console.log('Google News fetch failed:', e.message); }
-          
-          // 去重 + 限制数量
-          const seen = new Set();
-          const unique = allNews.filter(n => {
-            const key = n.title.substring(0, 20);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          }).slice(0, 8);
-          
-          if (unique.length > 0) {
-            setNewsData(unique);
-            try { localStorage.setItem('wz_news_v2', JSON.stringify({ data: unique, t: Date.now() })); } catch(e) {}
-          } else {
-            // 所有源都失败时显示提示
-            setNewsData([{ title: '暂无法获取新闻数据', summary: '请检查网络连接，或稍后重试', source: '' }]);
+          } catch (e) {
+            console.log('News fetch failed:', e.message);
+            setNewsData([{ title: '获取新闻失败', summary: '请检查网络连接', source: '' }]);
           }
         };
         fetchNews();
@@ -8564,10 +8514,13 @@
                       {newsData.map((item, i) => (
                         <div key={i} className="flex gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                           <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">{i + 1}</div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <div className="text-sm font-medium text-gray-800 leading-snug">{item.title}</div>
-                            <div className="text-xs text-gray-500 mt-1 leading-relaxed">{item.summary}</div>
-                            {item.source && <div className="text-[10px] text-gray-400 mt-1">{item.source}</div>}
+                            {item.summary && <div className="text-xs text-gray-500 mt-1 leading-relaxed">{item.summary}</div>}
+                            <div className="flex items-center gap-2 mt-1">
+                              {item.source && <span className="text-[10px] text-blue-500">{item.source}</span>}
+                              {item.timeAgo && <span className="text-[10px] text-gray-400">{item.timeAgo}</span>}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -8580,7 +8533,7 @@
                     </div>
                   )}
                   <div className="text-center text-[10px] text-gray-300 mt-4 pt-3 border-t border-gray-100">
-                    聚合自 Google News · 36氪 · 雨果跨境 · 2小时缓存更新
+                    聚合自 Google News · 服务端抓取 · 2小时缓存
                   </div>
                 </div>
               </div>
