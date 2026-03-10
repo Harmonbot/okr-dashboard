@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   // ===== POST: 上传文件 =====
   if (req.method === 'POST') {
     try {
-      const { app_token, table_id, record_id, file_name, file_data, file_size } = req.body;
+      const { app_token, table_id, record_id, file_name, file_data, file_size, field_name } = req.body;
       if (!app_token || !table_id || !record_id || !file_name || !file_data) {
         return res.status(400).json({ success: false, error: '缺少必要参数' });
       }
@@ -103,7 +103,7 @@ export default async function handler(req, res) {
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-          body: JSON.stringify({ fields: { '输出文件': [{ file_token: fileToken }] } })
+          body: JSON.stringify({ fields: { [field_name || '输出文件']: [{ file_token: fileToken }] } })
         }
       );
       const updateData = await updateRes.json();
