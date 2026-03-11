@@ -5859,6 +5859,8 @@
       const [filterPriority, setFilterPriority] = useState('all');
       const [searchProject, setSearchProject] = useState('');
       const [filterGroup, setFilterGroup] = useState('all');
+      const [collapsedDepts, setCollapsedDepts] = useState(new Set());
+      const [collapsedGroups, setCollapsedGroups] = useState(new Set());
       const [showCreateForm, setShowCreateForm] = useState(false);
       const [createProjectName, setCreateProjectName] = useState('');
       const [createProjectType, setCreateProjectType] = useState('');
@@ -6768,18 +6770,86 @@
             };
 
             const allSections = [];
-            const deptKeys = Object.keys(deptMap).sort();
+            // 二级分组：大部门 → 组别 → [products]
+            const deptGroupMap = {}; // { 大部门: { 组别: [products] } }
+            Object.keys(deptMap).forEach(groupLabel => {
+              const parentDept = groupToDeptMap[groupLabel] || groupLabel;
+              if (!deptGroupMap[parentDept]) deptGroupMap[parentDept] = {};
+              if (!deptGroupMap[parentDept][groupLabel]) deptGroupMap[parentDept][groupLabel] = [];
+              deptGroupMap[parentDept][groupLabel].push(...deptMap[groupLabel]);
+            });
 
-            deptKeys.forEach(dept => {
-              const dc = getGroupColor(dept);
+            // 部门排序
+            const deptOrder = ['运营中心', '产品中心', '中枢部', '营销推广部', '设计部', '技术部'];
+            const sortedDepts = Object.keys(deptGroupMap).sort((a, b) => {
+              const ai = deptOrder.indexOf(a); const bi = deptOrder.indexOf(b);
+              return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+            });
+
+            const toggleDept = (dept) => {
+              setCollapsedDepts(prev => {
+                const next = new Set(prev);
+                next.has(dept) ? next.delete(dept) : next.add(dept);
+                return next;
+              });
+            };
+            const toggleGroup = (key) => {
+              setCollapsedGroups(prev => {
+                const next = new Set(prev);
+                next.has(key) ? next.delete(key) : next.add(key);
+                return next;
+              });
+            };
+
+            sortedDepts.forEach(dept => {
+              const dc = deptColors[dept] || { border: '#6B7280', bg: '#F9FAFB', text: '#374151', icon: '📁' };
+              const groups = deptGroupMap[dept];
+              const groupKeys = Object.keys(groups).sort();
+              const totalCount = groupKeys.reduce((s, g) => s + groups[g].length, 0);
+              const isDeptCollapsed = collapsedDepts.has(dept);
+              // 如果部门只有一个组且组名=部门名，不显示二级
+              const isSingleGroup = groupKeys.length === 1 && groupKeys[0] === dept;
+
               allSections.push(
-                <div key={dept} className="mb-6">
-                  <div className="dept-sticky flex items-center gap-2 mb-3 pb-2" style={{borderBottom: `2px solid ${dc.border}`}}>
+                <div key={dept} className="mb-5">
+                  {/* 大部门标题栏 - 可点击折叠 */}
+                  <div className="dept-sticky flex items-center gap-2 mb-2 pb-2 cursor-pointer select-none"
+                    style={{borderBottom: `2px solid ${dc.border}`}}
+                    onClick={() => toggleDept(dept)}>
+                    <span className={`text-xs transition-transform ${isDeptCollapsed ? '' : 'rotate-90'}`} style={{color: dc.text}}>▶</span>
                     <span className="text-lg">{dc.icon}</span>
                     <span className="text-sm font-bold" style={{color: dc.text}}>{dept}</span>
-                    <span className="badge" style={{background: dc.bg, color: dc.text}}>{deptMap[dept].length} 个项目</span>
+                    <span className="badge" style={{background: dc.bg, color: dc.text}}>{totalCount} 个项目</span>
+                    {isDeptCollapsed && <span className="text-[10px] text-gray-400 ml-1">（已收起）</span>}
                   </div>
-                  {renderMonthGroups(deptMap[dept])}
+
+                  {/* 部门内容 */}
+                  {!isDeptCollapsed && (
+                    isSingleGroup ? (
+                      // 单组别：直接展示月份分组
+                      renderMonthGroups(groups[groupKeys[0]])
+                    ) : (
+                      // 多组别：二级分组
+                      groupKeys.map(groupName => {
+                        const groupProducts = groups[groupName];
+                        const groupKey = `${dept}/${groupName}`;
+                        const isGroupCollapsed = collapsedGroups.has(groupKey);
+                        const gc = getGroupColor(groupName);
+                        return (
+                          <div key={groupName} className="mb-4 ml-2 pl-3" style={{borderLeft: `2px solid ${gc.border}22`}}>
+                            <div className="flex items-center gap-2 mb-2 cursor-pointer select-none"
+                              onClick={() => toggleGroup(groupKey)}>
+                              <span className={`text-[10px] transition-transform ${isGroupCollapsed ? '' : 'rotate-90'}`} style={{color: gc.text}}>▶</span>
+                              <span className="text-xs font-semibold" style={{color: gc.text}}>{groupName}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{background: gc.bg, color: gc.text}}>{groupProducts.length}</span>
+                              {isGroupCollapsed && <span className="text-[10px] text-gray-300">···</span>}
+                            </div>
+                            {!isGroupCollapsed && renderMonthGroups(groupProducts)}
+                          </div>
+                        );
+                      })
+                    )
+                  )}
                 </div>
               );
             });
