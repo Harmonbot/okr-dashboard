@@ -6343,11 +6343,12 @@
               </div>
 
               {/* 第3行：标签 + 负责人 */}
-              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mb-2">
+              <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-2 flex-wrap">
                 <span className="px-1.5 py-0.5 rounded bg-gray-50 text-gray-500">{product.templateType || '未分类'}</span>
-                {isParent && <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-500">{childProducts.length}子项目</span>}
+                {product.brand && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">{product.brand}</span>}
+                {product.productType && <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-600">{product.productType}</span>}
                 {product.ownerName && (
-                  <span className="flex items-center gap-0.5 ml-auto">
+                  <span className="flex items-center gap-0.5 ml-auto flex-shrink-0">
                     {ownerMember?.avatarUrl ? (
                       <img src={ownerMember.avatarUrl} className="w-3.5 h-3.5 rounded-full" alt="" />
                     ) : (
