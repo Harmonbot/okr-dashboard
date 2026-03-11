@@ -530,6 +530,8 @@
             responsibleDept: r.fields['负责部门'] || '',
             initiatorGroup: r.fields['发起组'] || '', // 发起组别
             visibleGroups: r.fields['可见组别'] || [], // 可见组别（多选）
+            brand: r.fields['品牌'] || '', // 品牌
+            productType: r.fields['产品类型'] || '', // 产品类型
             skippedNodes: (() => {
               try {
                 const v = r.fields['跳过节点'];
@@ -5801,6 +5803,9 @@
       const [editStartDate, setEditStartDate] = useState('');
       const [editTargetDate, setEditTargetDate] = useState('');
       const [editSaving, setEditSaving] = useState(false);
+      const [editPriority, setEditPriority] = useState('');
+      const [editBrand, setEditBrand] = useState('');
+      const [editProductType, setEditProductType] = useState('');
       
       // 打开编辑面板时初始化值
       const openEditPanel = (productId) => {
@@ -5810,6 +5815,9 @@
           setEditName(p.name);
           setEditStartDate(p.startDate || '');
           setEditTargetDate(p.targetDate || '');
+          setEditPriority(p.priority || '');
+          setEditBrand(p.brand || '');
+          setEditProductType(p.productType || '');
         }
         setEditingProductId(productId);
       };
@@ -5828,11 +5836,17 @@
           if (editTargetDate !== (product.targetDate || '')) {
             fields['计划上线日期'] = editTargetDate ? new Date(editTargetDate).getTime() : null;
           }
+          if (editPriority !== (product.priority || '')) fields['重要程度'] = editPriority || null;
+          if (editBrand !== (product.brand || '')) fields['品牌'] = editBrand || null;
+          if (editProductType !== (product.productType || '')) fields['产品类型'] = editProductType || null;
           if (Object.keys(fields).length === 0) { setEditingProductId(null); setEditSaving(false); return; }
           // 乐观更新
           if (editName !== product.name) product.name = editName;
           if (editStartDate !== (product.startDate || '')) product.startDate = editStartDate;
           if (editTargetDate !== (product.targetDate || '')) product.targetDate = editTargetDate;
+          if (editPriority !== (product.priority || '')) product.priority = editPriority;
+          if (editBrand !== (product.brand || '')) product.brand = editBrand;
+          if (editProductType !== (product.productType || '')) product.productType = editProductType;
           setEditingProductId(null);
           const res = await fetch(API_BASE + '/api/update-task', {
             method: 'POST',
@@ -5862,6 +5876,8 @@
       const [createProjectName, setCreateProjectName] = useState('');
       const [createProjectType, setCreateProjectType] = useState('');
       const [createProjectPriority, setCreateProjectPriority] = useState('P2');
+      const [createProjectBrand, setCreateProjectBrand] = useState('');
+      const [createProjectProductType, setCreateProjectProductType] = useState('');
       const [createProjectStart, setCreateProjectStart] = useState('');
       const [createProjectDeadline, setCreateProjectDeadline] = useState('');
       const [createProjectDept, setCreateProjectDept] = useState('');
@@ -5904,6 +5920,8 @@
             '负责部门': createProjectDept,
             '发起组': createProjectGroup,
             ...(createVisibleGroups.length > 0 ? { '可见组别': createVisibleGroups } : {}),
+            ...(createProjectBrand ? { '品牌': createProjectBrand } : {}),
+            ...(createProjectProductType ? { '产品类型': createProjectProductType } : {}),
           };
           if (createProjectOwner) parentFields['项目负责人'] = [{ id: createProjectOwner }];
 
@@ -6002,6 +6020,8 @@
           setCreateProjectGroup('');
           setCreateProjectOwner('');
           setCreateVisibleGroups([]);
+          setCreateProjectBrand('');
+          setCreateProjectProductType('');
           // 刷新数据（不删缓存，让新数据覆盖旧缓存）
           setTimeout(() => onRefresh?.(), 2000);
         } catch (err) {
@@ -6547,6 +6567,26 @@
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">品牌</label>
+                  <select value={createProjectBrand} onChange={e => setCreateProjectBrand(e.target.value)}
+                    className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
+                  >
+                    <option value="">不选择</option>
+                    {['NUBWO','BINNUNE','JIAMQISHI','RownFusny','acer','awatrue','FAEBASK'].map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">产品类型</label>
+                  <select value={createProjectProductType} onChange={e => setCreateProjectProductType(e.target.value)}
+                    className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
+                  >
+                    <option value="">不选择</option>
+                    {['游戏有线耳机','游戏无线耳机','话务有线耳机','话务无线耳机','儿童有线耳机','儿童无线耳机','音乐有线耳机','音乐无线耳机','TV有线耳机','TV无线耳机'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="text-[11px] font-medium text-gray-500 mb-1 block">负责部门 *</label>
                   <select value={createProjectDept} onChange={e => { setCreateProjectDept(e.target.value); setCreateProjectGroup(''); }}
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
@@ -6895,6 +6935,32 @@
                       <label className="text-[11px] font-medium text-gray-500 mb-1 block">截止日期</label>
                       <input type="date" value={editTargetDate} onChange={e => setEditTargetDate(e.target.value)}
                         className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-500 mb-1 block">重要程度</label>
+                      <select value={editPriority} onChange={e => setEditPriority(e.target.value)}
+                        className="w-full px-2 py-2 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}}>
+                        <option value="">未设置</option>
+                        {['P0','P1','P2','P3'].map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-500 mb-1 block">品牌</label>
+                      <select value={editBrand} onChange={e => setEditBrand(e.target.value)}
+                        className="w-full px-2 py-2 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}}>
+                        <option value="">未设置</option>
+                        {['NUBWO','BINNUNE','JIAMQISHI','RownFusny','acer','awatrue','FAEBASK'].map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-500 mb-1 block">产品类型</label>
+                      <select value={editProductType} onChange={e => setEditProductType(e.target.value)}
+                        className="w-full px-2 py-2 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}}>
+                        <option value="">未设置</option>
+                        {['游戏有线耳机','游戏无线耳机','话务有线耳机','话务无线耳机','儿童有线耳机','儿童无线耳机','音乐有线耳机','音乐无线耳机','TV有线耳机','TV无线耳机'].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
