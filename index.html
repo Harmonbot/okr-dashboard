@@ -3414,19 +3414,18 @@
                                         // 计算当前进行到哪个节点
                                         const currentNode = (() => {
                                           if (!line.child) return '';
-                                          const childNodes = (allNodes || []).filter(n => n.productId === line.child.id);
+                                          const childNodes = getNodesForProduct(line.child, allNodes, templates);
                                           if (childNodes.length === 0) return '';
                                           const childTasks = tasks.filter(t => t.productId === line.child.id);
-                                          // 找到最后一个有进行中/已完成任务的节点
+                                          if (childTasks.length === 0) return childNodes[0]?.name?.replace(/阶段$|线$/, '') || '';
+                                          // 找正在进行的节点，或最后完成的节点
                                           let activeNode = '';
                                           for (const nd of childNodes) {
                                             const nodeTasks = childTasks.filter(t => t.stage === nd.name);
-                                            const hasActive = nodeTasks.some(t => t.status === '进行中');
-                                            const allDone = nodeTasks.length > 0 && nodeTasks.every(t => t.status === '已完成');
-                                            if (hasActive) { activeNode = nd.name; break; }
-                                            if (allDone) activeNode = nd.name; // 记住最后完成的
+                                            if (nodeTasks.some(t => t.status === '进行中')) { activeNode = nd.name; break; }
+                                            if (nodeTasks.length > 0 && nodeTasks.every(t => t.status === '已完成')) activeNode = nd.name;
                                           }
-                                          if (!activeNode && childNodes.length > 0) activeNode = childNodes[0].name;
+                                          if (!activeNode) activeNode = childNodes[0]?.name || '';
                                           return activeNode.replace(/阶段$|线$/, '');
                                         })();
                                         
