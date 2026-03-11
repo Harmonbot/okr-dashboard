@@ -3407,76 +3407,58 @@
                                     </div>
                                   </div>
                                   
-                                  {/* 子线流程节点 */}
+                                  {/* 子线列表 */}
                                   <div className={`ml-2 sm:ml-4 ${si < stages.length - 1 ? 'border-l-2 border-dashed border-gray-200 pb-2' : ''} pl-3 sm:pl-6`}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                                      {lineInfos.map((line, li) => (
-                                        <div key={li} 
-                                          className={`border-2 rounded-xl p-3 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
-                                            !line.child ? 'border-dashed border-orange-300 bg-orange-50/30' :
-                                            line.status === 'done' ? 'border-green-400 bg-green-50' : 
-                                            line.status === 'active' ? `${line.dc.border} ${line.dc.bg} ring-2 ${line.dc.ring}` : 
-                                            'border-gray-200 bg-white'
-                                          }`}
-                                          onClick={() => {
-                                            if (line.child) {
-                                              onSelectProduct?.(line.child);
-                                            } else {
-                                              showToast?.(`${line.tpl.name} 尚未创建子项目，请先点击顶部"补建"按钮`, 'warning');
-                                            }
-                                          }}>
-                                          {/* 头部：名称 + 进度 */}
-                                          <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-1.5">
-                                              <span className={`w-2.5 h-2.5 rounded-full ${
-                                                line.status === 'done' ? 'bg-green-500' : line.status === 'active' ? line.dc.dot : 'bg-gray-300'
-                                              }`} />
-                                              <span className="text-sm font-bold text-gray-800">{line.tpl.name}</span>
-                                              {!line.child && <span className="text-[9px] px-1 py-0.5 bg-orange-100 text-orange-600 rounded ml-1">未创建</span>}
+                                    {lineInfos.length === 1 ? (
+                                      // 单条子线：紧凑行
+                                      <div className="flex items-center gap-2 py-2 px-3 rounded-xl border cursor-pointer hover:shadow-md transition-all"
+                                        style={{borderColor: lineInfos[0].status === 'done' ? '#22c55e' : lineInfos[0].status === 'active' ? lineInfos[0].dc.border : '#e5e7eb',
+                                                background: lineInfos[0].status === 'done' ? '#f0fdf4' : lineInfos[0].status === 'active' ? lineInfos[0].dc.bg : '#fff'}}
+                                        onClick={() => lineInfos[0].child && onSelectProduct?.(lineInfos[0].child)}>
+                                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${lineInfos[0].status === 'done' ? 'bg-green-500' : lineInfos[0].status === 'active' ? lineInfos[0].dc.dot : 'bg-gray-300'}`} />
+                                        <span className="text-sm font-semibold text-gray-800 truncate">{lineInfos[0].tpl.name}</span>
+                                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden mx-2 min-w-[60px]">
+                                          <div className={`h-full rounded-full ${lineInfos[0].status === 'done' ? 'bg-green-500' : lineInfos[0].status === 'active' ? `bg-gradient-to-r ${lineInfos[0].dc.grad}` : 'bg-gray-200'}`} style={{width: `${lineInfos[0].progress}%`}} />
+                                        </div>
+                                        <span className={`text-sm font-bold flex-shrink-0 ${lineInfos[0].progress >= 100 ? 'text-green-500' : lineInfos[0].progress > 0 ? 'text-blue-500' : 'text-gray-300'}`}>{lineInfos[0].progress}%</span>
+                                        <span className="text-[10px] text-gray-400 flex-shrink-0">{lineInfos[0].tpl.cycleDays || '?'}天</span>
+                                      </div>
+                                    ) : (
+                                      // 多条并行子线：紧凑列表
+                                      <div className="space-y-1">
+                                        {lineInfos.map((line, li) => (
+                                          <div key={li}
+                                            className="flex items-center gap-2 py-1.5 px-3 rounded-lg cursor-pointer hover:bg-gray-50 transition-all group"
+                                            style={{background: line.status === 'done' ? '#f0fdf430' : 'transparent'}}
+                                            onClick={() => line.child ? onSelectProduct?.(line.child) : showToast?.(`${line.tpl.name} 尚未创建子项目`, 'warning')}>
+                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                              line.status === 'done' ? 'bg-green-500' : line.status === 'active' ? line.dc.dot : 'bg-gray-300'
+                                            }`} />
+                                            <span className={`text-xs font-medium truncate min-w-0 ${line.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                              {line.tpl.name}
+                                            </span>
+                                            {!line.child && <span className="text-[9px] px-1 py-0.5 bg-orange-100 text-orange-600 rounded flex-shrink-0">未创建</span>}
+                                            <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden mx-1 min-w-[40px]">
+                                              <div className={`h-full rounded-full ${
+                                                line.status === 'done' ? 'bg-green-400' : line.status === 'active' ? `bg-gradient-to-r ${line.dc.grad}` : 'bg-gray-200'
+                                              }`} style={{width: `${line.progress}%`}} />
                                             </div>
-                                            <span className={`text-lg font-black ${
+                                            <span className={`text-xs font-bold flex-shrink-0 w-8 text-right ${
                                               line.progress >= 100 ? 'text-green-500' : line.progress > 0 ? 'text-blue-500' : 'text-gray-300'
                                             }`}>{line.progress}%</span>
-                                          </div>
-                                          {/* 进度条 */}
-                                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
-                                            <div className={`h-full rounded-full transition-all duration-500 ${
-                                              line.status === 'done' ? 'bg-green-500' : 
-                                              line.status === 'active' ? `bg-gradient-to-r ${line.dc.grad}` : 'bg-gray-200'
-                                            }`} style={{width: `${line.progress}%`}} />
-                                          </div>
-                                          {/* 底部信息 */}
-                                          <div className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-500 flex-shrink-0">
-                                              {line.status === 'done' ? '✅ 完成' : `⏱ ${line.tpl.cycleDays || '?'}天`}
-                                            </span>
-                                            <div className="flex gap-0.5 flex-wrap justify-end ml-1">
-                                              {(() => {
-                                                const roles = line.tpl.participantRoles || [];
-                                                if (roles.length === 0) {
-                                                  const dept = line.child?.responsibleDept || '未分配';
-                                                  const dc2 = deptColors[dept] || defaultDc;
-                                                  return <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${dc2.bg} ${dc2.text}`}>{dept}</span>;
-                                                }
+                                            <div className="flex gap-0.5 flex-shrink-0">
+                                              {(line.tpl.participantRoles || []).slice(0, 2).map((role, ri) => {
                                                 const roleShort = { '发起组': '发起', '对应产品组': '产品', '中枢部': '中枢', '营销推广部': '营销', '设计部': '设计', '财务部': '财务' };
-                                                const roleDeptColors = {
-                                                  '发起组': deptColors['运营中心'] || defaultDc,
-                                                  '对应产品组': deptColors['产品中心'] || defaultDc,
-                                                  '中枢部': deptColors['中枢部'] || defaultDc,
-                                                  '营销推广部': deptColors['营销推广部'] || defaultDc,
-                                                  '设计部': deptColors['设计部'] || defaultDc,
-                                                  '财务部': defaultDc
-                                                };
-                                                return roles.map((role, ri) => {
-                                                  const dc2 = roleDeptColors[role] || defaultDc;
-                                                  return <span key={ri} className={`px-1 py-0.5 rounded text-[9px] font-medium ${dc2.bg} ${dc2.text}`}>{roleShort[role] || role}</span>;
-                                                });
-                                              })()}
+                                                const roleDc = { '发起组': deptColors['运营中心'], '对应产品组': deptColors['产品中心'], '中枢部': deptColors['中枢部'], '营销推广部': deptColors['营销推广部'], '设计部': deptColors['设计部'] };
+                                                const dc2 = roleDc[role] || defaultDc;
+                                                return <span key={ri} className="px-1 py-0.5 rounded text-[9px] font-medium" style={{background: dc2.bg, color: dc2.text}}>{roleShort[role] || role}</span>;
+                                              })}
                                             </div>
+                                            <span className="text-[10px] text-gray-300 flex-shrink-0 opacity-0 group-hover:opacity-100">→</span>
                                           </div>
-                                        </div>
-                                      ))}
-                                    </div>
+                                        ))}
+                                      </div>
+                                    )}
                                     
                                     {/* 阶段连接箭头 */}
                                     {si < stages.length - 1 && (
@@ -6353,15 +6335,14 @@
               </div>
             </div>
 
-            {/* 子项目流程摘要（父项目）— 紧凑单行 */}
+            {/* 子项目流程摘要（父项目）— 列举子线名称+进度 */}
             {isParent && childProducts.length > 0 && (
-              <div className="border-t px-3 py-2 cursor-pointer" style={{borderColor:'var(--c-border)'}} onClick={() => setSelectedProduct(product)}>
+              <div className="border-t px-3 py-1.5 cursor-pointer" style={{borderColor:'var(--c-border)'}} onClick={() => setSelectedProduct(product)}>
                 {(() => {
                   const parentTplName = Object.values(templates).find(t => t.type === product.templateType && t.ownership === '父项目')?.name || '';
                   const cTpls = Object.values(templates).filter(t => t.ownership === '子项目' && t.parentTemplate === parentTplName);
                   if (cTpls.length === 0) return null;
                   
-                  // 每个子线的完成状态
                   const getChild = (tpl) => childProducts.find(c => c.templateType === tpl.type);
                   const lines = cTpls.map(tpl => {
                     const child = getChild(tpl);
@@ -6372,28 +6353,20 @@
                   });
                   
                   const doneCount = lines.filter(l => l.done).length;
-                  const activeLine = lines.find(l => l.active);
                   
                   return (
-                    <div className="flex items-center gap-1.5">
-                      {/* 进度点 */}
-                      <div className="flex items-center gap-0.5">
-                        {lines.map((l, i) => (
-                          <div key={i} className={`w-2 h-2 rounded-full transition-all ${
-                            l.done ? 'bg-green-500' : l.active ? 'bg-blue-500 ring-2 ring-blue-200' : 'bg-gray-200'
-                          }`} title={`${l.name} ${l.done ? '✓' : l.prog + '%'}`} />
-                        ))}
-                      </div>
-                      {/* 当前阶段文字 */}
-                      <span className="text-[10px] text-gray-400 truncate">
-                        {doneCount === lines.length ? (
-                          <span className="text-green-500">全部完成</span>
-                        ) : activeLine ? (
-                          <span>{activeLine.name} <span className="text-blue-500">{activeLine.prog}%</span></span>
-                        ) : (
-                          <span>{lines.find(l => !l.done)?.name || '待启动'}</span>
-                        )}
-                      </span>
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-center">
+                      {lines.map((l, i) => (
+                        <span key={i} className={`text-[10px] whitespace-nowrap ${
+                          l.done ? 'text-green-500' : l.active ? 'text-blue-600 font-medium' : 'text-gray-300'
+                        }`}>
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full mr-0.5 align-middle ${
+                            l.done ? 'bg-green-500' : l.active ? 'bg-blue-500' : 'bg-gray-200'
+                          }`} />
+                          {l.name}
+                          {(l.active || l.done) && <span className="ml-0.5">{l.prog}%</span>}
+                        </span>
+                      ))}
                       <span className="text-[9px] text-gray-300 ml-auto">{doneCount}/{lines.length}</span>
                     </div>
                   );
