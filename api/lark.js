@@ -74,12 +74,26 @@ async function fetchNews() {
       const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
       const gRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const xml = await gRes.text();
-      const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/g)];
-      items.slice(0, 6).forEach(m => {
-        const title = m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-        const link = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-        const source = m[3].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-        const pubDate = m[4]?.trim() || '';
+      // 提取每个 <item> 块
+      const itemBlocks = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      itemBlocks.slice(0, 6).forEach(block => {
+        const content = block[1];
+        const titleMatch = content.match(/<title>([\s\S]*?)<\/title>/);
+        const sourceMatch = content.match(/<source[^>]*>([\s\S]*?)<\/source>/);
+        const pubDateMatch = content.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        // Google News RSS link 格式可能是: <link/>URL 或 <link>URL</link>
+        let link = '';
+        const linkMatch1 = content.match(/<link>([\s\S]*?)<\/link>/);
+        const linkMatch2 = content.match(/<link\s*\/>\s*(https?:\/\/[^\s<]+)/);
+        const linkMatch3 = content.match(/<link>(https?:\/\/[^\s<]+)/);
+        if (linkMatch1) link = linkMatch1[1].trim();
+        else if (linkMatch2) link = linkMatch2[1].trim();
+        else if (linkMatch3) link = linkMatch3[1].trim();
+        
+        const title = (titleMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const source = (sourceMatch?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const pubDate = (pubDateMatch?.[1] || '').trim();
+        link = link.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
         if (title && title.length > 5) {
           allNews.push({ title, summary: '', source, time: pubDate, link });
         }
@@ -157,26 +171,42 @@ export default async function handler(req, res) {
 
     const tables = tablesData.data.items || [];
 
-    // ⚡ 并行获取所有表数据（核心优化：从 for 串行 → Promise.all 并行）
-    const results = await Promise.all(
-      tables.map(table =>
-        getAllRecords(token, appToken, table.table_id)
-          .then(records => ({ name: table.name, table_id: table.table_id, records }))
-          .catch(err => {
-            console.error(`Failed: ${table.name}`, err.message);
-            return { name: table.name, table_id: table.table_id, records: [] };
-          })
-      )
-    );
+    // ⚡ 并行获取所有表数据 + 项目表字段选项
+    const PROJECT_TABLE_ID = 'tblYM02NyVj3rUkR';
+    const [recordResults, fieldsRes] = await Promise.all([
+      Promise.all(
+        tables.map(table =>
+          getAllRecords(token, appToken, table.table_id)
+            .then(records => ({ name: table.name, table_id: table.table_id, records }))
+            .catch(err => {
+              console.error(`Failed: ${table.name}`, err.message);
+              return { name: table.name, table_id: table.table_id, records: [] };
+            })
+        )
+      ),
+      fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${PROJECT_TABLE_ID}/fields?page_size=50`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(r => r.json()).catch(() => null)
+    ]);
 
     // 组装结果（保持原格式完全兼容）
     const result = {};
-    results.forEach(r => {
+    recordResults.forEach(r => {
       result[r.name] = {
         table_id: r.table_id,
         records: r.records
       };
     });
+
+    // 提取字段选项
+    const fieldOptions = {};
+    if (fieldsRes?.code === 0 && fieldsRes?.data?.items) {
+      fieldsRes.data.items.forEach(f => {
+        if (f.property?.options && f.property.options.length > 0) {
+          fieldOptions[f.field_name] = f.property.options.map(o => o.name);
+        }
+      });
+    }
 
     // CDN 缓存 30秒 + 过期后可用旧数据60秒
     res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
@@ -184,6 +214,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       data: result,
+      fieldOptions,
       tables: tables.map(function(t) { return { name: t.name, table_id: t.table_id }; })
     });
 
