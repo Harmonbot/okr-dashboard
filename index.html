@@ -8656,6 +8656,83 @@
                 )}
               </div>
 
+              {/* 产品看板 — 按模版类型分4个卡片 */}
+              {(stats.isAdmin || stats.role === '部门管理' || stats.role === '组别管理') && (() => {
+                const parentProducts = permissionData.products.filter(p => p.projectType === '父项目');
+                const categories = [
+                  { key: '自研立项', label: '自研立项', color: 'blue', icon: '🔬' },
+                  { key: '选品立项', label: '选品立项', color: 'violet', icon: '🔍' },
+                  { key: '自研新品', label: '自研新品', color: 'emerald', icon: '🚀' },
+                  { key: '选品新品', label: '选品新品', color: 'amber', icon: '📦' },
+                ];
+                const colorMap = {
+                  blue: { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-700', num: 'text-blue-600', tag: 'bg-blue-100 text-blue-700', bar: 'bg-blue-400' },
+                  violet: { bg: 'bg-violet-50', border: 'border-violet-200', title: 'text-violet-700', num: 'text-violet-600', tag: 'bg-violet-100 text-violet-700', bar: 'bg-violet-400' },
+                  emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', title: 'text-emerald-700', num: 'text-emerald-600', tag: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-400' },
+                  amber: { bg: 'bg-amber-50', border: 'border-amber-200', title: 'text-amber-700', num: 'text-amber-600', tag: 'bg-amber-100 text-amber-700', bar: 'bg-amber-400' },
+                };
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
+                    {categories.map(cat => {
+                      const cm = colorMap[cat.color];
+                      const items = parentProducts.filter(p => p.templateType === cat.key);
+                      const total = items.length;
+                      const done = items.filter(p => {
+                        const prog = calcProjectProgress(p, permissionData.processNodes, permissionData.templates, permissionData.tasks, permissionData.products);
+                        return prog >= 100 || p.status === '已完成';
+                      }).length;
+                      const brandCount = {};
+                      items.forEach(p => { if (p.brand) brandCount[p.brand] = (brandCount[p.brand] || 0) + 1; });
+                      const brandEntries = Object.entries(brandCount).sort((a, b) => b[1] - a[1]);
+                      const typeCount = {};
+                      items.forEach(p => { if (p.productType) typeCount[p.productType] = (typeCount[p.productType] || 0) + 1; });
+                      const typeEntries = Object.entries(typeCount).sort((a, b) => b[1] - a[1]);
+                      
+                      return (
+                        <div key={cat.key} className={`${cm.bg} ${cm.border} border rounded-xl p-3`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">{cat.icon}</span>
+                              <span className={`text-xs font-bold ${cm.title}`}>{cat.label}</span>
+                            </div>
+                            <div className="flex items-baseline gap-1">
+                              <span className={`text-xl font-black ${cm.num}`}>{total}</span>
+                              {done > 0 && <span className="text-[10px] text-gray-400">{done}✓</span>}
+                            </div>
+                          </div>
+                          {total > 0 ? (
+                            <div className="space-y-1.5">
+                              {brandEntries.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {brandEntries.slice(0, 4).map(([b, c]) => (
+                                    <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-full ${cm.tag} font-medium`}>{b} {c}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {typeEntries.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {typeEntries.slice(0, 3).map(([t, c]) => (
+                                    <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/80 text-gray-500">{t} {c}</span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex-1 h-1 bg-white/60 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${cm.bar}`} style={{width: `${Math.round(done / total * 100)}%`}} />
+                                </div>
+                                <span className="text-[9px] text-gray-400">{Math.round(done / total * 100)}%</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-gray-300">暂无</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* 逾期项目弹窗 */}
               {showOverduePopup && (() => {
                 const now = new Date();
