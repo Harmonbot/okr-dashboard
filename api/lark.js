@@ -74,13 +74,14 @@ async function fetchNews() {
       const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
       const gRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const xml = await gRes.text();
-      const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/g)];
+      const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?<source[^>]*>([\s\S]*?)<\/source>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/g)];
       items.slice(0, 6).forEach(m => {
         const title = m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-        const source = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-        const pubDate = m[3]?.trim() || '';
+        const link = m[2].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const source = m[3].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+        const pubDate = m[4]?.trim() || '';
         if (title && title.length > 5) {
-          allNews.push({ title, summary: '', source, time: pubDate });
+          allNews.push({ title, summary: '', source, time: pubDate, link });
         }
       });
     } catch (e) {
