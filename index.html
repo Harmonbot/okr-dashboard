@@ -3341,17 +3341,32 @@
                                 </div>
                                 <div className="text-center">
                                   <div className="text-[10px] sm:text-xs opacity-70">剩余</div>
-                                  <div className={`text-lg sm:text-2xl font-bold ${remainingDays <= 10 ? 'text-red-300' : ''}`}>{remainingDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
+                                  {targetDate && now > targetDate ? (
+                                    <div className="text-lg sm:text-2xl font-bold text-red-300">逾期<span className="text-xs sm:text-sm font-normal ml-0.5"></span></div>
+                                  ) : (
+                                    <div className={`text-lg sm:text-2xl font-bold ${remainingDays <= 10 ? 'text-red-300' : ''}`}>{remainingDays}<span className="text-xs sm:text-sm font-normal ml-0.5">天</span></div>
+                                  )}
                                 </div>
                               </div>
                             </div>
                             {/* 整体时间进度条 */}
-                            <div className="mt-3 flex items-center gap-3">
-                              <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-white/80 rounded-full transition-all" style={{width: `${Math.min(100, actualTotalDays > 0 ? (elapsedDays / actualTotalDays * 100) : 0)}%`}} />
-                              </div>
-                              <span className="text-xs opacity-70">{actualTotalDays > 0 ? Math.round(elapsedDays / actualTotalDays * 100) : 0}%</span>
-                            </div>
+                            {(() => {
+                              const pct = actualTotalDays > 0 ? Math.round(elapsedDays / actualTotalDays * 100) : 0;
+                              const isOverdue = targetDate && now > targetDate;
+                              const overdueDays = isOverdue ? Math.max(0, getWorkingDaysBetween(targetDate, now)) : 0;
+                              return (
+                                <div className="mt-3 flex items-center gap-3">
+                                  <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${isOverdue ? 'bg-red-400' : 'bg-white/80'}`} style={{width: `${Math.min(100, pct)}%`}} />
+                                  </div>
+                                  {isOverdue ? (
+                                    <span className="text-xs text-red-300 font-bold">逾期{overdueDays}天</span>
+                                  ) : (
+                                    <span className="text-xs opacity-70">{Math.min(pct, 100)}%</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                           
                           {/* 流程图 */}
