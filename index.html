@@ -5807,6 +5807,9 @@
       const [editBrand, setEditBrand] = useState('');
       const [editProductType, setEditProductType] = useState('');
       
+      // 动态从项目数据提取品牌和产品类型选项（自动跟随飞书表更新）
+      const brandOptions = useMemo(() => [...new Set(products.map(p => p.brand).filter(Boolean))].sort(), [products]);
+      const productTypeOptions = useMemo(() => [...new Set(products.map(p => p.productType).filter(Boolean))].sort(), [products]);
       // 打开编辑面板时初始化值
       const openEditPanel = (productId) => {
         if (editingProductId === productId) { setEditingProductId(null); return; }
@@ -6573,7 +6576,7 @@
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   >
                     <option value="">不选择</option>
-                    {['NUBWO','BINNUNE','JIAMQISHI','RownFusny','acer','awatrue','FAEBASK'].map(b => <option key={b} value={b}>{b}</option>)}
+                    {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
                 <div>
@@ -6582,7 +6585,7 @@
                     className="w-full px-2 py-2 rounded-lg text-xs border outline-none" style={{borderColor:'var(--c-border)'}}
                   >
                     <option value="">不选择</option>
-                    {['游戏有线耳机','游戏无线耳机','话务有线耳机','话务无线耳机','儿童有线耳机','儿童无线耳机','音乐有线耳机','音乐无线耳机','TV有线耳机','TV无线耳机'].map(t => <option key={t} value={t}>{t}</option>)}
+                    {productTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
@@ -6952,7 +6955,7 @@
                       <select value={editBrand} onChange={e => setEditBrand(e.target.value)}
                         className="w-full px-2 py-2 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}}>
                         <option value="">未设置</option>
-                        {['NUBWO','BINNUNE','JIAMQISHI','RownFusny','acer','awatrue','FAEBASK'].map(b => <option key={b} value={b}>{b}</option>)}
+                        {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
                       </select>
                     </div>
                     <div>
@@ -6960,7 +6963,7 @@
                       <select value={editProductType} onChange={e => setEditProductType(e.target.value)}
                         className="w-full px-2 py-2 rounded-lg text-xs border outline-none focus:ring-2 focus:ring-purple-300" style={{borderColor:'var(--c-border)'}}>
                         <option value="">未设置</option>
-                        {['游戏有线耳机','游戏无线耳机','话务有线耳机','话务无线耳机','儿童有线耳机','儿童无线耳机','音乐有线耳机','音乐无线耳机','TV有线耳机','TV无线耳机'].map(t => <option key={t} value={t}>{t}</option>)}
+                        {productTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </div>
                   </div>
@@ -8052,6 +8055,8 @@
 
     const App = () => {
       const [data, setData] = useState(null);
+      const dataRef = useRef(null); // 追踪最新 data 引用，防止闭包过时
+      useEffect(() => { dataRef.current = data; }, [data]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [activeTab, setActiveTab] = useState('products');
@@ -8174,29 +8179,27 @@
       }, []);
 
       const fetchData = async (background = false) => {
-        if (!background && !data) {
+        const currentData = dataRef.current;
+        if (!background && !currentData) {
           setLoading(true);
           setError(null);
         }
         try {
-          // === localStorage 缓存层：二次访问秒开 ===
           const CACHE_KEY = 'wz_data_v1';
           const CACHE_TTL = 90 * 1000;
-          if (!background && !data) {
-            // 首次加载：先用缓存渲染
+          if (!background && !currentData) {
             try {
               const cached = localStorage.getItem(CACHE_KEY);
               if (cached) {
                 const { d: cachedRaw, t: cachedTs } = JSON.parse(cached);
-                if (cachedRaw && Date.now() - cachedTs < 30 * 60 * 1000) { // 缓存30分钟内有效（延长）
+                if (cachedRaw && Date.now() - cachedTs < 30 * 60 * 1000) {
                   const transformed = transformData(cachedRaw);
-                  setData(transformed);
-                  setLastUpdate('缓存 ' + new Date(cachedTs).toLocaleTimeString());
-                  setLoading(false);
-                  if (Date.now() - cachedTs < CACHE_TTL) {
-                    return; // 90秒内不请求
+                  if (transformed.products?.length > 0) {
+                    setData(transformed);
+                    setLastUpdate('缓存 ' + new Date(cachedTs).toLocaleTimeString());
+                    setLoading(false);
+                    if (Date.now() - cachedTs < CACHE_TTL) return;
                   }
-                  // 超过90秒 → 继续后台拉最新（但已有数据展示）
                 }
               }
             } catch(e) {}
@@ -8206,31 +8209,30 @@
           
           if (json.success && json.data) {
             const transformed = transformData(json.data);
-            // 只在新数据有效时才替换（防止空数据覆盖）
             const newProducts = transformed.products || [];
-            if (newProducts.length > 0 || !data) {
+            const oldCount = dataRef.current?.products?.length || 0;
+            if (newProducts.length > 0) {
               setData(transformed);
               setLastUpdate(new Date().toLocaleTimeString());
+              try { localStorage.setItem(CACHE_KEY, JSON.stringify({ d: json.data, t: Date.now() })); } catch(e) {}
+            } else if (oldCount === 0) {
+              setData(transformed);
+              setLastUpdate(new Date().toLocaleTimeString());
+            } else {
+              console.warn('[fetchData] 新数据产品为空，保持旧数据。旧数据:', oldCount, '条');
             }
-            // 写入缓存
-            try {
-              localStorage.setItem(CACHE_KEY, JSON.stringify({ d: json.data, t: Date.now() }));
-            } catch(e) {}
-          } else if (!data) {
-            // 只有在完全没有数据时才报错
+          } else if (!dataRef.current) {
             throw new Error(json.error || '数据加载失败');
           }
         } catch (err) {
-          // 只有在没有任何数据时才显示错误
-          if (!data) {
+          if (!dataRef.current) {
             if (!background) setError(err.message);
           } else {
-            console.warn('数据刷新失败（保持旧数据）:', err.message);
+            console.warn('[fetchData] 刷新失败，保持旧数据:', err.message);
           }
         }
-        if (!background && !data) setLoading(false);
-        // 有数据时确保 loading 关闭
-        if (data) setLoading(false);
+        if (!dataRef.current) { if (!background) setLoading(false); }
+        else setLoading(false);
       };
 
       useEffect(() => {
