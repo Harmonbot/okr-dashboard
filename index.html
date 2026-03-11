@@ -1786,13 +1786,8 @@
       // 检查当前用户是否是任务负责人
       const isTaskAssignee = (task) => {
         if (!currentUser) return false;
-        // 任务负责人
+        // 严格仅任务负责人本人可以接受/完成任务
         if (task.assignee === currentUser.open_id || task.assigneeName === currentUser.name || task.assigneeName === currentUser.en_name) return true;
-        // 管理员/总经理可以操作所有任务
-        const viewerMember = members?.find(m => m.id === currentUser.open_id || m.name === currentUser.name);
-        if (viewerMember?.permRole === '管理员' || viewerMember?.permRole === '总经理') return true;
-        // 项目负责人也可以操作该项目下的任务
-        if (task.productId && product?.ownerId === currentUser.open_id) return true;
         return false;
       };
       
