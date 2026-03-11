@@ -8658,7 +8658,7 @@
 
               {/* 产品看板 — 按模版类型分4个卡片 */}
               {(stats.isAdmin || stats.role === '部门管理' || stats.role === '组别管理') && (() => {
-                const parentProducts = permissionData.products.filter(p => p.projectType === '父项目');
+                const parentProducts = permissionData.products.filter(p => p.category === '父项目');
                 const categories = [
                   { key: '自研立项', label: '自研立项', color: 'blue', icon: '🔬' },
                   { key: '选品立项', label: '选品立项', color: 'violet', icon: '🔍' },
