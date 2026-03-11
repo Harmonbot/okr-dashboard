@@ -2217,13 +2217,18 @@
                 
                 // 当前节点的时间范围（从 timelineMap）
                 const nodeTimeline = timelineMap[node?.name];
+                const today = new Date().toISOString().split('T')[0];
                 const nodeDateMin = (() => {
-                  const today = new Date().toISOString().split('T')[0];
                   const nodeStart = nodeTimeline?.planStart ? new Date(nodeTimeline.planStart).toISOString().split('T')[0] : '';
                   if (!nodeStart) return today;
                   return nodeStart > today ? nodeStart : today;
                 })();
-                const nodeDateMax = nodeTimeline?.planEnd ? new Date(nodeTimeline.planEnd).toISOString().split('T')[0] : '';
+                const nodeDateMax = (() => {
+                  const nodeEnd = nodeTimeline?.planEnd ? new Date(nodeTimeline.planEnd).toISOString().split('T')[0] : '';
+                  if (!nodeEnd) return '';
+                  // 确保 end >= start（时间线已过期时自动延展）
+                  return nodeEnd >= nodeDateMin ? nodeEnd : '';
+                })();
                 
                 // 按组别分组，当前用户排在最前
                 const groupedMembers = {};
@@ -2282,15 +2287,18 @@
                           value={formData.plannedStartDate || new Date().toISOString().split('T')[0]}
                           onChange={e => setFormData({...formData, plannedStartDate: e.target.value})}
                           min={nodeDateMin}
-                          max={nodeDateMax}
+                          {...(nodeDateMax ? { max: nodeDateMax } : {})}
                           className="w-full px-2 py-1.5 pt-2 border rounded-lg text-xs focus:ring-2 focus:ring-purple-300 outline-none"
                           title={nodeDateMin && nodeDateMax ? `开始日期范围: ${nodeDateMin} ~ ${nodeDateMax}` : '预计开始日期'}
                         />
                       </div>
                     </div>
-                    {nodeDateMin && nodeDateMax && (
+                    {nodeDateMin && (
                       <div className="text-[10px] text-gray-400 -mt-1 mb-2">
-                        📅 本节点工期：{nodeDateMin.slice(5)} ~ {nodeDateMax.slice(5)}
+                        📅 本节点工期：{nodeDateMin.slice(5)}{nodeDateMax ? ` ~ ${nodeDateMax.slice(5)}` : ' 起'}
+                        {nodeTimeline?.planEnd && new Date(nodeTimeline.planEnd) < new Date() && (
+                          <span className="text-red-400 ml-1">（原计划已过期）</span>
+                        )}
                       </div>
                     )}
                     {/* 负责人 - tag按钮 */}
