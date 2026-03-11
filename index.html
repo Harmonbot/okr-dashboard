@@ -640,9 +640,15 @@
             collaborators: (r.fields['协作人'] || []).map(c => c.name || '').filter(Boolean),
             description: (() => { let d = r.fields['任务描述'] || ''; if (Array.isArray(d)) d = d.map(x => x.text || x).join(''); return d; })(),
             startDate: r.fields['开始日期'] ? new Date(r.fields['开始日期']).toISOString().split('T')[0] : '',
+            startDateTs: r.fields['开始日期'] || 0, // 原始时间戳（毫秒）
             plannedStartDate: r.fields['预计开始日期'] ? new Date(r.fields['预计开始日期']).toISOString().split('T')[0] : '',
             dueDate: r.fields['截止日期'] ? new Date(r.fields['截止日期']).toISOString().split('T')[0] : '',
             completeDate: r.fields['完成日期'] ? new Date(r.fields['完成日期']).toISOString().split('T')[0] : '',
+            completeDateTs: r.fields['完成日期'] || 0, // 原始时间戳（毫秒）
+            completeDateFull: r.fields['完成日期'] ? (() => {
+              const d = new Date(r.fields['完成日期']);
+              return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+            })() : '',
             outputFile: r.fields['输出文件']?.[0] || null,
             outputUrl: (() => {
               // 输出链接：先检查独立字段，再从输出文字中提取
@@ -1893,7 +1899,7 @@
         dueDate.setDate(dueDate.getDate() + nodeDays);
         const patch = {
           status: '进行中',
-          startDate: today.toISOString().split('T')[0],
+          startDate: today.getTime(), // 毫秒时间戳，飞书记录精确时间
           dueDate: dueDate.toISOString().split('T')[0]
         };
         
@@ -1970,7 +1976,7 @@
         // 构建完整 patch（包含输出内容，这样立即能看到）
         const patch = {
           status: '已完成',
-          completeDate: new Date().toISOString().split('T')[0],
+          completeDate: Date.now(),
           ...(savedLink ? { outputUrl: savedLink } : {}),
           ...(savedText ? { outputText: savedText } : {})
         };
@@ -1991,7 +1997,7 @@
         // 后台异步：状态更新
         (async () => {
           try {
-            const updateFields = { status: '已完成', completeDate: new Date().toISOString().split('T')[0] };
+            const updateFields = { status: '已完成', completeDate: Date.now() };
             if (savedLink) updateFields.outputUrl = savedLink;
             if (savedText) updateFields.outputText = savedText;
             
@@ -2389,8 +2395,19 @@
                                 {task.priority}
                               </span>
                               
-                              {task.status === '已完成' && task.completeDate ? (
-                                <span className="text-xs text-green-500">✓ {task.completeDate}</span>
+                              {task.status === '已完成' && task.completeDateFull ? (
+                                <span className="text-xs text-green-500 flex items-center gap-1">
+                                  ✓ {task.completeDateFull}
+                                  {task.startDateTs && task.completeDateTs ? (() => {
+                                    const durationMs = task.completeDateTs - task.startDateTs;
+                                    if (durationMs <= 0) return null;
+                                    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+                                    const days = Math.floor(hours / 24);
+                                    const remainHours = hours % 24;
+                                    const durationText = days > 0 ? `${days}天${remainHours}时` : `${hours}小时`;
+                                    return <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${hours <= 8 ? 'bg-green-100 text-green-700' : hours <= 24 ? 'bg-blue-100 text-blue-700' : hours <= 72 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>耗时{durationText}</span>;
+                                  })() : null}
+                                </span>
                               ) : task.dueDate ? (
                                 <span className={`text-xs ${task.status !== '已完成' && new Date(task.dueDate) < new Date() ? 'text-red-500' : 'text-gray-400'}`}>
                                   {task.dueDate}
@@ -7335,7 +7352,7 @@
                               app_token: APP_TOKEN,
                               table_id: 'tblFwmxmjRJPzVmV',
                               record_id: task.id,
-                              fields: { status: action, ...(action === '进行中' ? { startDate: new Date().toISOString().split('T')[0] } : {}) }
+                              fields: { status: action, ...(action === '进行中' ? { startDate: Date.now() } : {}) }
                             })
                           });
                           const result = await res.json();
@@ -7492,7 +7509,7 @@
                             record_id: completeTask.id,
                             fields: {
                               status: '已完成',
-                              completeDate: new Date().toISOString().split('T')[0],
+                              completeDate: Date.now(),
                               outputUrl: outputLink.trim()
                             }
                           })
