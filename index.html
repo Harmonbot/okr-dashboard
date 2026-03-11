@@ -5796,7 +5796,7 @@
     };
 
     // 产品总览
-    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, allMembers, tasks, onRefresh, currentUser }) => {
+    const ProductOverview = ({ objectives = [], keyResults = [], products, nodes, nodeLayers, nodeMap, nodeToLayer, templates = {}, members, allMembers, tasks, onRefresh, currentUser, fieldOptions = {} }) => {
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [editingProductId, setEditingProductId] = useState(null);
       const [editName, setEditName] = useState('');
@@ -5807,9 +5807,17 @@
       const [editBrand, setEditBrand] = useState('');
       const [editProductType, setEditProductType] = useState('');
       
-      // 动态从项目数据提取品牌和产品类型选项（自动跟随飞书表更新）
-      const brandOptions = useMemo(() => [...new Set(products.map(p => p.brand).filter(Boolean))].sort(), [products]);
-      const productTypeOptions = useMemo(() => [...new Set(products.map(p => p.productType).filter(Boolean))].sort(), [products]);
+      // 品牌和产品类型选项：优先从 API 字段定义读取，兜底从项目数据提取
+      const brandOptions = useMemo(() => {
+        const apiOptions = fieldOptions['品牌'] || [];
+        const dataOptions = products.map(p => p.brand).filter(Boolean);
+        return [...new Set([...apiOptions, ...dataOptions])].sort();
+      }, [products, fieldOptions]);
+      const productTypeOptions = useMemo(() => {
+        const apiOptions = fieldOptions['产品类型'] || [];
+        const dataOptions = products.map(p => p.productType).filter(Boolean);
+        return [...new Set([...apiOptions, ...dataOptions])].sort();
+      }, [products, fieldOptions]);
       // 打开编辑面板时初始化值
       const openEditPanel = (productId) => {
         if (editingProductId === productId) { setEditingProductId(null); return; }
@@ -8055,6 +8063,7 @@
 
     const App = () => {
       const [data, setData] = useState(null);
+      const [fieldOptions, setFieldOptions] = useState({}); // 飞书字段选项 {品牌: [...], 产品类型: [...]}
       const dataRef = useRef(null); // 追踪最新 data 引用，防止闭包过时
       useEffect(() => { dataRef.current = data; }, [data]);
       const [loading, setLoading] = useState(true);
@@ -8208,6 +8217,7 @@
           const json = await api.fetchData();
           
           if (json.success && json.data) {
+            if (json.fieldOptions) setFieldOptions(json.fieldOptions);
             const transformed = transformData(json.data);
             const newProducts = transformed.products || [];
             const oldCount = dataRef.current?.products?.length || 0;
@@ -8840,6 +8850,7 @@
                   tasks={permissionData.tasks}
                   onRefresh={fetchData}
                   currentUser={currentUser}
+                  fieldOptions={fieldOptions}
                 />
                 </ErrorBoundary>
                 </div>
