@@ -7320,8 +7320,22 @@
             </select>
             <select value={filterGroup} onChange={e => setFilterGroup(e.target.value)}
               className="px-2.5 py-1 rounded-lg text-xs outline-none" style={{background:'var(--c-bg)', border:'1px solid var(--c-border)'}}>
-              <option value="all">全部组别</option>
-              {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              <option value="all">{filterDept === 'all' ? '全部组别' : `${filterDept} 全部`}</option>
+              {filterDept === 'all' ? (
+                // 未选部门时按部门分optgroup
+                departments.map(dept => {
+                  const deptGroups = [...new Set(members.filter(m => m.department === dept).map(m => m.group).filter(g => g && g !== dept))];
+                  if (deptGroups.length === 0) return null;
+                  return (
+                    <optgroup key={dept} label={dept}>
+                      {deptGroups.sort().map(g => <option key={g} value={g}>{g}</option>)}
+                    </optgroup>
+                  );
+                })
+              ) : (
+                // 已选部门时只显示该部门下的组别
+                availableGroups.filter(g => g !== filterDept).sort().map(g => <option key={g} value={g}>{g}</option>)
+              )}
             </select>
             <input 
               type="text" value={searchName} onChange={e => setSearchName(e.target.value)}
