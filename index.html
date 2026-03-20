@@ -7099,7 +7099,7 @@
     };
 
     // 人员任务总览 - 部门一级 + 组别二级筛选
-    const TeamTaskOverview = ({ members, tasks, products, objectives = [], keyResults = [], groups, nodes = [], templates = {}, onRefresh }) => {
+    const TeamTaskOverview = ({ members, tasks, products, objectives = [], keyResults = [], groups, nodes = [], templates = {}, onRefresh, allNodes, allProducts }) => {
       const [filterDept, setFilterDept] = useState('all');
       const [filterGroup, setFilterGroup] = useState('all');
       const [showAll, setShowAll] = useState(false);
@@ -7107,6 +7107,7 @@
       const [detailMember, setDetailMember] = useState(null);
       const [searchName, setSearchName] = useState('');
       const [sortBy, setSortBy] = useState('overdue');
+      const [selectedTaskProduct, setSelectedTaskProduct] = useState(null); // 点击任务跳转到项目
       const showToast = useToast();
       const currentUser = useContext(UserContext);
 
@@ -7530,31 +7531,66 @@
                       };
                       
                       return (
-                        <div className={`flex items-center gap-2 py-1.5 px-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${task.status === '已完成' ? 'bg-green-500' : task.status === '进行中' ? 'bg-blue-500' : 'bg-gray-300'}`} />
-                          <span className="truncate flex-1 text-gray-700">{task.name}</span>
-                          {product && <span className="text-[10px] text-gray-400 truncate max-w-[60px]">{product.name}</span>}
-                          {timeTag && <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap ${timeTag.cls}`}>{timeTag.text}</span>}
-                          {/* 快捷操作按钮（严格仅任务负责人本人） */}
-                          {(() => {
-                            const isMyTask = currentUser && (task.assignee === currentUser.open_id || task.assigneeName === currentUser.name);
-                            if (!isMyTask) return null;
-                            return (
-                              <>
-                                {task.status === '待开始' && (
-                                  <button onClick={(e) => handleQuickAction(e, '进行中')}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${predecessorStatus.canAccept ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
-                                    title={predecessorStatus.canAccept ? '开始任务' : predecessorStatus.message}
-                                  >▶ 开始</button>
-                                )}
-                                {task.status === '进行中' && (
-                                  <button onClick={(e) => handleQuickAction(e, '已完成')}
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 hover:bg-green-100 whitespace-nowrap"
-                                  >✓ 完成</button>
-                                )}
-                              </>
-                            );
-                          })()}
+                        <div className={`py-1.5 px-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50' : 'hover:bg-gray-50'} cursor-pointer transition-colors`}
+                          onClick={() => {
+                            // 找到父项目（如果任务属于子项目，跳到父项目）
+                            const taskProd = products.find(p => p.id === task.productId);
+                            if (taskProd) {
+                              const parentProd = taskProd.parentId ? products.find(p => p.childIds?.includes(taskProd.id)) || taskProd : taskProd;
+                              setSelectedTaskProduct(parentProd);
+                            }
+                          }}>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${task.status === '已完成' ? 'bg-green-500' : task.status === '进行中' ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                            <span className="truncate flex-1 text-gray-700">{task.name}</span>
+                            {product && <span className="text-[10px] text-gray-400 truncate max-w-[80px]">{product.name}</span>}
+                            {timeTag && <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap ${timeTag.cls}`}>{timeTag.text}</span>}
+                            {/* 快捷操作按钮（严格仅任务负责人本人） */}
+                            {(() => {
+                              const isMyTask = currentUser && (task.assignee === currentUser.open_id || task.assigneeName === currentUser.name);
+                              if (!isMyTask) return null;
+                              return (
+                                <>
+                                  {task.status === '待开始' && (
+                                    <button onClick={(e) => handleQuickAction(e, '进行中')}
+                                      className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${predecessorStatus.canAccept ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                                      title={predecessorStatus.canAccept ? '开始任务' : predecessorStatus.message}
+                                    >▶ 开始</button>
+                                  )}
+                                  {task.status === '进行中' && (
+                                    <button onClick={(e) => handleQuickAction(e, '已完成')}
+                                      className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 hover:bg-green-100 whitespace-nowrap"
+                                    >✓ 完成</button>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                          {/* 前置节点阻塞提示 */}
+                          {task.status === '待开始' && !predecessorStatus.canAccept && (
+                            <div className="flex items-center gap-1 mt-0.5 ml-3.5 text-[9px]">
+                              <span className="text-orange-500">🔒</span>
+                              <span className="text-orange-500 truncate">{predecessorStatus.message}</span>
+                            </div>
+                          )}
+                          {/* 时间线：开始→截止 */}
+                          {(task.startDate || task.dueDate || task.completeDateFull) && (
+                            <div className="flex items-center gap-1.5 mt-0.5 ml-3.5 text-[9px] text-gray-400">
+                              {task.startDate && <span>开始 {task.startDate.substring(5)}</span>}
+                              {task.startDate && task.dueDate && <span>→</span>}
+                              {task.dueDate && <span className={isOverdue ? 'text-red-500 font-medium' : ''}>截止 {task.dueDate.substring(5)}</span>}
+                              {task.status === '已完成' && task.completeDateFull && (
+                                <span className="text-green-500">✓ {task.completeDateFull.substring(5)}</span>
+                              )}
+                              {task.status === '已完成' && task.startDateTs && task.completeDateTs && (() => {
+                                const hrs = Math.floor((task.completeDateTs - task.startDateTs) / 3600000);
+                                const d = Math.floor(hrs / 24); const h = hrs % 24;
+                                return <span className={`px-1 py-0.5 rounded ${hrs <= 8 ? 'bg-green-50 text-green-600' : hrs <= 24 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                                  耗时{d > 0 ? `${d}天${h}时` : `${hrs}小时`}
+                                </span>;
+                              })()}
+                            </div>
+                          )}
                         </div>
                       );
                     };
@@ -7941,6 +7977,27 @@
               </div>
             );
           })()}
+
+          {/* 从任务跳转到项目详情 */}
+          {selectedTaskProduct && (
+            <ProductDetailModal
+              product={selectedTaskProduct}
+              products={products}
+              nodes={allNodes || nodes}
+              nodeLayers={[]}
+              nodeMap={{}}
+              nodeToLayer={{}}
+              templates={templates}
+              members={members}
+              allMembers={members}
+              tasks={tasks}
+              skippedNodes={new Set(selectedTaskProduct.skippedNodes || [])}
+              onClose={() => setSelectedTaskProduct(null)}
+              onRefresh={onRefresh}
+              onSelectProduct={(p) => setSelectedTaskProduct(p)}
+              viewer={null}
+            />
+          )}
         </div>
       );
     };
@@ -8936,6 +8993,8 @@
                   nodes={permissionData.processNodes}
                   templates={permissionData.templates}
                   onRefresh={fetchData}
+                  allNodes={permissionData.processNodes}
+                  allProducts={permissionData.products}
                 />
                 </ErrorBoundary>
                 </div>
