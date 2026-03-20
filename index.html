@@ -2649,7 +2649,7 @@
     };
 
     // 产品详情弹窗 - 支持DAG流程图（行轨道对齐）+ 节点点击
-    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, allMembers, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer }) => {
+    const ProductDetailModal = ({ product, products = [], nodes: allNodes, nodeLayers: allNodeLayers, nodeMap: allNodeMap, nodeToLayer: allNodeToLayer, templates = {}, members, allMembers, tasks, skippedNodes = new Set(), onSkippedNodesChange, onClose, onRefresh, onSelectProduct, viewer, initialNode }) => {
       // 子线权限：当前用户是否可查看该子项目任务详情
       // 先从成员表匹配当前用户的部门/组别/角色信息
       const viewerMember = viewer ? members.find(m => 
@@ -2770,6 +2770,16 @@
       const [isCreatingChildren, setIsCreatingChildren] = useState(false);
       const currentUser = useContext(UserContext);
       const showToast = useToast();
+      
+      // 自动打开指定节点（从人员任务跳转过来时）
+      useEffect(() => {
+        if (initialNode && nodes.length > 0 && !selectedNode) {
+          const targetNode = nodes.find(n => n.name === initialNode);
+          if (targetNode) {
+            setTimeout(() => setSelectedNode(targetNode), 100);
+          }
+        }
+      }, [initialNode, nodes.length]);
       
       if (!product) return null;
       const productTasks = tasks.filter(t => t.productId === product.id);
@@ -7108,6 +7118,7 @@
       const [searchName, setSearchName] = useState('');
       const [sortBy, setSortBy] = useState('overdue');
       const [selectedTaskProduct, setSelectedTaskProduct] = useState(null); // 点击任务跳转到项目
+      const [autoOpenNode, setAutoOpenNode] = useState(''); // 自动打开的节点名
       const showToast = useToast();
       const currentUser = useContext(UserContext);
 
@@ -7533,11 +7544,11 @@
                       return (
                         <div className={`py-1.5 px-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50' : 'hover:bg-gray-50'} cursor-pointer transition-colors`}
                           onClick={() => {
-                            // 找到父项目（如果任务属于子项目，跳到父项目）
+                            // 直接跳到任务所在的子项目，并记录要打开的节点
                             const taskProd = products.find(p => p.id === task.productId);
                             if (taskProd) {
-                              const parentProd = taskProd.parentId ? products.find(p => p.childIds?.includes(taskProd.id)) || taskProd : taskProd;
-                              setSelectedTaskProduct(parentProd);
+                              setSelectedTaskProduct(taskProd);
+                              setAutoOpenNode(task.stage || ''); // 自动打开任务所在节点
                             }
                           }}>
                           <div className="flex items-center gap-2">
@@ -7992,10 +8003,11 @@
               allMembers={members}
               tasks={tasks}
               skippedNodes={new Set(selectedTaskProduct.skippedNodes || [])}
-              onClose={() => setSelectedTaskProduct(null)}
+              onClose={() => { setSelectedTaskProduct(null); setAutoOpenNode(''); }}
               onRefresh={onRefresh}
-              onSelectProduct={(p) => setSelectedTaskProduct(p)}
+              onSelectProduct={(p) => { setSelectedTaskProduct(p); setAutoOpenNode(''); }}
               viewer={null}
+              initialNode={autoOpenNode}
             />
           )}
         </div>
